@@ -48,16 +48,17 @@ class LogStream:
         # read any new lines that have arrives since we last read the file and process
         # each of them.
         for line in self.handle.readlines():
-            print(line.split(None, 2))
-            _, _, line_string = line.split(None, 2)
+            if line:
+                print(line.split(None, 2))
+                _, _, line_string = line.split(None, 2)
 
-            lstring = line_string.split()
-            if self.npc_speak and lstring[0] == "[NPC]":
-                name, dialog = line_string.split(":", maxsplit=1)
-                self.tts_queue.put(dialog)
+                lstring = line_string.split()
+                if self.npc_speak and lstring[0] == "[NPC]":
+                    name, dialog = line_string.split(":", maxsplit=1)
+                    self.tts_queue.put(dialog)
 
-            elif self.announce_badges and lstring[0] == "Congratulations!":
-                self.tts_queue.put(" ".join(lstring[4:]))
+                elif self.announce_badges and lstring[0] == "Congratulations!":
+                    self.tts_queue.put(" ".join(lstring[4:]))
 
 
 def main() -> None:
