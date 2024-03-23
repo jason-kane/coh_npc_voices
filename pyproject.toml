@@ -1,0 +1,35 @@
+[project]
+name = "coh_npc_voices"
+version = "0.0.1"
+authors = [
+  { name="Jason Kane" },
+]
+description = "A simple python program that lets you hear City of Heroes NPCs talk"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: Win32 (MS Windows)",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows"
+]
+dependencies = [
+    "pypiwin32",
+    "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.urls]
+Homepage = "https://github.com/jason-kane/coh_npc_voices"
+Issues = "https://github.com/jason-kane/coh_npc_voices/issues"
+
+[project.scripts]
+coh_npc_voices = "coh_npc_voices.npc_chatter:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
