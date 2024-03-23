@@ -1,6 +1,6 @@
 [project]
 name = "coh_npc_voices"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
   { name="Jason Kane" },
 ]

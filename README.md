@@ -8,13 +8,7 @@ I think it makes the game a little more immersive.  I intend to add more, simila
 
 ## Right now:
 
-    git clone git@github.com:jason-kane/coh_npc_voices.git
-    cd coh_npc_voices
-    pip install .
-
-## once I have this pypi:
-
-    pip install coh_npc_voices
+    pip install git+https://github.com/jason-kane/coh_npc_voices.git
 
 # Running it
 

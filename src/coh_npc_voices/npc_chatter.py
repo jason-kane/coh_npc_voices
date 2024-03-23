@@ -10,6 +10,23 @@ import pythoncom
 
 import tts.sapi
 
+# TODO:
+#  Try https://voicebox.readthedocs.io/en/stable/
+#   does this even work in windows?
+#
+#   goals: 
+#       consistent, unique(-ish) voice for every character in the game that speaks.
+#       free option, best possible quality
+#       cheap option, multiple options (paying TTS providers, responses cached)
+#           how much are we talking?
+#
+#   Fun:
+#       gui voice creator
+#       exports to a stringified voice profile
+#       players can tell other players what they sound like, and you then hear them.
+#       speech-to-text chat input (whisper?)
+
+
 class TTS(threading.Thread):
     def __init__(self, q):
         threading.Thread.__init__(self)
