@@ -17,7 +17,14 @@ classifiers = [
 ]
 dependencies = [
     "pypiwin32",
-    "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8"
+    "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8",
+    "voicebox-tts[google-cloud-tts]",
+    "google-cloud-texttospeech",
+    "voicebox-tts",
+    "wheel",
+    "mp3play",
+    "setuptools",
+    "pydub"
 ]
 
 [build-system]

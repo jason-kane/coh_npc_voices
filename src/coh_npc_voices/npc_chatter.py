@@ -1,14 +1,29 @@
+import argparse
 import glob
+import hashlib
 import io
+import logging
 import os
 import queue
+import voicebox
+import re
+import sqlite3
+import string
+import sys
 import threading
 import time
-import argparse
-
+import pydub
 import pythoncom
-
 import tts.sapi
+import voice_builder
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+
+log = logging.getLogger('__name__')
 
 # TODO:
 #  Try https://voicebox.readthedocs.io/en/stable/
@@ -38,9 +53,77 @@ class TTS(threading.Thread):
         pythoncom.CoInitialize()
         voice = tts.sapi.Sapi()
         while True:
-            message = self.q.get()
-            voice.set_rate(2)
-            voice.say(message)
+            name, message = self.q.get()
+            log.debug(f'Speaking thread received {name}/{message}')
+
+            if name:
+                clean_name = re.sub(r'[^\w]', '', name)
+            else:
+                name = "GREAT_NAMELESS_ONE"
+                clean_name = "GREAT_NAMELESS_ONE"
+
+            clean_message = re.sub(r'[^\w]', '', message)
+            
+            #ie: abcde_timetodan.mp3
+            filename = hashlib.sha256(name.encode()).hexdigest()[:5] + f"_{clean_message[:10]}"
+            
+            # do we already have this NPC/Message rendered?
+            cachefile = os.path.abspath(os.path.join("clip_library", clean_name, f"{filename}.mp3"))
+            #drive, cachefile = cachefile.split('\\', maxsplit=1)  # because playsound is stupid.
+            #cachefile = f"\\{cachefile}"
+
+            if os.path.exists(cachefile):
+                log.info(f'Cache Hit: {cachefile}')
+                # we already have this one.  Use it.
+                # cachefile = cachefile.replace(r"\\", "\\\\") 
+                # mp3play.load(cachefile).play()
+                audio = voicebox.tts.utils.get_audio_from_mp3(cachefile)
+                voicebox.sinks.SoundDevice().play(audio)
+            else:
+                log.info(f'Cache Miss -- {cachefile} not found')
+                # ok, what kind of voice do we want for this NPC?
+                if os.path.exists('voices.db'):
+                    # We might have some fancy voices
+                    con = sqlite3.connect("voices.db")
+                    cursor = con.cursor()
+                    npc_id = cursor.execute("SELECT id FROM npc WHERE name=?", (name, )).fetchone()
+                    if npc_id:
+                        voice_builder.create(con, npc_id[0], message, cachefile)
+                    else:
+                        # this is the first time we've gotten a message from this
+                        # NPC, so they don't have a voice yet.  We will default to
+                        # the windows voice because it is free and no voice effects.
+                        cursor.execute(
+                            "INSERT INTO npc (name, engine) values (?, ?)", 
+                            (name, voice_builder.default_engine)
+                        )
+                        con.commit()
+                        npc_id = cursor.execute("SELECT id FROM npc WHERE name=?", (name, )).fetchone()
+                        voice_builder.create(con, npc_id[0], message, cachefile)
+                else:
+                    # we aren't using the sqlite backed persistence, just make an on-the-fly message
+                    # and we are done.
+                    voice.set_rate(2)
+                    voice.say(message) # quick response for the user experience
+                    # then generate an mp3 to store and play for next time
+                    # strange for local voices?  but not for paid text to voice.
+                    # a fraction of a cent _once_ for each bit of dialog in game 
+                    # is cheap.  A fraction every time anyone says anything, that
+                    # adds up, so the cache makes it cheap.
+                    #
+                    # mp3 because it's so universal.  There are a million and 10
+                    # existing tools for manipulating mp3.
+                    try:
+                        os.mkdir(os.path.join("clip_library", clean_name))
+                    except OSError as error:
+                        # the directory already exists.  This is not a problem.
+                        pass
+
+                    log.info(f'Creating {cachefile}.wav')
+                    voice.create_recording(cachefile + ".wav", message)
+                    audio = pydub.AudioSegment.from_wav(cachefile + ".wav")
+                    audio.export(cachefile, format="mp3")
+                    os.unlink(cachefile + ".wav")
             self.q.task_done()
 
 
@@ -65,22 +148,27 @@ class LogStream:
         # read any new lines that have arrives since we last read the file and process
         # each of them.
         for line in self.handle.readlines():
-            if line:
+            if line.strip():
                 print(line.split(None, 2))
                 _, _, line_string = line.split(None, 2)
 
                 lstring = line_string.split()
                 if self.npc_speak and lstring[0] == "[NPC]":
-                    name, dialog = line_string.split(":", maxsplit=1)
-                    self.tts_queue.put(dialog)
+                    name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+                    log.debug(f'Adding {name}/{dialog} to reading queue')
+                    self.tts_queue.put((name, dialog))
 
                 elif self.announce_badges and lstring[0] == "Congratulations!":
-                    self.tts_queue.put(" ".join(lstring[4:]))
+                    self.tts_queue.put(
+                        (None, (" ".join(lstring[4:])))
+                    )
+                else:
+                    log.debug(f'tag {lstring[0]} not classified.')
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='Give NPCs a voice in City of Heroes')
-    parser.add_argument("--logdir", type=str, required=True, default="c:\CoH\PLAYERNAME\Logs", help="Path to your CoH 'Logs' directory")
+    parser.add_argument("--logdir", type=str, required=True, default="c:\\CoH\\PLAYERNAME\\Logs", help="Path to your CoH 'Logs' directory")
     parser.add_argument('--badges', type=bool, required=False, default=True, help="When you earn a badge say which badge it is")
     parser.add_argument('--npc', type=bool, required=False, default=True, help="when NPCs talk, give them a voice")
 
@@ -98,11 +186,11 @@ def main() -> None:
     # the default voice.
     TTS(q)
 
-    q.put("Ready")
+    q.put((None, "Ready"))
     time.sleep(0.5)
-    q.put("Set")
+    q.put((None, "Set"))
     time.sleep(0.5)
-    q.put("Go!!")
+    q.put((None, "Go!!"))
 
     ls = LogStream(logdir, q, badges, npc)
     while True:
