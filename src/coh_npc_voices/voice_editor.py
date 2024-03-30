@@ -24,14 +24,14 @@ def prepare_database():
     if not os.path.exists("voices.db"):
         # first time with the database
         log.info("Initializing new database")
-        con = sqlite3.connect("voices.db")
-        cursor = con.cursor()
+        db_connection = sqlite3.connect("voices.db")
+        cursor = db_connection.cursor()
         cursor.execute("CREATE TABLE settings(dbversion)")
         cursor.execute("INSERT INTO settings VALUES(:version)", {"version": "0.1"})
-        con.commit()
+        db_connection.commit()
     else:
-        con = sqlite3.connect("voices.db")
-        cursor = con.cursor()
+        db_connection = sqlite3.connect("voices.db")
+        cursor = db_connection.cursor()
 
     dbversion = cursor.execute("select dbversion from settings").fetchone()[0]
     log.info(f"Database is version {dbversion}")
@@ -71,14 +71,14 @@ def prepare_database():
                 text VARCHAR(256)
             )
         """)
-        con.commit()
+        db_connection.commit()
 
 
 class ChoosePhrase(tk.Frame):
-    def __init__(self, parent, con, detailside, selected_npc, *args, **kwargs):
+    def __init__(self, parent, db_connection, detailside, selected_npc, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.selected_npc = selected_npc
-        self.con = con
+        self.db_connection = db_connection
         self.detailside = detailside
 
         self.chosen_phrase = tk.StringVar(value="<Choose or type a phrase>")
@@ -92,7 +92,7 @@ class ChoosePhrase(tk.Frame):
         play_btn.pack(side="left")
 
     def populate_phrases(self):
-        cursor = self.con.cursor()
+        cursor = self.db_connection.cursor()
         npc = engines.get_npc_by_name(cursor, self.selected_npc.get())
         if npc is None:
             return
@@ -120,7 +120,7 @@ class ChoosePhrase(tk.Frame):
         effect_list = [e.get_effect() for e in self.detailside.effect_list.effects]
         # None because we aren't attaching any widgets
         log.info(f'effect_list: {effect_list}')
-        ttsengine(None, self.con, self.selected_npc).say(message, effect_list)
+        ttsengine(None, self.db_connection, self.selected_npc).say(message, effect_list)
 
 
 
@@ -150,15 +150,18 @@ class EngineSelectAndConfigure(tk.Frame):
     the second has all the parameters supported by the seleted engine
     """
 
-    def __init__(self, parent, con, selected_npc, *args, **kwargs):
+    def __init__(self, parent, db_connection, selected_npc, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.con = con
+        self.db_connection = db_connection
         self.selected_npc = selected_npc
 
         self.selected_engine = tk.StringVar()
         self.load_npc()
 
-        self.selected_engine.trace_add("write", self.change_selected_engine)
+        self.selected_engine.trace_add(
+            "write", 
+            self.change_selected_engine
+        )
         es = EngineSelection(self, self.selected_engine)
         es.pack(side="top", fill="x", expand=True)
         self.engine_parameters = None
@@ -179,7 +182,7 @@ class EngineSelectAndConfigure(tk.Frame):
 
         engine_cls = engines.get_engine(self.selected_engine.get())
 
-        self.engine_parameters = engine_cls(self, self.con, self.selected_npc)
+        self.engine_parameters = engine_cls(self, self.db_connection, self.selected_npc)
         self.engine_parameters.pack(side="top", fill="x", expand=True)
 
         self.save_npc()
@@ -188,18 +191,18 @@ class EngineSelectAndConfigure(tk.Frame):
         """
         save this engine selection to the database
         """
-        cursor = self.con.cursor()
+        cursor = self.db_connection.cursor()
         cursor.execute(
             "UPDATE npc SET engine = ? where name = ?",
             (self.selected_engine.get(), self.selected_npc.get()),
         )
-        self.con.commit()
+        self.db_connection.commit()
         log.debug(
             f"Saved engine={self.selected_engine.get()} for NPC named {self.selected_npc.get()}"
         )
 
     def load_npc(self):
-        cursor = self.con.cursor()
+        cursor = self.db_connection.cursor()
         engine_name = cursor.execute(
             "SELECT engine FROM npc WHERE name = ?", (self.selected_npc.get(),)
         ).fetchone()
@@ -211,20 +214,52 @@ class EngineSelectAndConfigure(tk.Frame):
 
 
 class EffectList(tk.Frame):
+    """
+
+    """
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.effects = []
         self.parent = parent
 
     def add_effect(self, effect_name):
-        effect = effects.EFFECTS[effect_name]
+        """Add the chosen effect to the list of effects the user can manipulate.
 
-        if "obj" in effect:
-            obj = effect["obj"](
-                self, borderwidth=1, highlightbackground="black", relief="groove"
+            effect name is the nice, button friendly string.  Using it as the
+            index for effects.EFFECTS is a bit dirty.  The button should have a
+            companion value other than the label, the we can just use that as an
+            index.
+        """
+        effect = effects.EFFECTS[effect_name]
+        
+        # effect is one of the EffectParameterEditor objects in effects.py
+        if effect:
+            #
+            # effect_config_frame is an instance of one of the
+            # EffectParameterEditor objects in effects.py.  They inherit
+            # from tk.Frame. 
+            #
+            # Instantiating these objects creates any tk objects they need to
+            # configure themselves and the tk.Frame returned can then be
+            # pack/grid whatever to arrange the screen.
+            # 
+            # When we go to render we expect each effect to provide a
+            # get_effect(self) that returns an Effect: 
+            #   https://github.com/austin-bowen/voicebox/blob/main/src/voicebox/effects/effect.py#L9
+            # with an apply(Audio) that returns an Audio; An "Audio" is a pretty
+            # simple object wrapping a np.ndarray of [-1 to 1] samples.
+            #
+            effect_config_frame = effect(
+                self, 
+                borderwidth=1, 
+                highlightbackground="black", 
+                relief="groove"
             )
-            obj.pack(side="top", fill="x", expand=True)
-            self.effects.append(obj)
+            effect_config_frame.pack(side="top", fill="x", expand=True)
+            self.effects.append(effect_config_frame)
+
+        # persist this change to the database
+        
     
     def remove_effect(self, effect_obj):
         log.info(f'Removing effect {effect_obj}')
@@ -236,28 +271,57 @@ class EffectList(tk.Frame):
 
 
 class AddEffect(tk.Frame):
+    # where is this 70 coming from?  you got it from where?  what the
+    # hell buddy.  This is the shit that causing errors when people
+    # use an app at different resolutions.  This will center at one spot
+    # and all the other entries will be different.
+    add_an_effect = f"{'< Add an Effect >': ^70}"  # pad to center
+
     def __init__(self, parent, effect_list, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.effect_list = effect_list
 
-        self.selected_effect = tk.StringVar(value="<Choose an Effect>")
-        self.options = ttk.Combobox(self, textvariable=self.selected_effect)
-        self.options["values"] = list(effects.get_effects().keys())
-        self.options["state"] = "readonly"
+        # we're using the textvariable as the action associated with changing
+        # this combobox.  That only gives us the scope of what can see this
+        # selected_effect to either read the current value or trace_add to 
+        # trigger whenever selected_effect is written to.
+        
+        self.selected_effect = tk.StringVar(value=self.add_an_effect)
+        self.selected_effect.trace_add("write", self.add_effect)
 
-        self.options.pack(side="left", fill="x", expand=True)
+        effect_combobox = ttk.Combobox(
+            self,
+            textvariable=self.selected_effect
+        )
+        effect_combobox.option_add('*TCombobox*Listbox.Justify', 'center')
+        effect_combobox["values"] = list(effects.EFFECTS.keys())
+        effect_combobox["state"] = "readonly"
 
-        tk.Button(self, text="Add Effect", command=self.add_effect).pack(side="right")
+        #  <-[XXX    ]
+        effect_combobox.pack(side="left", fill="x", expand=True)
 
-    def add_effect(self):
+        #  [XXX]->
+        # tk.Button(self, text="Add Effect", command=self.add_effect).pack(side="right")
+
+    def add_effect(self, varname, lindex, operation):
+        # Retrieve the currently selected effect from the
+        # tk.StringVar.
         effect_name = self.selected_effect.get()
+        # effect_list provides a very handy helper to make this easy.  Our
+        # output is just providing this effect_list[] for anyone that wants it.
+        # Sounds kind of stupid when you actually type it out.
         self.effect_list.add_effect(effect_name)
+        # reset the UI back to the "add an effect" prompt
+        self.selected_effect.set(self.add_an_effect)
 
 
 class DetailSide(tk.Frame):
-    def __init__(self, parent, con, selected_npc, *args, **kwargs):
+    """
+    Primary frame for the "detail" side of the application.
+    """
+    def __init__(self, parent, db_connection, selected_npc, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.con = con
+        self.db_connection = db_connection
         self.selected_npc = selected_npc
 
         self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
@@ -282,12 +346,12 @@ class DetailSide(tk.Frame):
         ).pack(side="top", fill="x", expand=True)
 
         self.phrase_selector = ChoosePhrase(
-            self.frame, con, self, selected_npc
+            self.frame, db_connection, self, selected_npc
         )
         self.phrase_selector.pack(side="top", fill="x", expand=True)
 
         self.engineSelect = EngineSelectAndConfigure(
-            self.frame, self.con, self.selected_npc
+            self.frame, self.db_connection, self.selected_npc
         )
         self.engineSelect.pack(side="top", fill="x", expand=True)
 
@@ -311,7 +375,7 @@ class DetailSide(tk.Frame):
         # set parameters for each effect
         self.selected_npc.set(name)
 
-        cursor = self.con.cursor()
+        cursor = self.db_connection.cursor()
         npc_id, engine_name = cursor.execute(
             "SELECT id, engine FROM npc WHERE name = ?", (name,)
         ).fetchone()
@@ -328,9 +392,9 @@ class DetailSide(tk.Frame):
 
 
 class ListSide(tk.Frame):
-    def __init__(self, parent, con, detailside, *args, **kwargs):
+    def __init__(self, parent, db_connection, detailside, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.con = con
+        self.db_connection = db_connection
         self.detailside = detailside
 
         self.list_items = tk.Variable(value=[])
@@ -359,19 +423,19 @@ class ListSide(tk.Frame):
         self.detailside.load_npc(value)
 
     def refresh_npc_list(self):
-        cursor = self.con.cursor()
+        cursor = self.db_connection.cursor()
         all_npcs = cursor.execute("select id, name from npc order by name").fetchall()
         if all_npcs:
             self.list_items.set([npc[1] for npc in all_npcs])
 
     def add_npc(self):
-        cursor = self.con.cursor()
+        cursor = self.db_connection.cursor()
         name = self.new_entry.get()
         cursor.execute(
             "INSERT INTO npc (name, engine) VALUES (:name, :engine);",
             {"name": name, "engine": voice_builder.default_engine},
         )
-        self.con.commit()
+        self.db_connection.commit()
         # npc = cursor.lastrowid
         # create default engine config here?
         self.listbox.insert(0, name)
@@ -385,8 +449,8 @@ class ListSide(tk.Frame):
 def main():
     prepare_database()
 
-    con = sqlite3.connect("voices.db")
-    cursor = con.cursor()
+    db_connection = sqlite3.connect("voices.db")
+    cursor = db_connection.cursor()
 
     root = tk.Tk()
     root.geometry("640x480+300+300")
@@ -400,8 +464,8 @@ def main():
     else:
         selected_npc = tk.StringVar()
 
-    detailside = DetailSide(root, con, selected_npc)
-    listside = ListSide(root, con, detailside)
+    detailside = DetailSide(root, db_connection, selected_npc)
+    listside = ListSide(root, db_connection, detailside)
 
     listside.pack(side="left", fill="both", expand=True)
     detailside.pack(side="left", fill="both", expand=True)
@@ -414,8 +478,11 @@ main()
 # TODO (eta: weeks)
 # ----
 
-# when you edit an NPC, option to rebuild everything they say with the new settings saving the mp3 to the file system
-#
+# friendly installer/uninstaller
+# in-app update of app software
+# in-app update of voice database
+# when you edit an NPC, option to rebuild everything they say with the new 
+#     settings saving the mp3 to the file system (same as cache)
 # persist effects to database
 # right side does not fill the width
 # no mechanism to remove NPCs

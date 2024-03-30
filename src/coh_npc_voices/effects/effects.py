@@ -478,35 +478,33 @@ class Bitcrush(EffectParameterEditor):
         return effect
 
 EFFECTS = {
-    'Bandpass Filter': {'obj': BandpassFilter},
-    'Bandstop Filter': {'obj': BandstopFilter},
-    'Bitcrush': {'obj': Bitcrush}, # Pedalboard
-    'Chorus': {}, # Pedalboard
-    'Clipping': {}, # Pedalboard
-    'Compressor': {}, # Pedalboard
-    'Delay': {}, # Pedalboard
-    'Distortion': {}, # Pedalboard
-    'Gain': {}, # Pedalboard
-    'Glitch': {'obj': Glitch},
-    'GSMFullRateCompressor': {}, # Pedalboard
-    'Highpass Filter': {'obj': HighpassFilter},
-    'HighShelfFilter': {}, # Pedalboard
-    'LadderFilter': {}, # Pedalboard
-    'Limiter': {}, # Pedalboard
-    'Lowpass Filter': {'obj': LowpassFilter},
-    'LowShelfFilter': {}, # Pedalboard
-    'MP3Compressor': {}, # Pedalboard
-    'NoiseGate': {}, # Pedalboard
-    'Normalize': {'obj': Normalize},
-    'PeakFilter': {}, # Pedalboard
-    'Phaser': {}, # Pedalboard
-    'PitchShift': {}, # Pedalboard
-    'Remove DC Offset': {},
-    'Resample': {}, # Pedalboard
-    'Reverb': {}, # Pedalboard
-    'RingMod': {},
-    'Vocoder': {},
+    # Cosmetic : Object
+    'Bandpass Filter': BandpassFilter,
+    'Bandstop Filter': BandstopFilter,
+    'Bitcrush': Bitcrush, # Pedalboard
+    # 'Chorus': None, # Pedalboard
+    # 'Clipping': None, # Pedalboard
+    # 'Compressor': None, # Pedalboard
+    # 'Delay': None, # Pedalboard
+    # 'Distortion': None, # Pedalboard
+    # 'Gain': None, # Pedalboard
+    'Glitch': Glitch,
+    # 'GSMFullRateCompressor': None, # Pedalboard
+    'Highpass Filter': HighpassFilter,
+    # 'HighShelfFilter': None, # Pedalboard
+    # 'LadderFilter': None, # Pedalboard
+    # 'Limiter': None, # Pedalboard
+    'Lowpass Filter': LowpassFilter,
+    # 'LowShelfFilter': None, # Pedalboard
+    # 'MP3Compressor': None, # Pedalboard
+    # 'NoiseGate': None, # Pedalboard
+    'Normalize': Normalize,
+    # 'PeakFilter': None, # Pedalboard
+    # 'Phaser': None, # Pedalboard
+    # 'PitchShift': None, # Pedalboard
+    # 'Remove DC Offset': None,
+    # 'Resample': None, # Pedalboard
+    # 'Reverb': None, # Pedalboard
+    # 'RingMod': {},
+    # 'Vocoder': {},
 }
-
-def get_effects():
-    return {k: v for k, v in EFFECTS.items() if 'obj' in v}
