@@ -2,17 +2,17 @@
 
 import tkinter as tk
 from tkinter import ttk, font
-import sqlite3
 import os
 import logging
 import sys
 import effects
 import engines
 import voice_builder
+from db import get_cursor, commit, prepare_database
 
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
@@ -20,65 +20,10 @@ logging.basicConfig(
 log = logging.getLogger("__name__")
 
 
-def prepare_database():
-    if not os.path.exists("voices.db"):
-        # first time with the database
-        log.info("Initializing new database")
-        db_connection = sqlite3.connect("voices.db")
-        cursor = db_connection.cursor()
-        cursor.execute("CREATE TABLE settings(dbversion)")
-        cursor.execute("INSERT INTO settings VALUES(:version)", {"version": "0.1"})
-        db_connection.commit()
-    else:
-        db_connection = sqlite3.connect("voices.db")
-        cursor = db_connection.cursor()
-
-    dbversion = cursor.execute("select dbversion from settings").fetchone()[0]
-    log.info(f"Database is version {dbversion}")
-    if dbversion == "0.1":
-        log.info("migrating to db schema 0.2")
-        cursor.execute("UPDATE settings SET dbversion = '0.2'")
-        # base NPC table, one row per npc name
-        cursor.execute("""
-            CREATE TABLE npc (
-                id INTEGER PRIMARY KEY, 
-                name VARCHAR(64) NOT NULL,
-                engine VARCHAR(64) NOT NULL
-            )""")
-
-        # base engine configuration settings, things like language and voice
-        # these settings are in the context of a specific NPC.  Exactly which
-        # settings make sense depend on the engine, hence the key/value generic.
-        cursor.execute("""
-            CREATE TABLE base_tts_config (
-                id INTEGER PRIMARY KEY,
-                npc_id INTEGER NOT NULL,
-                key VARCHAR(64),
-                value VARCHAR(64)
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE google_voices (
-                id INTEGER PRIMARY KEY,
-                name VARCHAR(64) NOT NULL,
-                language_code VARCHAR(64) NOT NULL,
-                ssml_gender VARCHAR(64) NOT NULL
-            )""")
-        cursor.execute("""
-            CREATE TABLE phrases (
-                id INTEGER PRIMARY KEY,
-                npc_id INTEGER NOT NULL,
-                text VARCHAR(256)
-            )
-        """)
-        db_connection.commit()
-
-
 class ChoosePhrase(tk.Frame):
-    def __init__(self, parent, db_connection, detailside, selected_npc, *args, **kwargs):
+    def __init__(self, parent, detailside, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.selected_npc = selected_npc
-        self.db_connection = db_connection
+        self.selected_character = selected_character
         self.detailside = detailside
 
         self.chosen_phrase = tk.StringVar(value="<Choose or type a phrase>")
@@ -92,22 +37,18 @@ class ChoosePhrase(tk.Frame):
         play_btn.pack(side="left")
 
     def populate_phrases(self):
-        cursor = self.db_connection.cursor()
-        npc = engines.get_npc_by_name(cursor, self.selected_npc.get())
-        if npc is None:
+        character = Character.get_by_raw_name(self.selected_character.get())
+        if character is None:
             return
+        log.info(character)
         
-        npc_id, _, engine = npc
-        npc_phrases = [
-            phrase[0] for phrase in cursor.execute("""
-                SELECT text FROM phrases WHERE npc_id = ?
-            """, (npc_id, )).fetchall()
-        ]
-        if npc_phrases:
-            self.chosen_phrase.set(npc_phrases[0])
+        character_phrases = character.get_phrases()
+        
+        if character_phrases:
+            self.chosen_phrase.set(character_phrases[0])
         else:
-            self.chosen_phrase.set(f'I have no record of what {self.selected_npc.get()} says.')
-        self.options["values"] = npc_phrases
+            self.chosen_phrase.set(f'I have no record of what {self.selected_character.get()} says.')
+        self.options["values"] = character_phrases
 
     def say_it(self):
         message = self.chosen_phrase.get()
@@ -120,8 +61,7 @@ class ChoosePhrase(tk.Frame):
         effect_list = [e.get_effect() for e in self.detailside.effect_list.effects]
         # None because we aren't attaching any widgets
         log.info(f'effect_list: {effect_list}')
-        ttsengine(None, self.db_connection, self.selected_npc).say(message, effect_list)
-
+        ttsengine(None, self.selected_character).say(message, effect_list)
 
 
 class EngineSelection(tk.Frame):
@@ -150,13 +90,12 @@ class EngineSelectAndConfigure(tk.Frame):
     the second has all the parameters supported by the seleted engine
     """
 
-    def __init__(self, parent, db_connection, selected_npc, *args, **kwargs):
+    def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.db_connection = db_connection
-        self.selected_npc = selected_npc
+        self.selected_character = selected_character
 
         self.selected_engine = tk.StringVar()
-        self.load_npc()
+        self.load_character()
 
         self.selected_engine.trace_add(
             "write", 
@@ -181,30 +120,42 @@ class EngineSelectAndConfigure(tk.Frame):
             self.engine_parameters.pack_forget()
 
         engine_cls = engines.get_engine(self.selected_engine.get())
+        if engine_cls:
+            self.engine_parameters = engine_cls(self, self.selected_character)
+            self.engine_parameters.pack(side="top", fill="x", expand=True)
 
-        self.engine_parameters = engine_cls(self, self.db_connection, self.selected_npc)
-        self.engine_parameters.pack(side="top", fill="x", expand=True)
+        self.save_character()
 
-        self.save_npc()
-
-    def save_npc(self):
+    def save_character(self):
         """
         save this engine selection to the database
         """
-        cursor = self.db_connection.cursor()
+        cursor = get_cursor()
+        full_name = self.selected_character.get()
+        if not full_name:
+            return
+
+        category, name = full_name.split(maxsplit=1)
         cursor.execute(
-            "UPDATE npc SET engine = ? where name = ?",
-            (self.selected_engine.get(), self.selected_npc.get()),
-        )
-        self.db_connection.commit()
-        log.debug(
-            f"Saved engine={self.selected_engine.get()} for NPC named {self.selected_npc.get()}"
+            "UPDATE character SET engine = ? where name = ? and category = ?",
+            (self.selected_engine.get(), name, category),
         )
 
-    def load_npc(self):
-        cursor = self.db_connection.cursor()
+        commit()
+        log.debug(
+            f"Saved engine={self.selected_engine.get()} for {category} named {name}"
+        )
+
+    def load_character(self):
+        cursor = get_cursor()
+        full_name = self.selected_character.get()
+        if not full_name:
+            log.warning('Name is required to load a character')
+            return
+        
+        category, name = full_name.split(maxsplit=1)
         engine_name = cursor.execute(
-            "SELECT engine FROM npc WHERE name = ?", (self.selected_npc.get(),)
+            "SELECT engine FROM character WHERE name = ? AND category = ?", (name, category)
         ).fetchone()
 
         if engine_name:
@@ -217,18 +168,71 @@ class EffectList(tk.Frame):
     """
 
     """
-    def __init__(self, parent, *args, **kwargs):
+    def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.effects = []
         self.parent = parent
+        self.selected_character = selected_character
+        self.load_effects()
+
+    def load_effects(self):
+        log.info('EffectList.load_effects()')
+        cursor = get_cursor()
+        character = Character.get_by_raw_name(self.selected_character.get())
+
+        voice_effects = cursor.execute("""
+            SELECT 
+                id, effect_name
+            FROM
+                effects
+            where
+                character_id = ?
+        """, (
+            character.id,
+        )).fetchall()
+
+        for effect in voice_effects:
+            log.info(f'Adding effect {effect} found in the database')
+            id, effect_name = effect
+            effect_class = effects.EFFECTS[effect_name]
+
+            # not very DRY
+            effect_config_frame = effect_class(
+                self, 
+                borderwidth=1, 
+                highlightbackground="black", 
+                relief="groove"
+            )
+            effect_config_frame.pack(side="top", fill="x", expand=True)
+            effect_config_frame.effect_id.set(id)
+            self.effects.append(effect_config_frame)
+
+            # we are not done yet.
+            effect_setting = cursor.execute("""
+                SELECT 
+                    key, value
+                FROM
+                    effect_setting
+                where
+                    effect_id = ?
+            """, (
+                id,
+            )).fetchall()
+
+            for key, value in effect_setting:
+                tkvar = getattr(effect_config_frame, key)
+                tkvar.set(value)
 
     def add_effect(self, effect_name):
-        """Add the chosen effect to the list of effects the user can manipulate.
+        """
+        Add the chosen effect to the list of effects the user can manipulate.
 
-            effect name is the nice, button friendly string.  Using it as the
-            index for effects.EFFECTS is a bit dirty.  The button should have a
-            companion value other than the label, the we can just use that as an
-            index.
+        effect name is the nice, button friendly string.  Using it as the
+        index for effects.EFFECTS is a bit dirty.  The button should have a
+        companion value other than the label, the we can just use that as an
+        index.
+
+        This call is for new effects which will start with default configurations.
         """
         effect = effects.EFFECTS[effect_name]
         
@@ -258,16 +262,59 @@ class EffectList(tk.Frame):
             effect_config_frame.pack(side="top", fill="x", expand=True)
             self.effects.append(effect_config_frame)
 
-        # persist this change to the database
+            character = Character.get_by_raw_name(self.selected_character.get())
+
+            # persist this change to the database
+            log.info(f'Saving new effect {effect_name} to database')
+            cursor = get_cursor()
+            cursor.execute("""
+                INSERT 
+                    INTO effects (character_id, effect_name)
+                VALUES
+                    (:character_id, :effect_name)
+            """, {
+                'character_id': character.id,
+                'effect_name': effect_name
+            })
+            effect_id = cursor.lastrowid
+
+            for key in effect_config_frame.parameters:
+                tkvar = getattr(effect_config_frame, key)
+                value = tkvar.get()
+
+                cursor.execute("""
+                    INSERT 
+                        INTO effect_setting (effect_id, key, value)
+                    VALUES
+                        (:effect_id, :key, :value)
+                """, {
+                    'effect_id': effect_id,
+                    'key': key,
+                    'value': value
+                })
+
+            commit()
+            effect_config_frame.effect_id.set(effect_id)
         
     
     def remove_effect(self, effect_obj):
         log.info(f'Removing effect {effect_obj}')
+        
+        # remove it from the effects list
         self.effects.remove(effect_obj)
+        
+        # remove it from the database
+        cursor = get_cursor()
+        cursor.execute("""
+            DELETE
+                FROM effects
+            WHERE
+                id=?
+            """, (effect_obj.effect_id.get(), )
+        )
+        commit()
+        # forget the widgets for this object
         effect_obj.pack_forget()
-        # effect_obj.destroy()
-        # re-pack our parent
-        #self.parent.pack(side="top", fill="both", expand=True)
 
 
 class AddEffect(tk.Frame):
@@ -311,18 +358,19 @@ class AddEffect(tk.Frame):
         # output is just providing this effect_list[] for anyone that wants it.
         # Sounds kind of stupid when you actually type it out.
         self.effect_list.add_effect(effect_name)
+               
         # reset the UI back to the "add an effect" prompt
         self.selected_effect.set(self.add_an_effect)
+
 
 
 class DetailSide(tk.Frame):
     """
     Primary frame for the "detail" side of the application.
     """
-    def __init__(self, parent, db_connection, selected_npc, *args, **kwargs):
+    def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.db_connection = db_connection
-        self.selected_npc = selected_npc
+        self.selected_character = selected_character
 
         self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
         self.frame = tk.Frame(self.canvas, background="#ffffff")
@@ -338,25 +386,25 @@ class DetailSide(tk.Frame):
         self.frame.bind("<Configure>", self.onFrameConfigure)
         # self.frame.pack(side='top', fill='x')
 
-        self.npc_name = tk.Label(
+        self.character_name = tk.Label(
             self.frame,
-            textvariable=selected_npc,
+            textvariable=selected_character,
             anchor="center",
             font=font.Font(weight="bold"),
         ).pack(side="top", fill="x", expand=True)
 
         self.phrase_selector = ChoosePhrase(
-            self.frame, db_connection, self, selected_npc
+            self.frame, self, selected_character
         )
         self.phrase_selector.pack(side="top", fill="x", expand=True)
 
         self.engineSelect = EngineSelectAndConfigure(
-            self.frame, self.db_connection, self.selected_npc
+            self.frame, self.selected_character
         )
         self.engineSelect.pack(side="top", fill="x", expand=True)
 
         # list of effects already configured
-        self.effect_list = EffectList(self.frame)
+        self.effect_list = EffectList(self.frame, selected_character)
         self.effect_list.pack(side="top", fill="both", expand=True)
         AddEffect(self.frame, self.effect_list).pack(side="top", fill="x", expand=True)
 
@@ -364,7 +412,7 @@ class DetailSide(tk.Frame):
         """Reset the scroll region to encompass the inner frame"""
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
-    def load_npc(self, name):
+    def load_character(self, raw_name):
         """
         load this NPC and populate the detailside widgets
         """
@@ -373,11 +421,15 @@ class DetailSide(tk.Frame):
         # loop effects
         # add each effect
         # set parameters for each effect
-        self.selected_npc.set(name)
+        log.debug(f'load_character({raw_name})')
+        self.selected_character.set(raw_name)
 
-        cursor = self.db_connection.cursor()
-        npc_id, engine_name = cursor.execute(
-            "SELECT id, engine FROM npc WHERE name = ?", (name,)
+        category, name = raw_name.split(maxsplit=1)
+
+        cursor = get_cursor()
+        character_id, engine_name = cursor.execute(
+            "SELECT id, engine FROM character WHERE name = ? AND category = ?", 
+            (name, category)
         ).fetchone()
 
         # update the phrase selector
@@ -387,85 +439,93 @@ class DetailSide(tk.Frame):
         self.engineSelect.set_engine(engine_name)
 
         # set engine and parameters
-        self.engineSelect.engine_parameters.load_npc(npc_id)
+        self.engineSelect.engine_parameters.load_character(raw_name)
         return
 
 
+class Character:
+    def __init__(self, id, name, engine, category):
+        self.id = id
+        self.name = name
+        self.category = category
+    
+    @classmethod
+    def get_by_raw_name(cls, raw_name):
+        if not raw_name:
+            return None
+
+        category, name = raw_name.split(maxsplit=1)
+
+        cursor = get_cursor()
+        character_id, engine_name = cursor.execute(
+            "SELECT id, engine FROM character WHERE name = ? AND category = ?", 
+            (name, category)
+        ).fetchone()
+
+        return cls(id=character_id, name=name, engine=engine_name, category=category)
+
+    def __str__(self) -> str:
+        return f"{self.category} {self.name}"
+    
+    def get_phrases(self):
+        """
+        Return a list of all the phrases this character has previously spoken
+        """
+        cursor = get_cursor()
+        return [
+            phrase[0] for phrase in cursor.execute("""
+                SELECT text FROM phrases WHERE character_id = ?
+            """, (self.id, )).fetchall()
+        ]        
+
 class ListSide(tk.Frame):
-    def __init__(self, parent, db_connection, detailside, *args, **kwargs):
+    def __init__(self, parent, detailside, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.db_connection = db_connection
         self.detailside = detailside
 
         self.list_items = tk.Variable(value=[])
-        self.refresh_npc_list()
+        self.refresh_character_list()
 
         self.listbox = tk.Listbox(self, height=10, listvariable=self.list_items)
         self.listbox.pack(side="top", expand=True, fill=tk.BOTH)
 
-        self.listbox.bind("<<ListboxSelect>>", self.npc_selected)
+        self.listbox.bind("<<ListboxSelect>>", self.character_selected)
 
-        new_npc_frame = tk.Frame(self)
-        self.new_entry = tk.Entry(new_npc_frame)
-        self.new_entry.pack(side="left", expand=True, fill=tk.X)
-
-        tk.Button(new_npc_frame, text="Add NPC", command=self.add_npc).pack(side="left")
-        new_npc_frame.pack(side="top", fill=tk.X)
-
-    def npc_selected(self, event=None):
+    def character_selected(self, event=None):
         if len(self.listbox.curselection()) == 0:
             # we de-selected everything
+            # TODO: wipe the detail side?
             return
 
         index = int(self.listbox.curselection()[0])
         value = self.listbox.get(index)
 
-        self.detailside.load_npc(value)
+        self.detailside.load_character(value)
 
-    def refresh_npc_list(self):
-        cursor = self.db_connection.cursor()
-        all_npcs = cursor.execute("select id, name from npc order by name").fetchall()
-        if all_npcs:
-            self.list_items.set([npc[1] for npc in all_npcs])
-
-    def add_npc(self):
-        cursor = self.db_connection.cursor()
-        name = self.new_entry.get()
-        cursor.execute(
-            "INSERT INTO npc (name, engine) VALUES (:name, :engine);",
-            {"name": name, "engine": voice_builder.default_engine},
-        )
-        self.db_connection.commit()
-        # npc = cursor.lastrowid
-        # create default engine config here?
-        self.listbox.insert(0, name)
-
-        # select this list item, since it is now
-        # the first item this is pretty easy.
-        self.listbox.selection_clear(0, tk.END)
-        self.listbox.selection_set(0)
+    def refresh_character_list(self):
+        cursor = get_cursor()
+        all_characters = cursor.execute("select id, name, category from character order by name").fetchall()
+        if all_characters:
+            self.list_items.set([f"{character[2]} {character[1]}" for character in all_characters])
 
 
 def main():
     prepare_database()
-
-    db_connection = sqlite3.connect("voices.db")
-    cursor = db_connection.cursor()
-
     root = tk.Tk()
     root.geometry("640x480+300+300")
     root.resizable(False, False)
     root.title("Character Voice Editor")
 
-    first_npc = cursor.execute("select id, name from npc order by name").fetchone()
+    cursor = get_cursor()
+    first_character = cursor.execute("select id, name, category from character order by name").fetchone()
 
-    if first_npc:
-        selected_npc = tk.StringVar(value=first_npc[1])
+    if first_character:
+        selected_character = tk.StringVar(value=f"{first_character[2]} {first_character[1]}")
     else:
-        selected_npc = tk.StringVar()
+        selected_character = tk.StringVar()
 
-    detailside = DetailSide(root, db_connection, selected_npc)
-    listside = ListSide(root, db_connection, detailside)
+    detailside = DetailSide(root, selected_character)
+    listside = ListSide(root, detailside)
 
     listside.pack(side="left", fill="both", expand=True)
     detailside.pack(side="left", fill="both", expand=True)
@@ -478,20 +538,31 @@ main()
 # TODO (eta: weeks)
 # ----
 
+# Research
+##########
+# Can I use pedalboard for reading/writing mp3 files?
+
+# Release Blockers
+#######################
 # friendly installer/uninstaller
+# effects are not removed when you change between npc
+# more effects
+
+# Not-blocking Glitches
+#######################
+# logging is weird.. debug isn't coming through and I'm not sure why
 # in-app update of app software
 # in-app update of voice database
 # when you edit an NPC, option to rebuild everything they say with the new 
 #     settings saving the mp3 to the file system (same as cache)
-# persist effects to database
 # right side does not fill the width
 # no mechanism to remove NPCs
 # mouse-scroll doesn't move right side scrollbar
 # removing effects does not repack
-# effects are not removed when you change between npc
 
 # DONE
 # ----
+# persist effects to database
 # no mechanism to remove effects
 # add the things NPCs actually say to the DB, use those to populate 'Play' in the editor
 # NPC list isn't populated

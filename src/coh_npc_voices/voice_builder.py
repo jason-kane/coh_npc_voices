@@ -4,6 +4,9 @@ import os
 import re
 from engines import get_engine
 
+
+MESSAGE_CATEGORIES = ['npc', 'system', 'player']
+
 default_engine = "Windows TTS"
 
 class tkvar_ish:
@@ -12,7 +15,7 @@ class tkvar_ish:
     def get(self):
         return self.value
 
-def create(con, npc_id, message, cachefile):
+def create(con, character_id, message, cachefile):
     """
     This NPC exists in our database but we don't
     have this particular message rendered.
@@ -23,27 +26,27 @@ def create(con, npc_id, message, cachefile):
     3. persist as an mp3 in cachefile
     """
     cursor = con.cursor()
-    name, engine_name = cursor.execute(
-        "select name, engine from npc where id=?", 
-        (npc_id, )
+    name, engine_name, category = cursor.execute(
+        "select name, engine, category from character where id=?", 
+        (character_id, )
     ).fetchone()
     engine = get_engine(engine_name)
     effect_list = []
 
     # have we seen this particular phrase before?
     phrase = cursor.execute("""
-        SELECT id FROM phrases WHERE npc_id=? AND text=?
-    """, (npc_id, message)).fetchone()
+        SELECT id FROM phrases WHERE character_id=? AND text=?
+    """, (character_id, message)).fetchone()
     if phrase is None:
         # it does not exist, now it does.
         cursor.execute("""
-            INSERT INTO phrases (npc_id, text) VALUES (?, ?)
-        """, (npc_id, message))
+            INSERT INTO phrases (character_id, text) VALUES (?, ?)
+        """, (character_id, message))
         con.commit()
 
     try:
         clean_name = re.sub(r'[^\w]', '', name)
-        os.mkdir(os.path.join("clip_library", clean_name))
+        os.mkdir(os.path.join("clip_library", category, clean_name))
     except OSError as error:
         # the directory already exists.  This is not a problem.
         pass
@@ -53,7 +56,7 @@ def create(con, npc_id, message, cachefile):
         WaveFile(cachefile + '.wav')
     ])
     
-    selected_name = tkvar_ish(name)
+    selected_name = tkvar_ish(f"{category} {name}")
 
     engine(None, con, selected_name).say(message, effect_list, sink=sink)
     audio = pydub.AudioSegment.from_wav(cachefile + ".wav")

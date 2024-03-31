@@ -8,8 +8,17 @@ import voicebox
 from google.cloud import texttospeech
 from voicebox.types import StrOrSSML
 from voicebox.audio import Audio
+from db import get_cursor, commit
+import sys
 
 import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+
 log = logging.getLogger('__name__')
 
 
@@ -32,19 +41,20 @@ class WindowsSapi(voicebox.tts.tts.TTS):
         return audio
 
 
-def get_npc_by_name(cursor, npc_name):
+def get_character_by_raw_name(character_name):
+    cursor = get_cursor()
+    category, name = character_name.split(maxsplit=1)
     return cursor.execute(
-        'SELECT * FROM npc WHERE name = ?',
-        (npc_name, )
+        'SELECT id, name, engine, category FROM character WHERE name = ? AND category = ?',
+        (name, category)
     ).fetchone()
 
 # Base Class for engines
 class TTSEngine(tk.Frame):
-    def __init__(self, parent, con, selected_npc, *args, **kwargs):        
+    def __init__(self, parent, selected_character, *args, **kwargs):        
         super().__init__(parent, *args, **kwargs)
         self.parent = parent
-        self.con = con
-        self.selected_npc = selected_npc
+        self.selected_character = selected_character
         self.parameters = set()
 
     def say(self, message, effects, sink=None, *args, **kwargs):
@@ -58,67 +68,73 @@ class TTSEngine(tk.Frame):
     def get_tts(self):
         return voicebox.tts.tts.TTS()
     
-    def load_npc(self, npc_name):
+    def load_character(self, raw_name):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
-        cursor = self.con.cursor()
+        log.info(f'load_character({raw_name})')
+        cursor = get_cursor()
         
-        npc = get_npc_by_name(cursor, npc_name)
-        if npc is None:
+        character = get_character_by_raw_name(raw_name)
+        if character is None:
             log.info('No engine configuration available in the database')
             return
         
-        npc_id, _, engine = npc
+        character_id, _, engine, category = character
         for (param_id, key, value) in cursor.execute(
-            'SELECT id, key, value FROM base_tts_config WHERE npc_id = ?',
-            (npc_id, )
+            'SELECT id, key, value FROM base_tts_config WHERE character_id = ?',
+            (character_id, )
         ).fetchall():
             if key in self.parameters:
+                log.info(f'Assigning value for {key} -> {value}')
                 getattr(self, key).set(value)
+            else:
+                log.info(f'The database has no value for {key}')
 
-    def save_npc(self, npc_name):
+    def save_character(self, raw_name):
         # Retrieve configuration settings from widgets
         # and persist them to the DB
-        cursor = self.con.cursor()
-        npc_id, _, engine = get_npc_by_name(cursor, npc_name)
+        log.info(f'save_character({raw_name})')
+        cursor = get_cursor()
+        character_id, name, engine, category = get_character_by_raw_name(raw_name)
 
         for key in self.parameters:
+            log.info(f'Processing attribute {key}...')
             # do we already have a value for this key?
             value = str(getattr(self, key).get())
             
             row = cursor.execute(
-                'SELECT id, value from base_tts_config WHERE npc_id = ? and key = ?',
-                (npc_id, key)
+                'SELECT id, value from base_tts_config WHERE character_id = ? and key = ?',
+                (character_id, key)
             ).fetchone()
 
             if row:
                 row_id, old_value = row
 
                 if old_value != value:
-                    log.debug(f"Updating {key}.  Changing {old_value} to {value}")
+                    log.info(f"Updating {key}.  Changing {old_value} to {value}")
                     cursor.execute(
                         'UPDATE base_tts_config SET value = ? WHERE id = ?',
                         (value, row_id)
                     )
-                    self.con.commit()
+                    commit()
 
             else:
                 # we do not have an existing value
-                log.debug(f'Saving to database: ({npc_id!r}, {key!r}, {value!r})')
-                cursor.execute('INSERT INTO base_tts_config (npc_id, key, value) VALUES (:npc_id, :key, :value)', {
-                        'npc_id': npc_id, 
+                log.info(f'Saving to database: ({character_id!r}, {key!r}, {value!r})')
+                cursor.execute('INSERT INTO base_tts_config (character_id, key, value) VALUES (:character_id, :key, :value)', {
+                        'character_id': character_id, 
                         'key': key, 
                         'value': value
                     }
                 )
-                self.con.commit()       
+                commit()       
 
 
 class WindowsTTS(TTSEngine):
     cosmetic = "Windows TTS"
-    def __init__(self, parent, con, selected_npc, *args, **kwargs):
-        super().__init__(parent, con, selected_npc, *args, **kwargs)
-
+    def __init__(self, parent, selected_character, *args, **kwargs):
+        super().__init__(parent, selected_character, *args, **kwargs)
+        self.selected_character = selected_character
         self.voice_name = tk.StringVar()
         self.rate = tk.IntVar(value=1)
 
@@ -126,7 +142,7 @@ class WindowsTTS(TTSEngine):
             'voice_name',
             'rate'
         ))
-        self.load_npc(self.selected_npc.get())
+        self.load_character(self.selected_character.get())
         
         voice_frame = tk.Frame(self)
         tk.Label(
@@ -143,8 +159,8 @@ class WindowsTTS(TTSEngine):
         voice_combo['values'] = all_voices
         voice_combo['state'] = 'readonly'
         voice_combo.pack(side='left', fill='x', expand=True)
-
-        self.voice_name.set(all_voices[0])
+        
+        self.voice_name.trace_add("write", self.change_voice_name)
         voice_frame.pack(side='top', fill='x', expand=True)
 
         rate_frame = tk.Frame(self)
@@ -167,7 +183,13 @@ class WindowsTTS(TTSEngine):
         rate_frame.pack(side='top', fill='x', expand=True)
 
     def change_voice_rate(self, a, b, c):
-        self.save_npc(self.selected_npc.get())
+        self.save_character(self.selected_character.get())
+    
+    def change_voice_name(self, a, b, c):
+        # pull the chosen voice name out of variable linked to the widget
+        voice_name = self.voice_name.get()
+        log.warning(f'saving change of voice_name to {voice_name}')
+        self.save_character(self.selected_character.get())
 
     def get_tts(self):
         return WindowsSapi(
@@ -187,11 +209,10 @@ class WindowsTTS(TTSEngine):
 
 class GoogleCloud(TTSEngine):
     cosmetic = "Google Text-to-Speech"
-    def __init__(self, parent, con, selected_npc, *args, **kwargs):        
-        super().__init__(parent, con, selected_npc, *args, **kwargs)
+    def __init__(self, parent, selected_character, *args, **kwargs):        
+        super().__init__(parent, selected_character, *args, **kwargs)
 
-        self.con = con
-        self.selected_npc = selected_npc
+        self.selected_character = selected_character
 
         # with defaults
         self.language_code = tk.StringVar(value='en-US')
@@ -207,9 +228,9 @@ class GoogleCloud(TTSEngine):
             'pitch'
         ))
 
-        self.load_npc(self.selected_npc.get())
+        self.load_character(self.selected_character.get())
 
-        gender = self.get_gender(self.selected_npc.get())
+        gender = self.get_gender(self.selected_character.get())
         if gender:
             self.ssml_gender.set(gender[0])
         else:
@@ -227,7 +248,6 @@ class GoogleCloud(TTSEngine):
             textvariable=self.language_code, 
         )
         all_languages = self.get_language_codes()
-        self.language_code.set(all_languages[0])
         language_combo['values'] = all_languages
         language_combo['state'] = 'readonly'
 
@@ -249,9 +269,9 @@ class GoogleCloud(TTSEngine):
         voice_combo['values'] = all_voices
         voice_combo['state'] = 'readonly'
         voice_combo.pack(side='left', fill='x', expand=True)
-
-        self.voice_name.set(all_voices[0])
         voice_frame.pack(side='top', fill='x', expand=True)
+
+        self.voice_name.trace_add("write", self.change_voice_name)
 
         # when voice_combo changes re-set this
         # gender label.
@@ -260,7 +280,6 @@ class GoogleCloud(TTSEngine):
             textvariable=self.ssml_gender,
             anchor="e"
         ).pack(side="top", fill='x', expand=True)
-        self.voice_name.trace_add("write", self.change_voice_name)
 
         rate_frame = tk.Frame(self)
         tk.Label(
@@ -307,7 +326,7 @@ class GoogleCloud(TTSEngine):
         pitch_frame.pack(side='top', fill='x', expand=True)
 
     def get_gender(self, voice_name):
-        cursor = self.con.cursor()
+        cursor = get_cursor()
         gender = cursor.execute("""
             SELECT
                 ssml_gender
@@ -320,22 +339,22 @@ class GoogleCloud(TTSEngine):
 
     def change_voice_name(self, a, b, c):
         # the user have chosen a different voice name
-        gender = self.get_gender(self.selected_npc.get())
+        gender = self.get_gender(self.selected_character.get())
         if gender:
             self.ssml_gender.set(gender[0])
-        self.save_npc(self.selected_npc.get())
+        self.save_npc(self.selected_character.get())
 
     def change_voice_rate(self, a, b, c):
-        self.save_npc(self.selected_npc.get())
+        self.save_npc(self.selected_character.get())
 
     def change_voice_pitch(self, a, b, c):
-        self.save_npc(self.selected_npc.get())
+        self.save_npc(self.selected_character.get())
 
     def get_language_codes(self):
         return ['en-US', ]
     
     def get_voice_names(self):
-        cursor = self.con.cursor()
+        cursor = get_cursor()
         
         all_voices = cursor.execute(
             'SELECT name FROM google_voices WHERE language_code = ? ORDER BY name',
@@ -357,7 +376,7 @@ class GoogleCloud(TTSEngine):
                     'language_code': self.language_code.get(),
                     'ssml_gender': texttospeech.SsmlVoiceGender(voice.ssml_gender).name
                 })
-            self.con.commit()
+            commit()
             return sorted([n.name for n in resp.voices])
         
     def get_tts(self):
@@ -389,14 +408,14 @@ class GoogleCloud(TTSEngine):
 
 class AmazonPolly(TTSEngine):
     cosmetic = "Amazon Polly"
-    def __init__(self, parent, con, selected_npc, *args, **kwargs):        
-        super().__init__(parent, con, selected_npc, *args, **kwargs)
+    def __init__(self, parent, selected_character, *args, **kwargs):        
+        super().__init__(parent, selected_character, *args, **kwargs)
 
 
 class ElevenLabs(TTSEngine):
     cosmetic = "Eleven Labs"
-    def __init__(self, parent, con, selected_npc, *args, **kwargs):        
-        super().__init__(parent, con, selected_npc, *args, **kwargs)
+    def __init__(self, parent, selected_character, *args, **kwargs):        
+        super().__init__(parent, selected_character, *args, **kwargs)
 
 
 def get_engine(engine_name):
