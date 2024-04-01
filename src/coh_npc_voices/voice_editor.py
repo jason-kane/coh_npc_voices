@@ -755,10 +755,6 @@ if __name__ == '__main__':
 # TODO (eta: weeks)
 # ----
 
-# Research
-##########
-# Can I use pedalboard for reading/writing mp3 files? (removing ffmpeg requirement)
-
 # Release Blockers
 #######################
 # friendly installer/uninstaller
