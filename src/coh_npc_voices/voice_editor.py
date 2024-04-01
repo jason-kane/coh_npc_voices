@@ -1,15 +1,21 @@
 """Hello World application for Tkinter"""
 
-import tkinter as tk
-from tkinter import ttk, font
-import os
 import logging
+import multiprocessing
+import os
+import queue
 import sys
+import tkinter as tk
+from tkinter import font, ttk
+
+import db
 import effects
 import engines
-import voice_builder
-from db import get_cursor, commit, prepare_database
 
+# import voice_builder
+import npc_chatter
+from pedalboard.io import AudioFile
+from voicebox.sinks import Distributor, SoundDevice, WaveFile
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -59,9 +65,58 @@ class ChoosePhrase(tk.Frame):
         log.debug(f"Engine: {ttsengine}")
 
         effect_list = [e.get_effect() for e in self.detailside.effect_list.effects]
-        # None because we aren't attaching any widgets
-        log.info(f'effect_list: {effect_list}')
-        ttsengine(None, self.selected_character).say(message, effect_list)
+        
+        cursor = db.get_cursor()
+
+        character = Character.get_by_raw_name(self.selected_character.get())
+
+        all_phrases = [
+            n[2] for n in cursor.execute("""
+                SELECT
+                    id, character_id, text 
+                FROM 
+                    phrases 
+                WHERE 
+                    character_id = ?
+            """, (character.id, )).fetchall()
+        ]
+
+        _, clean_name = db.clean_customer_name(character.name)
+        filename = db.cache_filename(character.name, message)
+        log.info(f'all_phrases: {all_phrases}')
+        if message in all_phrases:
+            cachefile = os.path.abspath(
+                os.path.join(
+                    "clip_library",
+                    character.category,
+                    clean_name,
+                    filename
+                )
+            )
+
+            sink = Distributor([
+                SoundDevice(),
+                WaveFile(cachefile + '.wav')
+            ])
+
+            log.info(f'effect_list: {effect_list}')
+            # None because we aren't attaching any widgets
+            ttsengine(None, self.selected_character).say(message, effect_list, sink=sink)
+
+            log.info('Converting to mp3...')
+            with AudioFile(cachefile + ".wav") as input:
+                with AudioFile(
+                    filename=cachefile, 
+                    samplerate=input.samplerate,
+                    num_channels=input.num_channels
+                ) as output:
+                    while input.tell() < input.frames:
+                        output.write(input.read(1024))
+                    log.info(f'Wrote {cachefile}')
+        else:
+            # No Cache
+            log.info(f'Bypassing filesystem caching ({message})')
+            ttsengine(None, self.selected_character).say(message, effect_list)
 
 
 class EngineSelection(tk.Frame):
@@ -130,7 +185,7 @@ class EngineSelectAndConfigure(tk.Frame):
         """
         save this engine selection to the database
         """
-        cursor = get_cursor()
+        cursor = db.get_cursor()
         full_name = self.selected_character.get()
         if not full_name:
             return
@@ -141,22 +196,33 @@ class EngineSelectAndConfigure(tk.Frame):
             (self.selected_engine.get(), name, category),
         )
 
-        commit()
+        db.commit()
+        cursor.close()
+
         log.debug(
             f"Saved engine={self.selected_engine.get()} for {category} named {name}"
         )
 
     def load_character(self):
-        cursor = get_cursor()
+        cursor = db.get_cursor()
         full_name = self.selected_character.get()
         if not full_name:
             log.warning('Name is required to load a character')
             return
         
         category, name = full_name.split(maxsplit=1)
-        engine_name = cursor.execute(
-            "SELECT engine FROM character WHERE name = ? AND category = ?", (name, category)
+        engine_name = cursor.execute("""
+            SELECT 
+                engine 
+            FROM 
+                character 
+            WHERE 
+                name = ? 
+            AND 
+                category = ?
+            """, (name, category)
         ).fetchone()
+        cursor.close()
 
         if engine_name:
             self.selected_engine.set(engine_name[0])
@@ -177,7 +243,13 @@ class EffectList(tk.Frame):
 
     def load_effects(self):
         log.info('EffectList.load_effects()')
-        cursor = get_cursor()
+        cursor = db.get_cursor()
+
+        # teardown any effects already in place
+        while self.effects:
+            effect = self.effects.pop()
+            effect.pack_forget()
+
         character = Character.get_by_raw_name(self.selected_character.get())
 
         voice_effects = cursor.execute("""
@@ -220,8 +292,14 @@ class EffectList(tk.Frame):
             )).fetchall()
 
             for key, value in effect_setting:
-                tkvar = getattr(effect_config_frame, key)
-                tkvar.set(value)
+
+                tkvar = getattr(effect_config_frame, key, None)
+                if tkvar:
+                    tkvar.set(value)
+                else:
+                    log.error(f'Invalid configuration.  {key} is not available for {effect_config_frame}')
+
+        cursor.close()
 
     def add_effect(self, effect_name):
         """
@@ -266,7 +344,7 @@ class EffectList(tk.Frame):
 
             # persist this change to the database
             log.info(f'Saving new effect {effect_name} to database')
-            cursor = get_cursor()
+            cursor = db.get_cursor()
             cursor.execute("""
                 INSERT 
                     INTO effects (character_id, effect_name)
@@ -293,9 +371,9 @@ class EffectList(tk.Frame):
                     'value': value
                 })
 
-            commit()
-            effect_config_frame.effect_id.set(effect_id)
-        
+            db.commit()
+            cursor.close()
+            effect_config_frame.effect_id.set(effect_id)      
     
     def remove_effect(self, effect_obj):
         log.info(f'Removing effect {effect_obj}')
@@ -304,7 +382,7 @@ class EffectList(tk.Frame):
         self.effects.remove(effect_obj)
         
         # remove it from the database
-        cursor = get_cursor()
+        cursor = db.get_cursor()
         cursor.execute("""
             DELETE
                 FROM effects
@@ -312,7 +390,8 @@ class EffectList(tk.Frame):
                 id=?
             """, (effect_obj.effect_id.get(), )
         )
-        commit()
+        db.commit()
+        cursor.close()
         # forget the widgets for this object
         effect_obj.pack_forget()
 
@@ -421,16 +500,17 @@ class DetailSide(tk.Frame):
         # loop effects
         # add each effect
         # set parameters for each effect
-        log.debug(f'load_character({raw_name})')
+        log.debug(f'DetailSide.load_character({raw_name})')
         self.selected_character.set(raw_name)
 
         category, name = raw_name.split(maxsplit=1)
 
-        cursor = get_cursor()
+        cursor = db.get_cursor()
         character_id, engine_name = cursor.execute(
             "SELECT id, engine FROM character WHERE name = ? AND category = ?", 
             (name, category)
         ).fetchone()
+        cursor.close()
 
         # update the phrase selector
         self.phrase_selector.populate_phrases()
@@ -440,7 +520,9 @@ class DetailSide(tk.Frame):
 
         # set engine and parameters
         self.engineSelect.engine_parameters.load_character(raw_name)
-        return
+        
+        # effects
+        self.effect_list.load_effects()
 
 
 class Character:
@@ -456,11 +538,12 @@ class Character:
 
         category, name = raw_name.split(maxsplit=1)
 
-        cursor = get_cursor()
+        cursor = db.get_cursor()
         character_id, engine_name = cursor.execute(
             "SELECT id, engine FROM character WHERE name = ? AND category = ?", 
             (name, category)
         ).fetchone()
+        cursor.close()
 
         return cls(id=character_id, name=name, engine=engine_name, category=category)
 
@@ -471,12 +554,14 @@ class Character:
         """
         Return a list of all the phrases this character has previously spoken
         """
-        cursor = get_cursor()
-        return [
+        cursor = db.get_cursor()
+        phrases = [
             phrase[0] for phrase in cursor.execute("""
                 SELECT text FROM phrases WHERE character_id = ?
             """, (self.id, )).fetchall()
-        ]        
+        ]
+        cursor.close()
+        return phrases
 
 class ListSide(tk.Frame):
     def __init__(self, parent, detailside, *args, **kwargs):
@@ -488,6 +573,17 @@ class ListSide(tk.Frame):
 
         self.listbox = tk.Listbox(self, height=10, listvariable=self.list_items)
         self.listbox.pack(side="top", expand=True, fill=tk.BOTH)
+
+        action_frame = tk.Frame(self)
+        tk.Button(
+            action_frame,
+            text="Refresh",
+            command=self.refresh_character_list
+        ).pack(
+            side="right"
+        )
+
+        action_frame.pack(side="top", expand=False, fill=tk.X)
 
         self.listbox.bind("<<ListboxSelect>>", self.character_selected)
 
@@ -503,29 +599,147 @@ class ListSide(tk.Frame):
         self.detailside.load_character(value)
 
     def refresh_character_list(self):
-        cursor = get_cursor()
-        all_characters = cursor.execute("select id, name, category from character order by name").fetchall()
+        log.info('Refreshing Character list from the database...')
+        cursor = db.get_cursor()
+        all_characters = cursor.execute("""
+            SELECT 
+                id, name, category 
+            FROM 
+                character 
+            ORDER BY category, name
+        """).fetchall()
+        cursor.close()
         if all_characters:
             self.list_items.set([f"{character[2]} {character[1]}" for character in all_characters])
 
 
+class ChatterService:
+    def start(self):
+        q = queue.Queue()
+        npc_chatter.TightTTS(q)
+        q.put((None, "Attaching to most recent log...", 'system'))
+
+        logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
+        #logdir = "g:/CoH/homecoming/accounts/VVonder/Logs"
+        badges = True
+        team = True
+        npc = True
+
+        ls = npc_chatter.LogStream(logdir, q, badges, npc, team)
+        while True:
+            ls.tail()        
+
+
+class Chatter(tk.Frame):
+    attach_label = 'Attach to Log'
+    detach_label = "Detach from Log"
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self.button_text = tk.StringVar(value=self.attach_label)
+        self.attached = False
+
+        cursor = db.get_cursor()
+        response_tuple = cursor.execute("""
+            SELECT 
+                logdir 
+            FROM 
+                settings
+        """).fetchone()
+        cursor.close()
+        if response_tuple:
+            logdir = response_tuple[0]
+        else:
+            logdir = ""
+
+        self.logdir = tk.StringVar(value=logdir)
+        self.logdir.trace_add('write', self.save_logdir)
+
+        tk.Button(
+            self, 
+            textvariable=self.button_text, 
+            command=self.attach_chatter
+        ).pack(
+            side="left"
+        )
+        tk.Entry(
+            self, 
+            textvariable=self.logdir
+        ).pack(
+            side="left",
+            fill='x',
+            expand=True
+        )
+         
+        tk.Button(
+            self,
+            text="Set Log Dir",
+            command=self.ask_directory
+        ).pack(side="left")
+        
+        self.cs = ChatterService()
+
+    def save_logdir(self, *args):
+        cursor = db.get_cursor()
+        cursor.execute("""
+            UPDATE 
+                settings
+            SET
+                logdir=?
+        """, (self.logdir.get(), ))
+        db.commit()
+        cursor.close()
+
+    def ask_directory(self):
+        dirname = tk.filedialog.askdirectory()
+        self.logdir.set(dirname)
+
+    def attach_chatter(self):
+        """
+        Not sure exactly how I want to do this.  I think the best long term
+        option is to just launch a process and be done with it.
+        """
+        if self.attached:
+            # we are already attached, I guess we want to stop.
+            self.p.terminate()
+            self.button_text.set(self.attach_label)
+            self.attached = False
+            log.info('Detached')
+        else:
+            # we are not attached, lets do that.
+            self.attached = True
+            self.button_text.set(self.detach_label)
+            self.p = multiprocessing.Process(target=self.cs.start)
+            self.p.start()
+            log.info('Attached')
+
+
 def main():
-    prepare_database()
+    db.prepare_database()
     root = tk.Tk()
-    root.geometry("640x480+300+300")
-    root.resizable(False, False)
+    # root.iconbitmap("myIcon.ico")
+    root.geometry("640x480+200+200")
+    root.resizable(True, True)
     root.title("Character Voice Editor")
 
-    cursor = get_cursor()
+    chatter = Chatter(root)
+    chatter.pack(side="top", fill="x")
+
+    editor = tk.Frame(root)
+    editor.pack(side="top", fill="both", expand=True)
+
+    cursor = db.get_cursor()
     first_character = cursor.execute("select id, name, category from character order by name").fetchone()
+    cursor.close()
 
     if first_character:
         selected_character = tk.StringVar(value=f"{first_character[2]} {first_character[1]}")
     else:
         selected_character = tk.StringVar()
 
-    detailside = DetailSide(root, selected_character)
-    listside = ListSide(root, detailside)
+    detailside = DetailSide(editor, selected_character)
+    listside = ListSide(editor, detailside)
 
     listside.pack(side="left", fill="both", expand=True)
     detailside.pack(side="left", fill="both", expand=True)
@@ -533,20 +747,28 @@ def main():
     root.mainloop()
 
 
-main()
+if __name__ == '__main__':
+    if sys.platform.startswith('win'):
+        multiprocessing.freeze_support()
+    main()
 
 # TODO (eta: weeks)
 # ----
 
 # Research
 ##########
-# Can I use pedalboard for reading/writing mp3 files?
+# Can I use pedalboard for reading/writing mp3 files? (removing ffmpeg requirement)
 
 # Release Blockers
 #######################
 # friendly installer/uninstaller
-# effects are not removed when you change between npc
-# more effects
+#     py2exe?
+#        doesn't work with 3.12
+#     pyinstaller?
+#        can't get multiprocessing to work :(  it spawns a whole
+#        new editor when you attach.
+# more effects (I really want the vocoder for clockworks)
+# better icon
 
 # Not-blocking Glitches
 #######################
@@ -562,6 +784,8 @@ main()
 
 # DONE
 # ----
+# some mechanism to update/refresh the character list when new entries are added
+# effects are not removed when you change between npc
 # persist effects to database
 # no mechanism to remove effects
 # add the things NPCs actually say to the DB, use those to populate 'Play' in the editor

@@ -1,10 +1,11 @@
-import tkinter as tk
-from tkinter import ttk, font
-import voicebox
-import pedalboard
-from db import get_cursor, commit
-
 import logging
+import tkinter as tk
+from tkinter import font, ttk
+
+import pedalboard
+import voicebox
+from db import commit, get_cursor
+
 log = logging.getLogger('__name__')
 
 WRAPLENGTH=250
@@ -22,14 +23,6 @@ class LScale(tk.Frame):
         *args, digits=None, resolution=None, **kwargs
     ):
         super().__init__(parent, *args, **kwargs)
-        tk.Label(
-            self,
-            text=label,
-            anchor="e",
-            wraplength=WRAPLENGTH,
-            justify='left'
-        ).pack(side='left', fill='x')
-        
         variable = tk.DoubleVar(
             name=f"{pname}",
             value=default
@@ -37,6 +30,14 @@ class LScale(tk.Frame):
         variable.trace_add("write", parent.reconfig)
         setattr(parent, pname, variable)
         parent.parameters.append(pname)
+
+        tk.Label(
+            self,
+            text=label,
+            anchor="e",
+            wraplength=WRAPLENGTH,
+            justify='left'
+        ).pack(side='left', fill='x')
 
         tk.Scale(
             self,
@@ -52,8 +53,8 @@ class LScale(tk.Frame):
 
 
 class LCombo(tk.Frame):
-    def __init__(
-        self,
+
+    def __init__(self,
         parent,
         pname,
         label, 
@@ -61,8 +62,14 @@ class LCombo(tk.Frame):
         default,
         choices, 
         *args, **kwargs
-    ):        
+    ): 
         super().__init__(parent, *args, **kwargs)
+
+        variable = tk.StringVar(value=default)
+        variable.trace_add("write", parent.reconfig)
+        setattr(parent, pname, variable)
+        parent.parameters.append(pname)
+
         tk.Label(
             self,
             text=label,
@@ -71,19 +78,14 @@ class LCombo(tk.Frame):
             justify='left'
         ).pack(side='left', fill='x')
 
-        variable = tk.StringVar(value=default)
-        variable.trace_add("write", parent.reconfig)
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)
-
-        self.options = ttk.Combobox(
+        options = ttk.Combobox(
             self, 
             textvariable=variable
         )
-        self.options['values'] = list(choices)
-        self.options['state'] = 'readonly'
-        
-        self.options.pack(side='left', fill='x', expand=True)
+        options['values'] = list(choices)
+        options['state'] = 'readonly'
+            
+        options.pack(side='left', fill='x', expand=True)
 
 
 class LBoolean(tk.Frame):
@@ -96,23 +98,23 @@ class LBoolean(tk.Frame):
         default,
         variable,
         *args, **kwargs
-    ):        
+    ):
         super().__init__(parent, *args, **kwargs)
-        tk.Label(
-            self,
-            text=label,
-            anchor="e",
-            wraplength=WRAPLENGTH,
-            justify='left'
-        ).pack(side='left', fill='x')
-        
         variable = tk.BooleanVar(
             name=f"{pname}",
             value=default
         )
         variable.trace_add("write", parent.reconfig)
         setattr(parent, pname, variable)
-        parent.parameters.append(pname)        
+        parent.parameters.append(pname)  
+
+        tk.Label(
+            self,
+            text=label,
+            anchor="e",
+            wraplength=WRAPLENGTH,
+            justify='left'
+        ).pack(side='left', fill='x')  
 
         ttk.Checkbutton(
             self, 
@@ -129,7 +131,7 @@ class EffectParameterEditor(tk.Frame):
 
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.parent = parent
+        self.parent = parent  # parent is the effectlist
         self.effect_id = tk.IntVar()
         self.parameters = []
 
@@ -142,7 +144,7 @@ class EffectParameterEditor(tk.Frame):
             wraplength=WRAPLENGTH,
             justify='left'
         ).pack(side='left', fill='x', expand=True)
-        
+    
         tk.Button(
             topbar,
             text="X",
@@ -195,7 +197,12 @@ class EffectParameterEditor(tk.Frame):
         for id, key, value in effect_setting:
             value = float(value)
 
-            new_value = getattr(self, key).get()
+            try:
+                new_value = getattr(self, key).get()
+            except AttributeError:
+                log.error(f'Invalid configuration.  Cannot set {key} on a {self} effect.')
+                continue
+
             if new_value != value:
                 log.info(f'Saving changed value {id}:{key} {value!r}=>{new_value!r}')
                 # this value is different than what
@@ -260,10 +267,11 @@ class BandpassFilter(EffectParameterEditor):
 
         LCombo(
             self,
-            'Type',
-            'type of IIR filter to design',
+            pname="type_",
+            label='Type',
+            desc='type of IIR filter to design',
+            default="butter",
             choices=IIR_FILTERS,
-            variable=self.type_
         ).pack(side='top', fill='x', expand=True)
 
         # TODO:
@@ -576,7 +584,7 @@ class Chorus(EffectParameterEditor):
 
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-
+        
         LScale(
             self,
             pname="rate_hz",
@@ -636,16 +644,19 @@ class Chorus(EffectParameterEditor):
             digits=2,
             resolution=0.1
         ).pack(side='top', fill='x', expand=True)
+    
+    def get_effect(self, values=None):
+        if values is None:
+            values = {
+                'rate_hz': self.rate_hz.get(), 
+                'depth': self.depth.get(), 
+                'centre_delay_ms': self.centre_delay_ms.get(), 
+                'feedback': self.feedback.get(), 
+                'mix': self.mix.get()
+            }
 
-    def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
-            pedalboard.Chorus(
-                rate_hz=self.rate_hz.get(), 
-                depth=self.depth.get(), 
-                centre_delay_ms=self.centre_delay_ms.get(), 
-                feedback=self.feedback.get(), 
-                mix=self.mix.get()
-            )
+            pedalboard.Chorus(**values)
         )
         return effect
 

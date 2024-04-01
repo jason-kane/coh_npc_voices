@@ -1,17 +1,17 @@
+import logging
+import sys
+import tempfile
 import tkinter as tk
+from dataclasses import dataclass, field
 from tkinter import ttk
 
-from dataclasses import dataclass, field
 import tts.sapi
-import tempfile
 import voicebox
 from google.cloud import texttospeech
-from voicebox.types import StrOrSSML
 from voicebox.audio import Audio
-from db import get_cursor, commit
-import sys
+from voicebox.types import StrOrSSML
 
-import logging
+from db import commit, get_cursor
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -71,7 +71,7 @@ class TTSEngine(tk.Frame):
     def load_character(self, raw_name):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
-        log.info(f'load_character({raw_name})')
+        log.info(f'TTSEngine.load_character({raw_name})')
         cursor = get_cursor()
         
         character = get_character_by_raw_name(raw_name)
@@ -342,13 +342,13 @@ class GoogleCloud(TTSEngine):
         gender = self.get_gender(self.selected_character.get())
         if gender:
             self.ssml_gender.set(gender[0])
-        self.save_npc(self.selected_character.get())
+        self.save_character(self.selected_character.get())
 
     def change_voice_rate(self, a, b, c):
-        self.save_npc(self.selected_character.get())
+        self.save_character(self.selected_character.get())
 
     def change_voice_pitch(self, a, b, c):
-        self.save_npc(self.selected_character.get())
+        self.save_character(self.selected_character.get())
 
     def get_language_codes(self):
         return ['en-US', ]

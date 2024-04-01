@@ -2,6 +2,8 @@ import sqlite3
 import logging
 import sys
 import os
+import re
+import hashlib
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,7 +17,11 @@ log = logging.getLogger("__name__")
 db_connection = None
 
 def get_cursor():
-    return db_connection.cursor()
+    if db_connection:
+        return db_connection.cursor()
+    else:
+        prepare_database()
+        return db_connection.cursor()
 
 def commit():
     db_connection.commit()
@@ -28,7 +34,11 @@ def prepare_database():
         log.info("Initializing new database")
         db_connection = sqlite3.connect("voices.db")
         cursor = get_cursor()
-        cursor.execute("CREATE TABLE settings(dbversion)")
+        cursor.execute("""
+            CREATE TABLE settings (
+                dbversion varchar(16) NOT NULL,
+                logdir varchar(256) default NULL,
+            )""")
         cursor.execute("INSERT INTO settings VALUES(:version)", {"version": "0.1"})
         commit()
     else:
@@ -90,3 +100,19 @@ def prepare_database():
             )
         """)         
         commit()
+
+def clean_customer_name(in_name):
+    if in_name:
+        clean_name = re.sub(r'[^\w]', '', in_name)
+    else:
+        clean_name = "GREAT_NAMELESS_ONE"
+
+    if in_name is None:
+        in_name = "GREAT NAMELESS ONE"
+
+    return in_name, clean_name
+
+def cache_filename(name, message):
+    clean_message = re.sub(r'[^\w]', '', message)
+    clean_message = hashlib.sha256(message.encode()).hexdigest()[:5] + f"_{clean_message[:10]}"
+    return clean_message + ".mp3"

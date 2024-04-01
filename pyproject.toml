@@ -22,9 +22,7 @@ dependencies = [
     "google-cloud-texttospeech",
     "voicebox-tts",
     "wheel",
-    "mp3play",
-    "setuptools",
-    "pydub"
+    "setuptools"
 ]
 
 [build-system]
@@ -36,7 +34,7 @@ Homepage = "https://github.com/jason-kane/coh_npc_voices"
 Issues = "https://github.com/jason-kane/coh_npc_voices/issues"
 
 [project.scripts]
-coh_npc_voices = "coh_npc_voices.npc_chatter:main"
+coh_voices = "coh_npc_voices.voice_editor:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true

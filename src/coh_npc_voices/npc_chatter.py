@@ -1,21 +1,22 @@
 import argparse
 import glob
-import hashlib
 import io
 import logging
 import os
 import queue
-import voicebox
 import re
-import sqlite3
-import string
 import sys
 import threading
 import time
-import pydub
+import io
+
+import db
 import pythoncom
 import tts.sapi
 import voice_builder
+import voicebox
+from pedalboard.io import AudioFile
+from voicebox.tts.utils import get_audio_from_wav_file
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -27,9 +28,6 @@ log = logging.getLogger('__name__')
 
 
 # TODO:
-#  Try https://voicebox.readthedocs.io/en/stable/
-#   does this even work in windows?
-#
 #   goals: 
 #       consistent, unique(-ish) voice for every character in the game that speaks.
 #       free option, best possible quality
@@ -42,17 +40,28 @@ log = logging.getLogger('__name__')
 #       players can tell other players what they sound like, and you then hear them.
 #       speech-to-text chat input (whisper?)
 
-
-class TTS(threading.Thread):
+class TightTTS(threading.Thread):
     def __init__(self, q):
         threading.Thread.__init__(self)
         self.q = q
         self.daemon = True
+
+        # so we can do this much once.
+        for category in ['npc', 'player', 'system']:
+            for dir in [
+                os.path.join("clip_library"),
+                os.path.join("clip_library", category)
+            ]:
+                try:
+                    os.mkdir(dir)
+                except OSError as error:
+                    # the directory already exists.  This is not a problem.
+                    pass
+
         self.start()
 
     def run(self):
         pythoncom.CoInitialize()
-        voice = tts.sapi.Sapi()
         while True:
             raw_message = self.q.get()
             try:
@@ -66,85 +75,74 @@ class TTS(threading.Thread):
                 self.q.task_done()
                 continue
 
-            log.debug(f'Speaking thread received {category} {name}:{message}')
+            log.info(f'Speaking thread received {category} {name}:{message}')
 
-            if name:
-                clean_name = re.sub(r'[^\w]', '', name)
-            else:
-                name = "GREAT_NAMELESS_ONE"
-                clean_name = "GREAT_NAMELESS_ONE"
+            name, clean_name = db.clean_customer_name(name)
+            log.info(f"{name} -- {clean_name}")
 
-            clean_message = re.sub(r'[^\w]', '', message)
-            
             #ie: abcde_timetodan.mp3
-            filename = hashlib.sha256(name.encode()).hexdigest()[:5] + f"_{clean_message[:10]}"
+            filename = db.cache_filename(name, message)
             
             # do we already have this NPC/Message rendered?
-            cachefile = os.path.abspath(os.path.join("clip_library", category, clean_name, f"{filename}.mp3"))
+            try:
+                cachefile = os.path.abspath(
+                    os.path.join("clip_library", category, clean_name, filename)
+                )
+            except Exception:
+                log.error(f'invalid os.path.join("clip_library", {category}, {clean_name}, {filename})')
+                raise
 
-            for dir in [
-                os.path.join("clip_library"),
-                os.path.join("clip_library", category),
-                os.path.join("clip_library", category, clean_name)
-            ]:
-                try:
-                    os.mkdir(dir)
-                except OSError as error:
-                    # the directory already exists.  This is not a problem.
-                    pass
+            try:
+                os.mkdir(os.path.join("clip_library", category, clean_name))
+            except OSError as error:
+                # the directory already exists.  This is not a problem.
+                pass
 
             if os.path.exists(cachefile):
                 log.info(f'Cache Hit: {cachefile}')
-                # we already have this one.  Use it.
-                # cachefile = cachefile.replace(r"\\", "\\\\") 
-                # mp3play.load(cachefile).play()
-                audio = voicebox.tts.utils.get_audio_from_mp3(cachefile)
+                # requires pydub
+                with AudioFile(cachefile) as input:
+                    with AudioFile(
+                        filename=cachefile + ".wav",
+                        samplerate=input.samplerate, 
+                        num_channels=input.num_channels
+                    ) as output:
+
+                        while input.tell() < input.frames:
+                            output.write(input.read(1024))
+
+                audio = get_audio_from_wav_file(
+                    cachefile + ".wav"
+                )
+                os.unlink(cachefile + ".wav")
+
                 voicebox.sinks.SoundDevice().play(audio)
             else:
                 log.info(f'Cache Miss -- {cachefile} not found')
                 # ok, what kind of voice do we want for this NPC?
-                if os.path.exists('voices.db'):
-                    # We might have some fancy voices
-                    con = sqlite3.connect("voices.db")
-                    cursor = con.cursor()
+                
+                # We might have some fancy voices
+                cursor = db.get_cursor()
+                character_id = cursor.execute(
+                    "SELECT id FROM character WHERE name=? AND category=?", 
+                    (name, category)
+                ).fetchone()
+                if character_id:
+                    voice_builder.create(character_id[0], message, cachefile)
+                else:
+                    # this is the first time we've gotten a message from this
+                    # NPC, so they don't have a voice yet.  We will default to
+                    # the windows voice because it is free and no voice effects.
+                    cursor.execute(
+                        "INSERT INTO character (name, engine, category) values (?, ?, ?)", 
+                        (name, voice_builder.default_engine, category)
+                    )
+                    db.commit()
                     character_id = cursor.execute(
-                        "SELECT id FROM character WHERE name=? AND category=?", 
+                        "SELECT id FROM character WHERE name=? and category=?",
                         (name, category)
                     ).fetchone()
-                    if character_id:
-                        voice_builder.create(con, character_id[0], message, cachefile)
-                    else:
-                        # this is the first time we've gotten a message from this
-                        # NPC, so they don't have a voice yet.  We will default to
-                        # the windows voice because it is free and no voice effects.
-                        cursor.execute(
-                            "INSERT INTO character (name, engine, category) values (?, ?, ?)", 
-                            (name, voice_builder.default_engine, category)
-                        )
-                        con.commit()
-                        character_id = cursor.execute(
-                            "SELECT id FROM character WHERE name=? and category=?",
-                            (name, category)
-                        ).fetchone()
-                        voice_builder.create(con, character_id[0], message, cachefile)
-                else:
-                    # we aren't using the sqlite backed persistence, just make an on-the-fly message
-                    # and we are done.
-                    voice.set_rate(2)
-                    voice.say(message) # quick response for the user experience
-                    # then generate an mp3 to store and play for next time
-                    # strange for local voices?  but not for paid text to voice.
-                    # a fraction of a cent _once_ for each bit of dialog in game 
-                    # is cheap.  A fraction every time anyone says anything, that
-                    # adds up, so the cache makes it cheap.
-                    #
-                    # mp3 because it's so universal.  There are a million and 10
-                    # existing tools for manipulating mp3.
-                    log.info(f'Creating {cachefile}.wav')
-                    voice.create_recording(cachefile + ".wav", message)
-                    audio = pydub.AudioSegment.from_wav(cachefile + ".wav")
-                    audio.export(cachefile, format="mp3")
-                    os.unlink(cachefile + ".wav")
+                    voice_builder.create(character_id[0], message, cachefile)
 
             self.q.task_done()
 
@@ -164,7 +162,7 @@ class LogStream:
 
         print(f"Tailing {self.filename}...")
         self.handle = open(os.path.join(logdir, self.filename))
-        # self.handle.seek(0, io.SEEK_END)
+        self.handle.seek(0, io.SEEK_END)
         self.tts_queue = tts_queue
 
     def tail(self):
@@ -172,7 +170,7 @@ class LogStream:
         # each of them.
         for line in self.handle.readlines():
             if line.strip():
-                print(line.split(None, 2))
+                # print(line.split(None, 2))
                 try:
                     _, _, line_string = line.split(None, 2)
                 except ValueError:
@@ -185,10 +183,11 @@ class LogStream:
                     self.tts_queue.put((name, dialog, 'npc'))
 
                 elif self.team_speak and lstring[0] == "[Team]":
+                    #['2024-03-30', '23:29:48', '[Team] Khold: <color #010101>ugg, I gotta roll, nice little team.  dangerous without supports\n']
                     name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
                     log.debug(f'Adding {name}/{dialog} to reading queue')
-                    name = re.sub(r"<color #[a-f0-9]+>", "", name).strip()
-                    name = re.sub(r"<bgcolor #[a-f0-9]+>", "", name).strip()
+                    dialog = re.sub(r"<color #[a-f0-9]+>", "", dialog).strip()
+                    dialog = re.sub(r"<bgcolor #[a-f0-9]+>", "", dialog).strip()
                     self.tts_queue.put((name, dialog, 'player'))
 
                 elif self.announce_badges and lstring[0] == "Congratulations!":
@@ -219,7 +218,7 @@ def main() -> None:
     # print('Starting TTS Thread')
     # any string we put in this queue will be read out with
     # the default voice.
-    TTS(q)
+    TightTTS(q)
 
     q.put((None, "Ready", 'system'))
     time.sleep(0.5)
