@@ -1,6 +1,6 @@
 [project]
 name = "coh_npc_voices"
-version = "0.0.3"
+version = "1.0.0"
 authors = [
   { name="Jason Kane" },
 ]
@@ -17,7 +17,12 @@ classifiers = [
 ]
 dependencies = [
     "pypiwin32",
-    "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8"
+    "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8",
+    "voicebox-tts[google-cloud-tts]",
+    "google-cloud-texttospeech",
+    "voicebox-tts",
+    "wheel",
+    "setuptools"
 ]
 
 [build-system]
@@ -29,7 +34,7 @@ Homepage = "https://github.com/jason-kane/coh_npc_voices"
 Issues = "https://github.com/jason-kane/coh_npc_voices/issues"
 
 [project.scripts]
-coh_npc_voices = "coh_npc_voices.npc_chatter:main"
+coh_voices = "coh_npc_voices.voice_editor:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
