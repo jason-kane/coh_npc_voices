@@ -61,7 +61,7 @@ def create(character_id, message, cachefile):
         id, effect_name = effect
         effect_class = effects.EFFECTS[effect_name]
 
-        effect = effect_class()
+        effect = effect_class(None)
 
         effect_setting = cursor.execute("""
             SELECT 
