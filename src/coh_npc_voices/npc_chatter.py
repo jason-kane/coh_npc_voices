@@ -159,15 +159,20 @@ class LogStream:
         self.announce_badges = badges
         self.npc_speak = npc
         self.team_speak = team
+        self.tell_speak = True
+        self.caption_speak = True
+        self.announce_levels = True
 
         print(f"Tailing {self.filename}...")
         self.handle = open(os.path.join(logdir, self.filename))
-        self.handle.seek(0, io.SEEK_END)
+        #self.handle.seek(0, io.SEEK_END)
         self.tts_queue = tts_queue
 
     def tail(self):
         # read any new lines that have arrives since we last read the file and process
         # each of them.
+        lstring = ""
+        previous = ""
         for line in self.handle.readlines():
             if line.strip():
                 # print(line.split(None, 2))
@@ -176,6 +181,7 @@ class LogStream:
                 except ValueError:
                     continue
 
+                previous = lstring
                 lstring = line_string.split()
                 if self.npc_speak and lstring[0] == "[NPC]":
                     name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
@@ -186,14 +192,57 @@ class LogStream:
                     #['2024-03-30', '23:29:48', '[Team] Khold: <color #010101>ugg, I gotta roll, nice little team.  dangerous without supports\n']
                     name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
                     log.debug(f'Adding {name}/{dialog} to reading queue')
-                    dialog = re.sub(r"<color #[a-f0-9]+>", "", dialog).strip()
-                    dialog = re.sub(r"<bgcolor #[a-f0-9]+>", "", dialog).strip()
+                    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
+                    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
+                    self.tts_queue.put((name, dialog, 'player'))
+
+                elif self.tell_speak and lstring[0] == "[Tell]":
+                    # why is there an extra colon for Tell?  IDK.
+                    #2024-04-02 17:56:21 [Tell] :Dressy Bessie: I can bump you up a few levels if you want
+                    if lstring[1][:2] == "-->":
+                        # this is a reply to a tell, or an outbound tell.
+                        dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+                        name = None
+                    else:
+                        try:
+                            _, name, dialog = " ".join(lstring[1:]).split(":", maxsplit=2)
+                        except ValueError:
+                            name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+
+                    log.debug(f'Adding {name}/{dialog} to reading queue')
+                    self.tts_queue.put((name, dialog, 'player'))
+
+                elif self.caption_speak and lstring[0] == "[Caption]":
+                    # 2024-04-02 20:09:50 [Caption] <scalxe 2.75><color red><bgcolor White>My Shadow Simulacrum will destroy Task Force White Sands!
+                    name = None
+                    dialog = " ".join(lstring[1:])
+                    log.debug(f'Adding Caption {dialog} to reading queue')
+                    dialog = re.sub(r"<scale [0-9\.]+>", "", dialog).strip()
+                    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
+                    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
                     self.tts_queue.put((name, dialog, 'player'))
 
                 elif self.announce_badges and lstring[0] == "Congratulations!":
                     self.tts_queue.put(
                         (None, (" ".join(lstring[4:])), 'system')
                     )
+                
+                elif (
+                    self.announce_levels and lstring[0:3] == ["You", "are", "now", "fighting"]
+                ) and (
+                    " ".join(previous[-4:]) not in [
+                        "have quit your team",
+                        "has joined the team"
+                    ]
+                ):
+                    # 2024-04-03 20:23:51 You are now fighting at level 4.
+                    level = lstring[-1].strip('.')
+                    self.tts_queue.put((
+                        None, 
+                        f"Congratulations.  You've reached Level {level}", 
+                        'system'
+                    ))
+
                 #else:
                 #    log.debug(f'tag {lstring[0]} not classified.')
 

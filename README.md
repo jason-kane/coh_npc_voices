@@ -26,6 +26,19 @@ Overall I think this companion program makes City of Heroes a little more immers
 
     pip uninstall coh_npc_voices
 
+# Adding Voices (Highly Recommended)
+
+Making new free voices available is an easy way to increase the variety and flavor of voices you hear in the city.
+
+## Windows 10
+
+Open Settings, choose Time & Language
+Choose Speech on the left side
+Choose "Add voices" under Manage voices
+
+It won't list everything you install and I don't know why.
+
+
 # Running it
 
 Then open a cmd terminal and run:
