@@ -666,6 +666,11 @@ class Chorus(EffectParameterEditor):
                 'mix': self.mix.get()
             }
 
+        # The returned array may contain up to (but not more than) the same
+        # number of samples as were provided. If fewer samples were returned
+        # than expected, the plugin has likely buffered audio inside itself. To
+        # receive the remaining audio, pass another audio buffer into process
+        # with reset set to True.
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Chorus(**values)
         )
