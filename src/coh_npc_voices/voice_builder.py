@@ -83,7 +83,7 @@ def create(character_id, message, cachefile):
             else:
                 log.error(f'Invalid configuration.  {key} is not available for {effect}')
 
-        effect_list.append(effect)
+        effect_list.append(effect.get_effect())
 
     # have we seen this particular phrase before?
     phrase = cursor.execute("""
@@ -119,7 +119,7 @@ def create(character_id, message, cachefile):
             num_channels=input.num_channels
         ) as output:
             while input.tell() < input.frames:
-                output.write(input.read(4096))
+                output.write(input.read(1024))
         log.info(f'Created {cachefile}')
 
     #audio = pydub.AudioSegment.from_wav(cachefile + ".wav")

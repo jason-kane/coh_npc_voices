@@ -165,7 +165,7 @@ class LogStream:
 
         print(f"Tailing {self.filename}...")
         self.handle = open(os.path.join(logdir, self.filename))
-        #self.handle.seek(0, io.SEEK_END)
+        self.handle.seek(0, io.SEEK_END)
         self.tts_queue = tts_queue
 
     def tail(self):
