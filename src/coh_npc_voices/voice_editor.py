@@ -419,7 +419,7 @@ class AddEffect(tk.Frame):
             self,
             textvariable=self.selected_effect
         )
-        effect_combobox.option_add('*TCombobox*Listbox.Justify', 'center')
+        #effect_combobox.option_add('*TCombobox*Listbox.Justify', 'center')
         effect_combobox["values"] = list(effects.EFFECTS.keys())
         effect_combobox["state"] = "readonly"
 

@@ -61,7 +61,7 @@ def create(character_id, message, cachefile):
         id, effect_name = effect
         effect_class = effects.EFFECTS[effect_name]
 
-        effect = effect_class()
+        effect = effect_class(None)
 
         effect_setting = cursor.execute("""
             SELECT 
@@ -83,7 +83,7 @@ def create(character_id, message, cachefile):
             else:
                 log.error(f'Invalid configuration.  {key} is not available for {effect}')
 
-        effect_list.append(effect)
+        effect_list.append(effect.get_effect())
 
     # have we seen this particular phrase before?
     phrase = cursor.execute("""

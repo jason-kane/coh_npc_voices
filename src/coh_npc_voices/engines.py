@@ -1,17 +1,17 @@
 import logging
 import sys
 import tempfile
+import time
 import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import ttk
 
 import tts.sapi
 import voicebox
+from db import commit, get_cursor
 from google.cloud import texttospeech
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
-
-from db import commit, get_cursor
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -36,7 +36,21 @@ class WindowsSapi(voicebox.tts.tts.TTS):
         with tempfile.NamedTemporaryFile() as tmp:
             # just need the safe filename
             tmp.close()
-            voice.create_recording(tmp.name, text)
+            # this can:
+            #   File "C:\Users\jason\Desktop\coh_npc_voices\venv\Lib\site-packages\tts\sapi.py", line 93, in say
+            #     self.voice.Speak(message, flag)
+            # _ctypes.COMError: (-2147200958, None, ('XML parser error', None, None, 0, None))
+
+            success = False
+            while not success:
+                try:
+                    voice.create_recording(tmp.name, text)
+                    success = True
+                except Exception as err:
+                    log.error(err)
+                    log.error('Text was: %s', text)
+                    time.sleep(0.1)
+
             audio = voicebox.tts.utils.get_audio_from_wav_file(tmp.name)
         return audio
 
@@ -48,6 +62,7 @@ def get_character_by_raw_name(character_name):
         'SELECT id, name, engine, category FROM character WHERE name = ? AND category = ?',
         (name, category)
     ).fetchone()
+
 
 # Base Class for engines
 class TTSEngine(tk.Frame):
