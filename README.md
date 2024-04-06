@@ -73,7 +73,7 @@ The right directory will have files with names like "chatlog 2024-03-31.txt".  I
 
 Use "Set Log Dir" in the upper right corner to configure it for your log location.  You should only need to do this once.
 
-![Screenshot 2024-04-05 194852](https://github.com/jason-kane/coh_npc_voices/assets/1907832/0647db42-b8a1-44f5-8642-d42948322a4a)
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/73c1b2de-04ed-4096-bf10-b1baaa19d152)
 
 Once you are ready You will need to click "Attach to Log" in the upper left corner after you are in-game.  The "Attach" button changes to a "Detach".  You can attach/detach whenever you want.
 
