@@ -186,6 +186,10 @@ class LogStream:
                 if self.npc_speak and lstring[0] == "[NPC]":
                     name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
                     log.debug(f'Adding {name}/{dialog} to reading queue')
+                    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
+                    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
+                    dialog = re.sub(r"<bordercolor [#a-zA-Z0-9]+>", "", dialog).strip()
+
                     self.tts_queue.put((name, dialog, 'npc'))
 
                 elif self.team_speak and lstring[0] == "[Team]":
@@ -243,8 +247,8 @@ class LogStream:
                         'system'
                     ))
 
-                #else:
-                #    log.debug(f'tag {lstring[0]} not classified.')
+                else:
+                    log.debug(f'tag {lstring[0]} not classified.')
 
 
 def main() -> None:
