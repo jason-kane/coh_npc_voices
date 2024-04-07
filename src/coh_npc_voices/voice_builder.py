@@ -119,7 +119,16 @@ def create(character_id, message, cachefile):
             num_channels=input.num_channels
         ) as output:
             while input.tell() < input.frames:
-                output.write(input.read(1024))
+                retries = 5
+                success = False
+                while not success and retries > 0:
+                    try:
+                        output.write(input.read(1024))
+                        success = True
+                    except RuntimeError as err:
+                        log.errror(err)
+                    retries -= 1
+                
         log.info(f'Created {cachefile}')
 
     #audio = pydub.AudioSegment.from_wav(cachefile + ".wav")

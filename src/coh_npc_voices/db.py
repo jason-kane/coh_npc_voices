@@ -16,8 +16,8 @@ log = logging.getLogger("__name__")
 
 db_connection = None
 
-def get_cursor():
-    if db_connection:
+def get_cursor(fresh=False):
+    if not fresh and db_connection:
         return db_connection.cursor()
     else:
         prepare_database()
@@ -99,7 +99,22 @@ def prepare_database():
                 value VARCHAR(256)
             )
         """)         
-        commit()
+        cursor.execute("""
+            CREATE TABLE hero_stat_events (
+                id INTEGER PRIMARY KEY,
+                hero INTEGER NOT NULL,
+                event_time DATEIME NOT NULL,
+                xp_gain INTEGER,
+                inf_gain INTEGER
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE hero (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(256)
+            )
+        """)              
+        commit()        
 
 def clean_customer_name(in_name):
     if in_name:
