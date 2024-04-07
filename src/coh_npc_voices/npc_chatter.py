@@ -41,9 +41,10 @@ log = logging.getLogger('__name__')
 #       speech-to-text chat input (whisper?)
 
 class TightTTS(threading.Thread):
-    def __init__(self, q):
+    def __init__(self, speaking_queue, event_queue):
         threading.Thread.__init__(self)
-        self.q = q
+        self.speaking_queue = speaking_queue
+        self.event_queue = event_queue
         self.daemon = True
 
         # so we can do this much once.
@@ -63,7 +64,7 @@ class TightTTS(threading.Thread):
     def run(self):
         pythoncom.CoInitialize()
         while True:
-            raw_message = self.q.get()
+            raw_message = self.speaking_queue.get()
             try:
                 name, message, category = raw_message
             except ValueError:
@@ -122,7 +123,7 @@ class TightTTS(threading.Thread):
                 # ok, what kind of voice do we want for this NPC?
                 
                 # We might have some fancy voices
-                cursor = db.get_cursor()
+                cursor = db.get_cursor(fresh=True)
                 character_id = cursor.execute(
                     "SELECT id FROM character WHERE name=? AND category=?", 
                     (name, category)
@@ -144,11 +145,17 @@ class TightTTS(threading.Thread):
                     ).fetchone()
                     voice_builder.create(character_id[0], message, cachefile)
 
-            self.q.task_done()
+            self.speaking_queue.task_done()
 
 
 class LogStream:
-    def __init__(self, logdir: str, tts_queue: queue, badges: bool, npc: bool, team: bool):
+    def __init__(
+            self, 
+            logdir: str, 
+            speaking_queue: queue, 
+            event_queue: queue, 
+            badges: bool, npc: bool, team: bool
+        ):
         """
         find the most recent logfile in logdir
         note which file it is, open it and skip
@@ -162,11 +169,40 @@ class LogStream:
         self.tell_speak = True
         self.caption_speak = True
         self.announce_levels = True
+        self.hero = None
 
         print(f"Tailing {self.filename}...")
         self.handle = open(os.path.join(logdir, self.filename))
+
+        self.speaking_queue = speaking_queue
+        self.event_queue = event_queue
+
+        # skim through and see if can find the hero name
+        for line in self.handle.readlines():
+            try:
+                datestr, timestr, line_string = line.split(None, 2)
+            except ValueError:
+                continue
+    
+            lstring = line_string.split()
+            if (lstring[0] == "Welcome"):
+                # Welcome to City of Heroes, <HERO NAME>
+                self.hero = Hero(" ".join(lstring[5:]).strip('!'))
+
+                # we want to notify upstream UI about this.
+                if self.event_queue:
+                    self.event_queue.put(
+                        ('SET_CHARACTER', self.hero.name)
+                    )
+        
+        if self.hero is None:
+            log.info('Could NOT find hero name.. good luck.')
+
+        # now move the file handle to the end, we 
+        # will starting parsing everything for real this
+        # time.
         self.handle.seek(0, io.SEEK_END)
-        self.tts_queue = tts_queue
+
 
     def tail(self):
         # read any new lines that have arrives since we last read the file and process
@@ -177,7 +213,7 @@ class LogStream:
             if line.strip():
                 # print(line.split(None, 2))
                 try:
-                    _, _, line_string = line.split(None, 2)
+                    datestr, timestr, line_string = line.split(None, 2)
                 except ValueError:
                     continue
 
@@ -190,7 +226,7 @@ class LogStream:
                     dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
                     dialog = re.sub(r"<bordercolor [#a-zA-Z0-9]+>", "", dialog).strip()
 
-                    self.tts_queue.put((name, dialog, 'npc'))
+                    self.speaking_queue.put((name, dialog, 'npc'))
 
                 elif self.team_speak and lstring[0] == "[Team]":
                     #['2024-03-30', '23:29:48', '[Team] Khold: <color #010101>ugg, I gotta roll, nice little team.  dangerous without supports\n']
@@ -198,7 +234,7 @@ class LogStream:
                     log.debug(f'Adding {name}/{dialog} to reading queue')
                     dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
                     dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
-                    self.tts_queue.put((name, dialog, 'player'))
+                    self.speaking_queue.put((name, dialog, 'player'))
 
                 elif self.tell_speak and lstring[0] == "[Tell]":
                     # why is there an extra colon for Tell?  IDK.
@@ -214,7 +250,7 @@ class LogStream:
                             name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
 
                     log.debug(f'Adding {name}/{dialog} to reading queue')
-                    self.tts_queue.put((name, dialog, 'player'))
+                    self.speaking_queue.put((name, dialog, 'player'))
 
                 elif self.caption_speak and lstring[0] == "[Caption]":
                     # 2024-04-02 20:09:50 [Caption] <scalxe 2.75><color red><bgcolor White>My Shadow Simulacrum will destroy Task Force White Sands!
@@ -224,31 +260,118 @@ class LogStream:
                     dialog = re.sub(r"<scale [0-9\.]+>", "", dialog).strip()
                     dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
                     dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
-                    self.tts_queue.put((name, dialog, 'player'))
+                    self.speaking_queue.put((name, dialog, 'player'))
 
                 elif self.announce_badges and lstring[0] == "Congratulations!":
-                    self.tts_queue.put(
+                    self.speaking_queue.put(
                         (None, (" ".join(lstring[4:])), 'system')
                     )
                 
-                elif (
-                    self.announce_levels and lstring[0:3] == ["You", "are", "now", "fighting"]
-                ) and (
-                    " ".join(previous[-4:]) not in [
-                        "have quit your team",
-                        "has joined the team"
-                    ]
-                ):
-                    # 2024-04-03 20:23:51 You are now fighting at level 4.
-                    level = lstring[-1].strip('.')
-                    self.tts_queue.put((
-                        None, 
-                        f"Congratulations.  You've reached Level {level}", 
-                        'system'
-                    ))
+                elif (lstring[0] == "You"):
+                    if lstring[1] == "are":
+                        if (self.announce_levels and lstring[2:3] == ["now", "fighting"]) and (
+                        " ".join(previous[-4:]) not in [
+                            "have quit your team",
+                            "has joined the team"
+                        ]):
+                            level = lstring[-1].strip('.')
+                            self.speaking_queue.put((
+                                None, 
+                                f"Congratulations.  You've reached Level {level}", 
+                                'system'
+                            ))
+                
+                    elif self.hero and lstring[1] == "gain":
+                        # 2024-04-05 21:43:45 You gain 104 experience and 36 influence.
+                        # I'm just going to make the database carry the burden, so much easier.
+                        # is this string stable enough to get away with this?  It's friggin'
+                        # cheating.
+                        
+                        # You gain 250 influence.
+                        try:
+                            influence_index = lstring.index("influence") - 1
+                            inf_gain = int(lstring[influence_index])
+                        except ValueError:
+                            inf_gain = None                       
 
-                else:
-                    log.debug(f'tag {lstring[0]} not classified.')
+                        try:
+                            xp_index = lstring.index('experience') - 1
+                            xp_gain = int(lstring[xp_index])
+                        except ValueError:
+                            xp_gain = None                            
+
+                        try:
+                            did_i_defeat_it = previous.index('defeated')
+                            foe = " ".join(previous[did_i_defeat_it:])
+                        except ValueError:
+                            # no, someone else did.  you just got some 
+                            # points for it.  Lazybones.
+                            foe = None                       
+
+                        cursor = db.get_cursor(fresh=True)
+                        # datestr, timestr
+                        # leaving foe out for now, its a rough query
+                        cursor.execute("""
+                            INSERT INTO hero_stat_events (
+                                hero,
+                                event_time,
+                                xp_gain,
+                                inf_gain
+                            ) VALUES (
+                                ?, ?, ?, ?
+                            )
+                        """, (self.hero.id, f"{datestr} {timestr}", xp_gain, inf_gain))
+                        db.commit()
+
+                elif (lstring[0] == "Welcome"):
+                    # Welcome to City of Heroes, <HERO NAME>
+                    self.hero = Hero(" ".join(lstring[5:]).strip('!'))
+
+                    # we want to notify upstream UI about this.
+                    self.event_queue.put(
+                        ('SET_CHARACTER', self.hero.name)
+                    )                    
+                    
+                #else:
+                #    log.warning(f'tag {lstring[0]} not classified.')
+
+class Hero:
+    # keep this update for cheap parlor tricks.
+    columns = ("id", "name", )
+
+    def __init__(self, hero_name):
+        self.load_hero(hero_name)
+
+    def load_hero(self, hero_name):
+        cursor = db.get_cursor()
+        self.raw_row = cursor.execute("""
+            SELECT 
+                *
+            FROM
+                hero 
+            WHERE
+                name=?
+        """, (hero_name, )).fetchone()
+
+        if self.raw_row is None:
+            self.create_hero(hero_name)
+        
+        for i, c in enumerate(self.columns):
+            setattr(self, c, self.raw_row[i])
+
+    def create_hero(self, hero_name):
+        cursor = db.get_cursor()
+        cursor.execute("""
+            INSERT INTO hero (
+                name
+            ) VALUES (
+                ?
+            )
+        """, (hero_name, ))
+        db.commit()
+        cursor.close()
+        # this is a disaster waiting to happen.
+        return self.load_hero(hero_name)
 
 
 def main() -> None:

@@ -1,6 +1,6 @@
 [project]
 name = "coh_npc_voices"
-version = "1.0.0"
+version = "1.1.0"
 authors = [
   { name="Jason Kane" },
 ]
@@ -22,7 +22,8 @@ dependencies = [
     "google-cloud-texttospeech",
     "voicebox-tts",
     "wheel",
-    "setuptools"
+    "setuptools",
+    "matplotlib"
 ]
 
 [build-system]
@@ -35,6 +36,7 @@ Issues = "https://github.com/jason-kane/coh_npc_voices/issues"
 
 [project.scripts]
 coh_voices = "coh_npc_voices.voice_editor:main"
+sidekick = "coh_npc_voices.sidekick:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true

@@ -614,10 +614,11 @@ class ListSide(tk.Frame):
 
 
 class ChatterService:
-    def start(self):
-        q = queue.Queue()
-        npc_chatter.TightTTS(q)
-        q.put((None, "Attaching to most recent log...", 'system'))
+    def start(self, event_queue):
+        speaking_queue = queue.Queue()
+
+        npc_chatter.TightTTS(speaking_queue, event_queue)
+        speaking_queue.put((None, "Attaching to most recent log...", 'system'))
 
         logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
         #logdir = "g:/CoH/homecoming/accounts/VVonder/Logs"
@@ -625,20 +626,23 @@ class ChatterService:
         team = True
         npc = True
 
-        ls = npc_chatter.LogStream(logdir, q, badges, npc, team)
+        ls = npc_chatter.LogStream(
+            logdir, speaking_queue, event_queue, badges, npc, team
+        )
         while True:
-            ls.tail()        
+            ls.tail()
 
 
 class Chatter(tk.Frame):
     attach_label = 'Attach to Log'
     detach_label = "Detach from Log"
 
-    def __init__(self, parent, *args, **kwargs):
+    def __init__(self, parent, event_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-
+        self.event_queue = event_queue
         self.button_text = tk.StringVar(value=self.attach_label)
         self.attached = False
+        self.hero = None
 
         cursor = db.get_cursor()
         response_tuple = cursor.execute("""
@@ -710,7 +714,7 @@ class Chatter(tk.Frame):
             # we are not attached, lets do that.
             self.attached = True
             self.button_text.set(self.detach_label)
-            self.p = multiprocessing.Process(target=self.cs.start)
+            self.p = multiprocessing.Process(target=self.cs.start, args=(self.event_queue, ))
             self.p.start()
             log.info('Attached')
 
@@ -723,7 +727,7 @@ def main():
     root.resizable(True, True)
     root.title("Character Voice Editor")
 
-    chatter = Chatter(root)
+    chatter = Chatter(root, None)
     chatter.pack(side="top", fill="x")
 
     editor = tk.Frame(root)
