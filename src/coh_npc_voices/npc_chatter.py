@@ -2,20 +2,22 @@ import argparse
 import glob
 import io
 import logging
+from datetime import datetime
 import os
 import queue
 import re
 import sys
 import threading
 import time
-import io
 
 import db
+import models
 import pythoncom
 import tts.sapi
 import voice_builder
 import voicebox
 from pedalboard.io import AudioFile
+from sqlalchemy import select, update
 from voicebox.tts.utils import get_audio_from_wav_file
 
 logging.basicConfig(
@@ -122,28 +124,29 @@ class TightTTS(threading.Thread):
                 log.info(f'Cache Miss -- {cachefile} not found')
                 # ok, what kind of voice do we want for this NPC?
                 
-                # We might have some fancy voices
-                cursor = db.get_cursor(fresh=True)
-                character_id = cursor.execute(
-                    "SELECT id FROM character WHERE name=? AND category=?", 
-                    (name, category)
-                ).fetchone()
-                if character_id:
-                    voice_builder.create(character_id[0], message, cachefile)
-                else:
+                with models.Session(models.engine) as session:
+                    character = session.query(
+                        models.Character
+                    ).filter_by(
+                        name=name,
+                        category=category
+                    ).one_or_none()
+
+                if character is None:
                     # this is the first time we've gotten a message from this
                     # NPC, so they don't have a voice yet.  We will default to
                     # the windows voice because it is free and no voice effects.
-                    cursor.execute(
-                        "INSERT INTO character (name, engine, category) values (?, ?, ?)", 
-                        (name, voice_builder.default_engine, category)
-                    )
-                    db.commit()
-                    character_id = cursor.execute(
-                        "SELECT id FROM character WHERE name=? and category=?",
-                        (name, category)
-                    ).fetchone()
-                    voice_builder.create(character_id[0], message, cachefile)
+                    with models.Session(models.engine) as session:
+                        character = models.Character(
+                            name=name,
+                            engine=voice_builder.default_engine,
+                            category=category
+                        )
+                        session.add(character)
+                        session.commit()
+                        session.refresh(character)
+
+                voice_builder.create(character, message, cachefile)
 
             self.speaking_queue.task_done()
 
@@ -201,7 +204,8 @@ class LogStream:
         # now move the file handle to the end, we 
         # will starting parsing everything for real this
         # time.
-        self.handle.seek(0, io.SEEK_END)
+        self.handle.seek(0, 0)
+                         # io.SEEK_END)
 
 
     def tail(self):
@@ -308,20 +312,18 @@ class LogStream:
                             # points for it.  Lazybones.
                             foe = None                       
 
-                        cursor = db.get_cursor(fresh=True)
-                        # datestr, timestr
-                        # leaving foe out for now, its a rough query
-                        cursor.execute("""
-                            INSERT INTO hero_stat_events (
-                                hero,
-                                event_time,
-                                xp_gain,
-                                inf_gain
-                            ) VALUES (
-                                ?, ?, ?, ?
+                        with models.Session(models.engine) as session:
+                            new_event = models.HeroStatEvent(
+                                hero_id=self.hero.id,
+                                event_time=datetime.strptime(
+                                    f"{datestr} {timestr}",
+                                    "%Y-%m-%d %H:%M:%S"
+                                ),
+                                xp_gain=xp_gain,
+                                inf_gain=inf_gain
                             )
-                        """, (self.hero.id, f"{datestr} {timestr}", xp_gain, inf_gain))
-                        db.commit()
+                            session.add(new_event)
+                            session.commit()
 
                 elif (lstring[0] == "Welcome"):
                     # Welcome to City of Heroes, <HERO NAME>
@@ -343,33 +345,27 @@ class Hero:
         self.load_hero(hero_name)
 
     def load_hero(self, hero_name):
-        cursor = db.get_cursor()
-        self.raw_row = cursor.execute("""
-            SELECT 
-                *
-            FROM
-                hero 
-            WHERE
-                name=?
-        """, (hero_name, )).fetchone()
+        with models.Session(models.engine) as session:
+            hero = session.query(
+                models.Hero
+            ).filter_by(
+                name=hero_name
+            ).first()
 
-        if self.raw_row is None:
-            self.create_hero(hero_name)
+        if hero is None:
+            return self.create_hero(hero_name)
         
-        for i, c in enumerate(self.columns):
-            setattr(self, c, self.raw_row[i])
+        for c in self.columns:
+            setattr(self, c, getattr(hero, c))
 
     def create_hero(self, hero_name):
-        cursor = db.get_cursor()
-        cursor.execute("""
-            INSERT INTO hero (
-                name
-            ) VALUES (
-                ?
+        with models.Session(models.engine) as session:
+            hero = models.Hero(
+                name = hero_name
             )
-        """, (hero_name, ))
-        db.commit()
-        cursor.close()
+            session.add(hero)
+            session.commit()
+
         # this is a disaster waiting to happen.
         return self.load_hero(hero_name)
 

@@ -7,8 +7,12 @@ import queue
 import sys
 import tkinter as tk
 from tkinter import font, ttk
-
+from sqlalchemy.orm import Session
+from sqlalchemy import select, update
+from sqlalchemy import exc
 import db
+
+import models
 import effects
 import engines
 
@@ -43,17 +47,31 @@ class ChoosePhrase(tk.Frame):
         play_btn.pack(side="left")
 
     def populate_phrases(self):
-        character = Character.get_by_raw_name(self.selected_character.get())
-        if character is None:
-            return
-        log.info(character)
-        
-        character_phrases = character.get_phrases()
-        
+        raw_name = self.selected_character.get()
+        with models.Session(models.engine) as session:
+            category, name = raw_name.split(maxsplit=1)
+            character = session.query(
+                models.Character
+            ).filter_by(
+                name=name,
+                category=category
+            ).one_or_none()
+
+            if character is None:
+                log.error(f'Character {category}|{name} does not exist!')
+                return
+
+            character_phrases = session.query(
+                models.Phrases
+            ).filter_by(
+                character_id=character.id
+            ).fetchall()
+       
         if character_phrases:
             self.chosen_phrase.set(character_phrases[0])
         else:
-            self.chosen_phrase.set(f'I have no record of what {self.selected_character.get()} says.')
+            self.chosen_phrase.set(
+                f'I have no record of what {raw_name} says.')
         self.options["values"] = character_phrases
 
     def say_it(self):
@@ -64,22 +82,37 @@ class ChoosePhrase(tk.Frame):
         ttsengine = engines.get_engine(engine_name)
         log.debug(f"Engine: {ttsengine}")
 
-        effect_list = [e.get_effect() for e in self.detailside.effect_list.effects]
-        
-        cursor = db.get_cursor()
-
-        character = Character.get_by_raw_name(self.selected_character.get())
-
-        all_phrases = [
-            n[2] for n in cursor.execute("""
-                SELECT
-                    id, character_id, text 
-                FROM 
-                    phrases 
-                WHERE 
-                    character_id = ?
-            """, (character.id, )).fetchall()
+        effect_list = [
+            e.get_effect() for e in self.detailside.effect_list.effects
         ]
+
+        full_name = self.selected_character.get()
+        if not full_name:
+            log.warning('Name is required')
+            return
+        
+        category, name = full_name.split(maxsplit=1)
+
+        with models.Session(models.engine) as session:
+            character = session.execute(
+                select(models.Character).
+                filter_by(name=name)
+            ).scalar_one()
+
+            all_phrases = session.scalers(
+                select(models.Phrases).filter_by(character_id=character.id)
+            ).all()
+
+        # all_phrases = [
+        #     n[2] for n in cursor.execute("""
+        #         SELECT
+        #             id, character_id, text 
+        #         FROM 
+        #             phrases 
+        #         WHERE 
+        #             character_id = ?
+        #     """, (character.id, )).fetchall()
+        # ]
 
         _, clean_name = db.clean_customer_name(character.name)
         filename = db.cache_filename(character.name, message)
@@ -185,49 +218,60 @@ class EngineSelectAndConfigure(tk.Frame):
         """
         save this engine selection to the database
         """
-        cursor = db.get_cursor()
         full_name = self.selected_character.get()
         if not full_name:
+            log.warning('Name is required to save a character')
             return
-
+        
         category, name = full_name.split(maxsplit=1)
-        cursor.execute(
-            "UPDATE character SET engine = ? where name = ? and category = ?",
-            (self.selected_engine.get(), name, category),
-        )
 
-        db.commit()
-        cursor.close()
+        with models.Session(models.engine) as session:
+            session.execute(
+                update(models.Character).values(
+                    engine=self.selected_engine.get()
+                ).filter_by(
+                    name=name,
+                    category=category
+                )
+            )
+            session.commit()
 
         log.debug(
             f"Saved engine={self.selected_engine.get()} for {category} named {name}"
         )
 
-    def load_character(self):
-        cursor = db.get_cursor()
+    def get_category_name(self):
         full_name = self.selected_character.get()
         if not full_name:
-            log.warning('Name is required to load a character')
-            return
+            log.warning('Name is required')
+            return None, None
         
         category, name = full_name.split(maxsplit=1)
-        engine_name = cursor.execute("""
-            SELECT 
-                engine 
-            FROM 
-                character 
-            WHERE 
-                name = ? 
-            AND 
-                category = ?
-            """, (name, category)
-        ).fetchone()
-        cursor.close()
+        return category, name
 
-        if engine_name:
-            self.selected_engine.set(engine_name[0])
+    def load_character(self):
+        """
+        We've set the character name, we want the rest of the metadata to
+        populate.  Setting the engine name will domino the rest.
+        """
+        category, name = self.get_category_name()
+
+        try:
+            with models.Session(models.engine) as session:
+                character = session.execute(
+                    select(models.Character).
+                    filter_by(name=name)
+                ).scalar_one()
+        except exc.NoResultFound:
+            log.error('Character %s does not exist.', name)
+            return None
+       
+        if character.engine:
+            self.selected_engine.set(character.engine)
         else:
             self.selected_engine.set(engines.default_engine)
+        
+        return character
 
 
 class EffectList(tk.Frame):
@@ -241,27 +285,42 @@ class EffectList(tk.Frame):
         self.selected_character = selected_character
         self.load_effects()
 
+    def get_category_name(self):
+        full_name = self.selected_character.get()
+        if not full_name:
+            log.warning('Name is required')
+            return None, None
+        
+        category, name = full_name.split(maxsplit=1)
+        return category, name
+
     def load_effects(self):
         log.info('EffectList.load_effects()')
-        cursor = db.get_cursor()
 
         # teardown any effects already in place
         while self.effects:
             effect = self.effects.pop()
             effect.pack_forget()
 
-        character = Character.get_by_raw_name(self.selected_character.get())
+        category, name = self.get_category_name()
 
-        voice_effects = cursor.execute("""
-            SELECT 
-                id, effect_name
-            FROM
-                effects
-            where
-                character_id = ?
-        """, (
-            character.id,
-        )).fetchall()
+        with models.Session(models.engine) as session:
+            character = session.execute(
+                select(models.Character).where(
+                    models.Character.name==name,
+                    models.Character.category==category
+                )
+            ).one_or_none()
+            
+            if character is None:
+                log.error('Cannot load effects.  Character %s does not exist.', name)
+                return
+
+            voice_effects = session.query(
+                models.Effects
+            ).filter_by(
+                character_id=character.id
+            ).fetchall()
 
         for effect in voice_effects:
             log.info(f'Adding effect {effect} found in the database')
@@ -504,19 +563,20 @@ class DetailSide(tk.Frame):
         self.selected_character.set(raw_name)
 
         category, name = raw_name.split(maxsplit=1)
-
-        cursor = db.get_cursor()
-        character_id, engine_name = cursor.execute(
-            "SELECT id, engine FROM character WHERE name = ? AND category = ?", 
-            (name, category)
-        ).fetchone()
-        cursor.close()
+        
+        with models.Session(models.engine) as session:
+            character = session.execute(
+                select(models.Character).where(
+                    name==name, 
+                    category==category
+                )
+            ).one_or_none()
 
         # update the phrase selector
         self.phrase_selector.populate_phrases()
 
         # set the engine itself
-        self.engineSelect.set_engine(engine_name)
+        self.engineSelect.set_engine(character.engine)
 
         # set engine and parameters
         self.engineSelect.engine_parameters.load_character(raw_name)
@@ -600,17 +660,16 @@ class ListSide(tk.Frame):
 
     def refresh_character_list(self):
         log.info('Refreshing Character list from the database...')
-        cursor = db.get_cursor()
-        all_characters = cursor.execute("""
-            SELECT 
-                id, name, category 
-            FROM 
-                character 
-            ORDER BY category, name
-        """).fetchall()
-        cursor.close()
+
+        with models.Session(models.engine) as session:
+            all_characters = session.scalars(
+                select(models.Character).order_by(models.Character.name)
+            ).all()
+
         if all_characters:
-            self.list_items.set([f"{character[2]} {character[1]}" for character in all_characters])
+            self.list_items.set(
+                [f"{character.category} {character.name}" for character in all_characters]
+            )
 
 
 class ChatterService:
@@ -644,20 +703,9 @@ class Chatter(tk.Frame):
         self.attached = False
         self.hero = None
 
-        cursor = db.get_cursor()
-        response_tuple = cursor.execute("""
-            SELECT 
-                logdir 
-            FROM 
-                settings
-        """).fetchone()
-        cursor.close()
-        if response_tuple:
-            logdir = response_tuple[0]
-        else:
-            logdir = ""
-
-        self.logdir = tk.StringVar(value=logdir)
+        settings = models.get_settings()
+        
+        self.logdir = tk.StringVar(value=settings.logdir)
         self.logdir.trace_add('write', self.save_logdir)
 
         tk.Button(
@@ -685,15 +733,15 @@ class Chatter(tk.Frame):
         self.cs = ChatterService()
 
     def save_logdir(self, *args):
-        cursor = db.get_cursor()
-        cursor.execute("""
-            UPDATE 
-                settings
-            SET
-                logdir=?
-        """, (self.logdir.get(), ))
-        db.commit()
-        cursor.close()
+        logdir = self.logdir.get()
+        log.info(f'Persisting setting logdir={logdir} to the database...')
+        with models.Session(models.engine) as session:
+            session.execute(
+                update(models.Settings).values(
+                    logdir=logdir
+                )
+            )
+            session.commit()
 
     def ask_directory(self):
         dirname = tk.filedialog.askdirectory()
@@ -720,7 +768,6 @@ class Chatter(tk.Frame):
 
 
 def main():
-    db.prepare_database()
     root = tk.Tk()
     # root.iconbitmap("myIcon.ico")
     root.geometry("640x480+200+200")

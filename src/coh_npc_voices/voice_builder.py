@@ -2,12 +2,12 @@ import logging
 import os
 import re
 
+import db
+import effects
+import models
+from engines import get_engine
 from pedalboard.io import AudioFile
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
-
-import effects
-from db import commit, get_cursor
-from engines import get_engine
 
 log = logging.getLogger("__name__")
 
@@ -22,7 +22,7 @@ class tkvar_ish:
     def get(self):
         return self.value
 
-def create(character_id, message, cachefile):
+def create(character, message, cachefile):
     """
     This NPC exists in our database but we don't
     have this particular message rendered.
@@ -35,66 +35,53 @@ def create(character_id, message, cachefile):
     2. Render message based on that data
     3. persist as an mp3 in cachefile
     """
-    cursor = get_cursor()
-    name, engine_name, category = cursor.execute(
-        "select name, engine, category from character where id=?", 
-        (character_id, )
-    ).fetchone()
-    engine = get_engine(engine_name)
+    with models.Session(models.engine) as session:
+        voice_effects = session.query(
+            models.Effects
+        ).filter(
+            character_id=character.id
+        ).fetchall()
     
-    # how about a list of audio effects this stream should be 
-    # passed through first?
-    voice_effects = cursor.execute("""
-        SELECT 
-            id, effect_name
-        FROM
-            effects
-        where
-            character_id = ?
-    """, (
-        character_id,
-    )).fetchall()
-
     effect_list = []
     for effect in voice_effects:
         log.info(f'Adding effect {effect} found in the database')
-        id, effect_name = effect
-        effect_class = effects.EFFECTS[effect_name]
+        effect_class = effects.EFFECTS[effect.name]
 
         effect = effect_class(None)
 
-        effect_setting = cursor.execute("""
-            SELECT 
-                key, value
-            FROM
-                effect_setting
-            where
-                effect_id = ?
-        """, (
-            id,
-        )).fetchall()
+        with models.Session(models.engine) as session:
+            effect_settings = session.query(
+                models.EffectSetting
+            ).filter_by(effect_id=effect.id)
 
         # reach into effect() and set the values this
         # plugin expects.
-        for key, value in effect_setting:
-            tkvar = getattr(effect, key, None)
+        for effect_setting in effect_settings:
+            tkvar = getattr(effect, effect_setting.key, None)
             if tkvar:
-                tkvar.set(value)
+                tkvar.set(effect_setting.value)
             else:
-                log.error(f'Invalid configuration.  {key} is not available for {effect}')
+                log.error(f'Invalid configuration.  {effect_setting.key} is not available for {effect}')
 
         effect_list.append(effect.get_effect())
 
     # have we seen this particular phrase before?
-    phrase = cursor.execute("""
-        SELECT id FROM phrases WHERE character_id=? AND text=?
-    """, (character_id, message)).fetchone()
-    if phrase is None:
-        # it does not exist, now it does.
-        cursor.execute("""
-            INSERT INTO phrases (character_id, text) VALUES (?, ?)
-        """, (character_id, message))
-        commit()
+    with models.Session(models.engine) as session:
+        phrase = session.query(
+            models.Phrases
+        ).filter_by(
+            character_id=character.id,
+            text=message
+        ).one_or_none()
+
+        if phrase is None:
+            # it does not exist, now it does.
+            phrase = models.Phrases(
+                character_id=character.id,
+                text=message
+            )
+            session.add(phrase)
+            session.commit()
 
     try:
         clean_name = re.sub(r'[^\w]', '', name)

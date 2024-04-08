@@ -6,9 +6,10 @@ import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import ttk
 
+import db
+import models
 import tts.sapi
 import voicebox
-from db import commit, get_cursor
 from google.cloud import texttospeech
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
@@ -87,24 +88,31 @@ class TTSEngine(tk.Frame):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
         log.info(f'TTSEngine.load_character({raw_name})')
-        cursor = get_cursor()
-        
-        character = get_character_by_raw_name(raw_name)
+        category, name = raw_name.split(maxsplit=1)
+
+        with models.Session(models.engine) as session:
+            character = session.query(
+                models.Character
+            ).filter_by(
+                name=name,
+                category=category
+            ).one_or_none()
+
         if character is None:
             log.info('No engine configuration available in the database')
             return
         
-        character_id, _, engine, category = character
-        for (param_id, key, value) in cursor.execute(
-            'SELECT id, key, value FROM base_tts_config WHERE character_id = ?',
-            (character_id, )
-        ).fetchall():
-            if key in self.parameters:
-                log.info(f'Assigning value for {key} -> {value}')
-                getattr(self, key).set(value)
-            else:
-                log.info(f'The database has no value for {key}')
+        with models.Session(models.engine) as session:
+            tts_config = session.query(
+                models.BaseTTSConfig
+            ).filter_by(
+                character_id=character.id
+            ).fetchall()
 
+            for config in tts_config:
+                if config.key in self.parameters:
+                    getattr(self, config.key).set(config.value)
+                
     def save_character(self, raw_name):
         # Retrieve configuration settings from widgets
         # and persist them to the DB

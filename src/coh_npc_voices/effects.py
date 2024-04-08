@@ -5,7 +5,7 @@ import numpy as np
 
 import pedalboard
 import voicebox
-from db import commit, get_cursor
+import db
 
 log = logging.getLogger('__name__')
 

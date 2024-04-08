@@ -16,6 +16,7 @@ from tkinter import font, ttk
 import db
 import effects
 import engines
+import models
 
 import voice_editor
 import npc_chatter
@@ -127,7 +128,7 @@ class ChartFrame(tk.Frame):
                 data_x.append(
                     datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
                 )
-                log.info(row)
+                # log.info(row)
 
                 if self.category == "xp":
                     data_y.append(row[1])
@@ -196,7 +197,6 @@ class CharacterTab(tk.Frame):
 
 
 def main():
-    db.prepare_database()
     root = tk.Tk()
     # root.iconbitmap("myIcon.ico")
     root.geometry("640x480+200+200")
@@ -214,12 +214,15 @@ def main():
     voices.pack(side="top", fill="both", expand=True)
     notebook.add(voices, text='Voices')
 
-    cursor = db.get_cursor()
-    first_character = cursor.execute("select id, name, category from character order by name").fetchone()
-    cursor.close()
+    with models.Session(models.engine) as session:
+        first_character = session.query(models.Character).order_by(models.Character.name).first()
+
+    #cursor = db.get_cursor()
+    #first_character = cursor.execute("select id, name, category from character order by name").fetchone()
+    #cursor.close()
 
     if first_character:
-        selected_character = tk.StringVar(value=f"{first_character[2]} {first_character[1]}")
+        selected_character = tk.StringVar(value=f"{first_character.category} {first_character.name}")
     else:
         selected_character = tk.StringVar()
 
