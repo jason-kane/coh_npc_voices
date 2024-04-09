@@ -94,7 +94,7 @@ class TTSEngine(tk.Frame):
             character = session.scalars(
                 select(models.Character).where(
                     models.Character.name==name,
-                    models.Character.category==category
+                    models.Character.category==models.category_str2int(category)
                 )
             ).first()
 
@@ -125,7 +125,7 @@ class TTSEngine(tk.Frame):
             character = session.scalars(
                 select(models.Character).where(
                     models.Character.name==name,
-                    models.Character.category==category
+                    models.Character.category==models.category_str2int(category)
                 )
             ).first()
 
@@ -133,7 +133,7 @@ class TTSEngine(tk.Frame):
                 # new character?  This is not typical.
                 character = models.Character(
                     name=name,
-                    category=category,
+                    category=models.category_str2int(category),
                     engine=default_engine
                 )
                 session.add(character)

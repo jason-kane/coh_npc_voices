@@ -217,10 +217,6 @@ def main():
     with models.Session(models.engine) as session:
         first_character = session.query(models.Character).order_by(models.Character.name).first()
 
-    #cursor = db.get_cursor()
-    #first_character = cursor.execute("select id, name, category from character order by name").fetchone()
-    #cursor.close()
-
     if first_character:
         selected_character = tk.StringVar(value=f"{first_character.cat_str()} {first_character.name}")
     else:

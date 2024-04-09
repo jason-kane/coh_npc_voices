@@ -40,11 +40,18 @@ def get_settings():
             session.add(settings)
             session.commit()
 
+            settings = session.scalars(
+                select(Settings)
+            ).first()
+
         log.info(dir(settings))
         return settings
 
 def category_str2int(instr):
-    return ['', 'npc', 'player', 'system'].index(instr)
+    try:
+        return ['', 'npc', 'player', 'system'].index(instr)
+    except ValueError:
+        return -1
 
 class Character(Base):
     __tablename__ = "character"

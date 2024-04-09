@@ -231,26 +231,30 @@ class EngineSelectAndConfigure(tk.Frame):
         """
         save this engine selection to the database
         """
-        full_name = self.selected_character.get()
-        if not full_name:
+        log.info('234 Saving engine selection')
+        raw_name = self.selected_character.get()
+        if not raw_name:
             log.warning('Name is required to save a character')
             return
         
-        category, name = full_name.split(maxsplit=1)
+        category, name = raw_name.split(maxsplit=1)
+        engine_string = self.selected_engine.get()
+        if engine_string in [None, ""]:
+            engine_string = engines.default_engine
 
         with models.Session(models.engine) as session:
             session.execute(
                 update(models.Character).values(
-                    engine=self.selected_engine.get()
+                    engine=engine_string
                 ).filter_by(
                     name=name,
-                    category=category
+                    category=models.category_str2int(category)
                 )
             )
             session.commit()
 
         log.debug(
-            f"Saved engine={self.selected_engine.get()} for {category} named {name}"
+            f"Saved engine={engine_string} for {category} named {name}"
         )
 
     def load_character(self):
@@ -258,14 +262,19 @@ class EngineSelectAndConfigure(tk.Frame):
         We've set the character name, we want the rest of the metadata to
         populate.  Setting the engine name will domino the rest.
         """
-        log.info(f'Loading {self.selected_character.get()}')
-        category, name = self.selected_character.get().split(maxsplit=1)
+        raw_name = self.selected_character.get()
+        if raw_name in [None, ""]:
+            log.error('Cannot load_character() with no character name.')
+            return
+        
+        log.info(f'Loading "{raw_name}"')
+        category, name = raw_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
             character = session.scalars(
                 select(models.Character).where(
-                    name==name,
-                    category==models.category_str2int(category)
+                    models.Character.name==name,
+                    models.Character.category==models.category_str2int(category)
                 )
             ).first()
 
@@ -273,11 +282,11 @@ class EngineSelectAndConfigure(tk.Frame):
             log.error(f'Character {name} does not exist.')
             return None
        
-        if character.engine:
-            self.selected_engine.set(character.engine)
-        else:
+        if character.engine in ["", None]:
             self.selected_engine.set(engines.default_engine)
-        
+        else:
+            self.selected_engine.set(character.engine)
+            
         return character
 
 
@@ -580,7 +589,7 @@ class DetailSide(tk.Frame):
         self.phrase_selector.populate_phrases()
 
         # set the engine itself
-        log.info('character: %s', character)
+        log.info('character: %s | %s', character, character.engine)
         self.engineSelect.set_engine(character.engine)
 
         # set engine and parameters
