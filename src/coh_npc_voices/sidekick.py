@@ -222,7 +222,7 @@ def main():
     #cursor.close()
 
     if first_character:
-        selected_character = tk.StringVar(value=f"{first_character.category} {first_character.name}")
+        selected_character = tk.StringVar(value=f"{first_character.cat_str()} {first_character.name}")
     else:
         selected_character = tk.StringVar()
 

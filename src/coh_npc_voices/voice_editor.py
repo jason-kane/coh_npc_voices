@@ -115,7 +115,7 @@ class ChoosePhrase(tk.Frame):
             character = session.scalars(
                 select(models.Character).where(
                     models.Character.name == name,
-                    models.Character.category == category
+                    models.Character.category == models.category_str2int(category)
                 )
             ).first()
 
@@ -134,7 +134,7 @@ class ChoosePhrase(tk.Frame):
             cachefile = os.path.abspath(
                 os.path.join(
                     "clip_library",
-                    character.category,
+                    character.cat_str(),
                     clean_name,
                     filename
                 )
@@ -253,32 +253,24 @@ class EngineSelectAndConfigure(tk.Frame):
             f"Saved engine={self.selected_engine.get()} for {category} named {name}"
         )
 
-    def get_category_name(self):
-        full_name = self.selected_character.get()
-        if not full_name:
-            log.warning('Name is required')
-            return None, None
-        
-        category, name = full_name.split(maxsplit=1)
-        return category, name
-
     def load_character(self):
         """
         We've set the character name, we want the rest of the metadata to
         populate.  Setting the engine name will domino the rest.
         """
-        category, name = self.get_category_name()
+        log.info(f'Loading {self.selected_character.get()}')
+        category, name = self.selected_character.get().split(maxsplit=1)
 
         with models.Session(models.engine) as session:
             character = session.scalars(
                 select(models.Character).where(
                     name==name,
-                    category==category
+                    category==models.category_str2int(category)
                 )
             ).first()
 
         if character is None:
-            log.error('Character %s does not exist.', name)
+            log.error(f'Character {name} does not exist.')
             return None
        
         if character.engine:
@@ -323,7 +315,7 @@ class EffectList(tk.Frame):
             character = session.scalars(
                 select(models.Character).where(
                     models.Character.name==name,
-                    models.Character.category==category
+                    models.Character.category==models.category_str2int(category)
                 )
             ).first()
             
