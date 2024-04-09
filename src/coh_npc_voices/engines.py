@@ -5,7 +5,7 @@ import time
 import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import ttk
-
+from sqlalchemy import select, update
 import db
 import models
 import tts.sapi
@@ -91,66 +91,83 @@ class TTSEngine(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
-            character = session.query(
-                models.Character
-            ).filter_by(
-                name=name,
-                category=category
-            ).one_or_none()
+            character = session.scalars(
+                select(models.Character).where(
+                    models.Character.name==name,
+                    models.Character.category==category
+                )
+            ).first()
 
         if character is None:
             log.info('No engine configuration available in the database')
             return
         
         with models.Session(models.engine) as session:
-            tts_config = session.query(
-                models.BaseTTSConfig
-            ).filter_by(
-                character_id=character.id
-            ).fetchall()
+            tts_config = session.scalars(
+                select(models.BaseTTSConfig).where(
+                    models.BaseTTSConfig.character_id==character.id
+                )
+            ).all()
 
             for config in tts_config:
                 if config.key in self.parameters:
                     getattr(self, config.key).set(config.value)
+        
+        return character
                 
     def save_character(self, raw_name):
         # Retrieve configuration settings from widgets
         # and persist them to the DB
         log.info(f'save_character({raw_name})')
-        cursor = get_cursor()
-        character_id, name, engine, category = get_character_by_raw_name(raw_name)
 
-        for key in self.parameters:
-            log.info(f'Processing attribute {key}...')
-            # do we already have a value for this key?
-            value = str(getattr(self, key).get())
-            
-            row = cursor.execute(
-                'SELECT id, value from base_tts_config WHERE character_id = ? and key = ?',
-                (character_id, key)
-            ).fetchone()
-
-            if row:
-                row_id, old_value = row
-
-                if old_value != value:
-                    log.info(f"Updating {key}.  Changing {old_value} to {value}")
-                    cursor.execute(
-                        'UPDATE base_tts_config SET value = ? WHERE id = ?',
-                        (value, row_id)
-                    )
-                    commit()
-
-            else:
-                # we do not have an existing value
-                log.info(f'Saving to database: ({character_id!r}, {key!r}, {value!r})')
-                cursor.execute('INSERT INTO base_tts_config (character_id, key, value) VALUES (:character_id, :key, :value)', {
-                        'character_id': character_id, 
-                        'key': key, 
-                        'value': value
-                    }
+        with models.Session(models.engine) as session:
+            category, name = raw_name.split(maxsplit=1)
+            character = session.scalars(
+                select(models.Character).where(
+                    models.Character.name==name,
+                    models.Character.category==category
                 )
-                commit()       
+            ).first()
+
+            if character is None:
+                # new character?  This is not typical.
+                character = models.Character(
+                    name=name,
+                    category=category,
+                    engine=default_engine
+                )
+                session.add(character)
+                session.commit()
+                log.info('character: %s', character)
+                session.refresh(character)
+
+            for key in self.parameters:
+                log.info(f'Processing attribute {key}...')
+                # do we already have a value for this key?
+                value = str(getattr(self, key).get())
+
+                # do we already have a value for this key?
+                config_setting = session.execute(
+                    select(models.BaseTTSConfig).where(
+                        models.BaseTTSConfig.character_id==character.id,
+                        models.BaseTTSConfig.key==key
+                    )
+                ).scalar_one_or_none()
+
+                if config_setting and config_setting.value != value:
+                    # update an existing setting
+                    config_setting.value = value
+                    session.commit()
+                elif not config_setting:
+                    # save a new setting
+                    new_config_setting = models.BaseTTSConfig(
+                        character_id=character.id,
+                        key=key,
+                        value=value
+                    )
+                    session.add(new_config_setting)
+
+            session.commit()
 
 
 class WindowsTTS(TTSEngine):
@@ -252,13 +269,7 @@ class GoogleCloud(TTSEngine):
         ))
 
         self.load_character(self.selected_character.get())
-
-        gender = self.get_gender(self.selected_character.get())
-        if gender:
-            self.ssml_gender.set(gender[0])
-        else:
-            log.warning('Voice has no associated gender (even neutral)')
-
+        
         language_frame = tk.Frame(self)
         tk.Label(
             language_frame,
@@ -348,23 +359,17 @@ class GoogleCloud(TTSEngine):
         self.pitch.trace_add("write", self.change_voice_pitch)
         pitch_frame.pack(side='top', fill='x', expand=True)
 
-    def get_gender(self, voice_name):
-        cursor = get_cursor()
-        gender = cursor.execute("""
-            SELECT
-                ssml_gender
-            FROM
-                google_voices
-            WHERE
-                name=?  
-        """, (self.voice_name.get(), )).fetchone()
-        return gender
-
     def change_voice_name(self, a, b, c):
         # the user have chosen a different voice name
-        gender = self.get_gender(self.selected_character.get())
-        if gender:
-            self.ssml_gender.set(gender[0])
+        # find the voice they chose
+        with models.Session(models.engine) as session:
+            self.voice = session.execute(
+                select(models.GoogleVoices).where(
+                    models.GoogleVoices.name==self.voice_name.get()
+                )
+            ).scalar_one_or_none()
+            self.ssml_gender.set(self.voice.ssml_gender)
+
         self.save_character(self.selected_character.get())
 
     def change_voice_rate(self, a, b, c):
@@ -377,30 +382,31 @@ class GoogleCloud(TTSEngine):
         return ['en-US', ]
     
     def get_voice_names(self):
-        cursor = get_cursor()
+        with models.Session(models.engine) as session:
+            all_voices = session.execute(
+                select(models.GoogleVoices).where(
+                    models.GoogleVoices.language_code==self.language_code.get()
+                ).order_by(models.GoogleVoices.name)
+            ).scalars()
         
-        all_voices = cursor.execute(
-            'SELECT name FROM google_voices WHERE language_code = ? ORDER BY name',
-            (self.language_code.get(), )
-        ).fetchall()
+            if all_voices:
+                return [voice.name for voice in all_voices]
+            else:
+                # we don't have voices in the DB
+                client = texttospeech.TextToSpeechClient()
+                req = texttospeech.ListVoicesRequest(language_code=self.language_code.get())
+                resp = client.list_voices(req)
+                
+                for voice in resp.voices:
+                    new_voice = models.GoogleVoices(
+                        name=voice.name,
+                        language_code=self.language_code.get(),
+                        ssml_gender=texttospeech.SsmlVoiceGender(voice.ssml_gender).name
+                    )
+                    session.add(new_voice)
+                session.commit()
 
-        if all_voices:
-            return [voice[0] for voice in all_voices]
-        else:
-            # we don't have voices in the DB
-            client = texttospeech.TextToSpeechClient()
-            req = texttospeech.ListVoicesRequest(language_code=self.language_code.get())
-            resp = client.list_voices(req)
-            for voice in resp.voices:
-                cursor.execute("""
-                    INSERT into google_voices (name, language_code, ssml_gender) VALUES (:name, :language_code, :ssml_gender)
-                """, {
-                    'name': voice.name,
-                    'language_code': self.language_code.get(),
-                    'ssml_gender': texttospeech.SsmlVoiceGender(voice.ssml_gender).name
-                })
-            commit()
-            return sorted([n.name for n in resp.voices])
+                return sorted([n.name for n in resp.voices])
         
     def get_tts(self):
         # self.rate?

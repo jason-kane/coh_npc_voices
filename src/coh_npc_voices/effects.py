@@ -1,11 +1,13 @@
 import logging
 import tkinter as tk
 from tkinter import font, ttk
-import numpy as np
 
+import db
+import models
+import numpy as np
 import pedalboard
 import voicebox
-import db
+from sqlalchemy import select, update
 
 log = logging.getLogger('__name__')
 
@@ -182,54 +184,36 @@ class EffectParameterEditor(tk.Frame):
 
     def reconfig(self, varname, lindex, operation):
         """
-        The user changed one of the parameters.  Lets
+        The user changed one of the effect parameters.  Lets
         persist that change.  Make the database reflect
         the UI.
         """
         log.info(f'reconfig triggered by {varname}')
-        cursor = get_cursor()
         effect_id = self.effect_id.get()
 
-        effect_setting = cursor.execute("""
-            SELECT 
-                id, key, value
-            FROM
-                effect_setting
-            where
-                effect_id = ?
-        """, (
-            effect_id,
-        )).fetchall()
+        with models.Session(models.engine) as session:
+            effect_settings = session.scalars(
+                select(models.EffectSetting).where(
+                    models.EffectSetting.effect_id==effect_id
+                )
+            ).all()
 
-        log.info('Sync to db')
-        for id, key, value in effect_setting:
-            try:
-                value = float(value)
-            except ValueError:
-                pass
+            log.info('Sync to db')
+            for effect_setting in effect_settings:
+                try:
+                    new_value = getattr(self, effect_setting.key).get()
+                except AttributeError:
+                    log.error(f'Invalid configuration.  Cannot set {effect_setting.key} on a {self} effect.')
+                    continue
 
-            try:
-                new_value = getattr(self, key).get()
-            except AttributeError:
-                log.error(f'Invalid configuration.  Cannot set {key} on a {self} effect.')
-                continue
-
-            if new_value != value:
-                log.info(f'Saving changed value {id}:{key} {value!r}=>{new_value!r}')
-                # this value is different than what
-                # we have in the database
-                cursor.execute("""
-                    UPDATE
-                        effect_setting
-                    SET
-                        value=?
-                    WHERE
-                        id=?
-                """, (str(new_value), id, ))
-            else:
-                log.info(f'Value for {key} has not changed')
-
-        commit()
+                if new_value != effect_setting.value:
+                    log.info(f'Saving changed value {effect_setting.key} {effect_setting.value!r}=>{new_value!r}')
+                    # this value is different than what
+                    # we have in the database
+                    effect_setting.value = new_value
+                    session.commit()
+                else:
+                    log.info(f'Value for {effect_setting.key} has not changed')
 
 
 # scipy iir filters
@@ -316,39 +300,43 @@ class BandstopFilter(EffectParameterEditor):
 
         LScale(
             self,
-            'Low Frequency', 
-            "Filter frequency in Hz",
-            from_=0,
+            pname='low_frequency',
+            label='Low Frequency', 
+            desc="Filter frequency in Hz",
+            default=100,
+            from_=100,
             to=4000,
-            variable=self.low_frequency,
             resolution=100
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
             self,
-            'High Frequency', 
-            "Filter frequency in Hz",
-            from_=0,
+            pname="high_frequency",
+            label='High Frequency', 
+            desc="Filter frequency in Hz",
+            default=600,
+            from_=1,
             to=4000,
-            variable=self.high_frequency,
             resolution=100
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
             self,
-            'Order', 
-            "Higher orders will have faster dropoffs.",
+            pname="order",
+            label='Order', 
+            desc="Higher orders will have faster dropoffs.",
+            default=0,
             from_=0,
             to=10,
-            variable=self.order,
         ).pack(side='top', fill='x', expand=True)
 
         LCombo(
             self,
-            'Type',
-            'type of IIR filter to design',
+            pname="type_",
+            label='Type',
+            desc='type of IIR filter to design',
+            default="butter",
             choices=IIR_FILTERS,
-            variable=self.type_
         ).pack(side='top', fill='x', expand=True)
 
         # TODO:
@@ -380,29 +368,32 @@ class LowpassFilter(EffectParameterEditor):
 
         LScale(
             self,
-            'Frequency', 
-            "Filter frequency in Hz",
-            from_=0,
+            pname='frequency',
+            label='Frequency (Hz)', 
+            desc="Filter frequency in Hz",
+            default=100,
+            from_=100,
             to=4000,
-            variable=self.low_frequency,
             resolution=100
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
             self,
-            'Order', 
-            "Higher orders will have faster dropoffs.",
+            pname="order",
+            label='Order', 
+            desc="Higher orders will have faster dropoffs.",
+            default=0,
             from_=0,
             to=10,
-            variable=self.order,
         ).pack(side='top', fill='x', expand=True)
 
         LCombo(
             self,
-            'Type',
-            'type of IIR filter to design',
+            pname="type_",
+            label='Type',
+            desc='type of IIR filter to design',
+            default="butter",
             choices=IIR_FILTERS,
-            variable=self.type_
         ).pack(side='top', fill='x', expand=True)
 
         # TODO:
@@ -434,30 +425,34 @@ class HighpassFilter(EffectParameterEditor):
 
         LScale(
             self,
-            'Frequency', 
-            "Filter frequency in Hz",
-            from_=0,
+            pname='frequency',
+            label='Frequency (Hz)', 
+            desc="Filter frequency in Hz",
+            default=100,
+            from_=100,
             to=4000,
-            variable=self.low_frequency,
             resolution=100
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
             self,
-            'Order', 
-            "Higher orders will have faster dropoffs.",
+            pname="order",
+            label='Order', 
+            desc="Higher orders will have faster dropoffs.",
+            default=0,
             from_=0,
             to=10,
-            variable=self.order,
         ).pack(side='top', fill='x', expand=True)
 
         LCombo(
             self,
-            'Type',
-            'type of IIR filter to design',
+            pname="type_",
+            label='Type',
+            desc='type of IIR filter to design',
+            default="butter",
             choices=IIR_FILTERS,
-            variable=self.type_
         ).pack(side='top', fill='x', expand=True)
+
 
         # TODO:
         # this is incomplete, when users choose chebyshev or elliptic they should

@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-
+import json
 from sqlalchemy import Enum, ForeignKey, Integer, String, create_engine, orm, select
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import mapped_column
@@ -38,17 +38,17 @@ def get_settings():
             settings = Settings(
                 logdir = ""
             )
-            session.add_all([settings])
+            session.add(settings)
             session.commit()
 
         log.info(dir(settings))
         return settings
 
 
-class CharacterCategories(enum.Enum):
-    npc = 1
-    player = 2
-    system = 3
+
+npc = 1
+player = 2
+system = 3
 
 
 class Character(Base):
@@ -56,7 +56,7 @@ class Character(Base):
     id = mapped_column(Integer, primary_key=True)
     name = mapped_column(String(64))
     engine = mapped_column(String(64))
-    category = Enum(CharacterCategories)
+    category = mapped_column(Integer, index=True)
 
 class BaseTTSConfig(Base):
     __tablename__ = "base_tts_config"
@@ -71,6 +71,9 @@ class GoogleVoices(Base):
     name = mapped_column(String(64))
     language_code = mapped_column(String(64))
     ssml_gender = mapped_column(String(64))
+
+    def __str__(self):
+        return json.loads(self.__dict__)
 
 class Phrases(Base):
     __tablename__ = "phrases"

@@ -50,22 +50,23 @@ class ChoosePhrase(tk.Frame):
         raw_name = self.selected_character.get()
         with models.Session(models.engine) as session:
             category, name = raw_name.split(maxsplit=1)
-            character = session.query(
-                models.Character
-            ).filter_by(
-                name=name,
-                category=category
-            ).one_or_none()
+            
+            character = session.scalars(
+                select(models.Character).where(
+                    models.Character.name == name,
+                    models.Character.category == category,
+                )
+            ).first()
 
             if character is None:
-                log.error(f'Character {category}|{name} does not exist!')
+                log.error(f'62 Character {category}|{name} does not exist!')
                 return
 
-            character_phrases = session.query(
-                models.Phrases
-            ).filter_by(
-                character_id=character.id
-            ).fetchall()
+            character_phrases = session.scalars(
+                select(models.Phrases).where(
+                    models.Phrases.character_id==character.id
+                )
+            ).all()
        
         if character_phrases:
             self.chosen_phrase.set(character_phrases[0])
@@ -94,25 +95,20 @@ class ChoosePhrase(tk.Frame):
         category, name = full_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
-            character = session.execute(
-                select(models.Character).
-                filter_by(name=name)
-            ).scalar_one()
+            character = session.scalars(
+                select(models.Character).where(
+                    models.Character.name == name,
+                    models.Character.category == category
+                )
+            ).first()
 
-            all_phrases = session.scalers(
-                select(models.Phrases).filter_by(character_id=character.id)
-            ).all()
-
-        # all_phrases = [
-        #     n[2] for n in cursor.execute("""
-        #         SELECT
-        #             id, character_id, text 
-        #         FROM 
-        #             phrases 
-        #         WHERE 
-        #             character_id = ?
-        #     """, (character.id, )).fetchall()
-        # ]
+            all_phrases = [ 
+                n.text for n in session.scalars(
+                    select(models.Phrases).where(
+                        models.Phrases.character_id == character.id
+                    )
+                ).all()
+            ]
 
         _, clean_name = db.clean_customer_name(character.name)
         filename = db.cache_filename(character.name, message)
@@ -258,10 +254,12 @@ class EngineSelectAndConfigure(tk.Frame):
 
         try:
             with models.Session(models.engine) as session:
-                character = session.execute(
-                    select(models.Character).
-                    filter_by(name=name)
-                ).scalar_one()
+                character = session.scalars(
+                    select(models.Character).where(
+                        name==name,
+                        category==category
+                    )
+                ).first()
         except exc.NoResultFound:
             log.error('Character %s does not exist.', name)
             return None
@@ -305,60 +303,59 @@ class EffectList(tk.Frame):
         category, name = self.get_category_name()
 
         with models.Session(models.engine) as session:
-            character = session.execute(
+            character = session.scalars(
                 select(models.Character).where(
                     models.Character.name==name,
                     models.Character.category==category
                 )
-            ).one_or_none()
+            ).first()
             
             if character is None:
-                log.error('Cannot load effects.  Character %s does not exist.', name)
+                log.error(
+                    'Cannot load effects.  Character %s|%s does not exist.', 
+                    category, name
+                )
                 return
 
-            voice_effects = session.query(
-                models.Effects
-            ).filter_by(
-                character_id=character.id
-            ).fetchall()
+            voice_effects = session.scalars(
+                select(models.Effects).where(
+                    models.Effects.character_id==character.id
+                )
+            ).all()
 
-        for effect in voice_effects:
-            log.info(f'Adding effect {effect} found in the database')
-            id, effect_name = effect
-            effect_class = effects.EFFECTS[effect_name]
+            for effect in voice_effects:
+                log.info(f'Adding effect {effect} found in the database')
+                effect_class = effects.EFFECTS[effect.effect_name]
 
-            # not very DRY
-            effect_config_frame = effect_class(
-                self, 
-                borderwidth=1, 
-                highlightbackground="black", 
-                relief="groove"
-            )
-            effect_config_frame.pack(side="top", fill="x", expand=True)
-            effect_config_frame.effect_id.set(id)
-            self.effects.append(effect_config_frame)
+                # not very DRY
+                effect_config_frame = effect_class(
+                    self, 
+                    borderwidth=1, 
+                    highlightbackground="black", 
+                    relief="groove"
+                )
+                effect_config_frame.pack(side="top", fill="x", expand=True)
+                effect_config_frame.effect_id.set(effect.id)
+                self.effects.append(effect_config_frame)
 
-            # we are not done yet.
-            effect_setting = cursor.execute("""
-                SELECT 
-                    key, value
-                FROM
-                    effect_setting
-                where
-                    effect_id = ?
-            """, (
-                id,
-            )).fetchall()
+                # we are not done yet.
+                effect_settings = session.scalars(
+                    select(models.EffectSetting).where(
+                        models.EffectSetting.effect_id == effect.id
+                    )
+                ).all()
 
-            for key, value in effect_setting:
+                for setting in effect_settings:
 
-                tkvar = getattr(effect_config_frame, key, None)
-                if tkvar:
-                    tkvar.set(value)
-                else:
-                    log.error(f'Invalid configuration.  {key} is not available for {effect_config_frame}')
+                    tkvar = getattr(effect_config_frame, setting.key, None)
+                    if tkvar:
+                        tkvar.set(setting.value)
+                    else:
+                        log.error(
+                            f'Invalid configuration.  '
+                            f'{setting.key} is not available for '
+                            f'{effect_config_frame}')
 
-        cursor.close()
 
     def add_effect(self, effect_name):
         """
@@ -399,40 +396,40 @@ class EffectList(tk.Frame):
             effect_config_frame.pack(side="top", fill="x", expand=True)
             self.effects.append(effect_config_frame)
 
-            character = Character.get_by_raw_name(self.selected_character.get())
+            category, name = self.selected_character.get().split(maxsplit=1)
 
-            # persist this change to the database
-            log.info(f'Saving new effect {effect_name} to database')
-            cursor = db.get_cursor()
-            cursor.execute("""
-                INSERT 
-                    INTO effects (character_id, effect_name)
-                VALUES
-                    (:character_id, :effect_name)
-            """, {
-                'character_id': character.id,
-                'effect_name': effect_name
-            })
-            effect_id = cursor.lastrowid
+            with models.Session(models.engine) as session:
+                # retrieve this character
+                character = session.scalars(
+                    select(models.Character).where(
+                        models.Character.name==name,
+                        models.Character.category==category
+                    )
+                ).first()
+
+                # save the current effect selection
+                effect = models.Effects(
+                    character_id=character.id,
+                    effect_name=effect_name
+                )
+                session.add(effect)
+                session.commit()
+                session.refresh(effect)
 
             for key in effect_config_frame.parameters:
+                # save the current effect configuration
                 tkvar = getattr(effect_config_frame, key)
                 value = tkvar.get()
 
-                cursor.execute("""
-                    INSERT 
-                        INTO effect_setting (effect_id, key, value)
-                    VALUES
-                        (:effect_id, :key, :value)
-                """, {
-                    'effect_id': effect_id,
-                    'key': key,
-                    'value': value
-                })
-
-            db.commit()
-            cursor.close()
-            effect_config_frame.effect_id.set(effect_id)      
+                new_setting = models.EffectSetting(
+                    effect_id=effect.id,
+                    key=key,
+                    value=value
+                )
+                session.add(new_setting)
+            session.commit()
+            
+            effect_config_frame.effect_id.set(effect.id)      
     
     def remove_effect(self, effect_obj):
         log.info(f'Removing effect {effect_obj}')
@@ -565,17 +562,18 @@ class DetailSide(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
         
         with models.Session(models.engine) as session:
-            character = session.execute(
+            character = session.scalars(
                 select(models.Character).where(
                     name==name, 
                     category==category
                 )
-            ).one_or_none()
+            ).first()
 
         # update the phrase selector
         self.phrase_selector.populate_phrases()
 
         # set the engine itself
+        log.info('character: %s', character)
         self.engineSelect.set_engine(character.engine)
 
         # set engine and parameters
