@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy_utils import database_exists, create_database
-
+import models
 
 engine = create_engine("sqlite:///voices.db", echo=True)
 
@@ -33,7 +33,7 @@ def build_migrate():
     # it really doesn't exist.
     if not database_exists(engine.url):    
         create_database(engine.url)
-        Base.metadata.create_all(engine)
+        models.Base.metadata.create_all(engine)
     return
 
 if not database_exists(engine.url):

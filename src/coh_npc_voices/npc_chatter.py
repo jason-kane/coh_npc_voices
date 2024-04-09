@@ -73,7 +73,7 @@ class TightTTS(threading.Thread):
                 log.warning('Unexpected queue message: %s', raw_message)
                 continue
 
-            if category not in voice_builder.MESSAGE_CATEGORIES:
+            if category not in ['npc', 'player', 'system']:
                 log.error('invalid category: %s', category)
                 self.q.task_done()
                 continue
@@ -125,12 +125,12 @@ class TightTTS(threading.Thread):
                 # ok, what kind of voice do we want for this NPC?
                 
                 with models.Session(models.engine) as session:
-                    character = session.query(
-                        models.Character
-                    ).filter_by(
-                        name=name,
-                        category=category
-                    ).one_or_none()
+                    character = session.scalars(
+                        select(models.Character).where(
+                            models.Character.name == name,
+                            models.Character.category == models.category_str2int(category)
+                        )
+                    ).first()
 
                 if character is None:
                     # this is the first time we've gotten a message from this
@@ -140,7 +140,7 @@ class TightTTS(threading.Thread):
                         character = models.Character(
                             name=name,
                             engine=voice_builder.default_engine,
-                            category=category
+                            category=models.category_str2int(category)
                         )
                         session.add(character)
                         session.commit()

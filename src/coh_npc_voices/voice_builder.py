@@ -7,11 +7,10 @@ import effects
 import models
 from engines import get_engine
 from pedalboard.io import AudioFile
+from sqlalchemy import select, update
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 
 log = logging.getLogger("__name__")
-
-MESSAGE_CATEGORIES = ['npc', 'system', 'player']
 
 default_engine = "Windows TTS"
 
@@ -36,11 +35,11 @@ def create(character, message, cachefile):
     3. persist as an mp3 in cachefile
     """
     with models.Session(models.engine) as session:
-        voice_effects = session.query(
-            models.Effects
-        ).filter(
-            character_id=character.id
-        ).fetchall()
+        voice_effects = session.scalars(
+            select(models.Effects).where(
+                models.Effects.character_id == character.id
+            )
+        ).all()
     
     effect_list = []
     for effect in voice_effects:
@@ -67,14 +66,17 @@ def create(character, message, cachefile):
 
     # have we seen this particular phrase before?
     with models.Session(models.engine) as session:
-        phrase = session.query(
-            models.Phrases
-        ).filter_by(
-            character_id=character.id,
-            text=message
-        ).one_or_none()
+        phrase = session.execute(
+            select(models.Phrases).where(
+                models.Phrases.character_id == character.id,
+                models.Phrases.text == message
+            )
+        ).first()
+        
+        log.info(phrase)
 
         if phrase is None:
+            log.info('Phrase not found.  Creating...')
             # it does not exist, now it does.
             phrase = models.Phrases(
                 character_id=character.id,
@@ -84,8 +86,8 @@ def create(character, message, cachefile):
             session.commit()
 
     try:
-        clean_name = re.sub(r'[^\w]', '', name)
-        os.mkdir(os.path.join("clip_library", category, clean_name))
+        clean_name = re.sub(r'[^\w]', '',character.name)
+        os.mkdir(os.path.join("clip_library", character.cat_str(), clean_name))
     except OSError:
         # the directory already exists.  This is not a problem.
         pass
@@ -95,9 +97,9 @@ def create(character, message, cachefile):
         WaveFile(cachefile + '.wav')
     ])
     
-    selected_name = tkvar_ish(f"{category} {name}")
+    selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
 
-    engine(None, selected_name).say(message, effect_list, sink=sink)
+    get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
 
     with AudioFile(cachefile + ".wav") as input:
         with AudioFile(

@@ -8,7 +8,7 @@ import sys
 import tkinter as tk
 from tkinter import font, ttk
 from sqlalchemy.orm import Session
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from sqlalchemy import exc
 import db
 
@@ -36,8 +36,13 @@ class ChoosePhrase(tk.Frame):
         self.selected_character = selected_character
         self.detailside = detailside
 
-        self.chosen_phrase = tk.StringVar(value="<Choose or type a phrase>")
-        self.options = ttk.Combobox(self, textvariable=self.chosen_phrase)
+        self.chosen_phrase = tk.StringVar(
+            value="<Choose or type a phrase>"
+        )
+        self.options = ttk.Combobox(
+            self, 
+            textvariable=self.chosen_phrase
+        )
         self.options["values"] = []
 
         self.populate_phrases()
@@ -47,9 +52,21 @@ class ChoosePhrase(tk.Frame):
         play_btn.pack(side="left")
 
     def populate_phrases(self):
+        log.info('**** populate_phrases() ****')
         raw_name = self.selected_character.get()
-        with models.Session(models.engine) as session:
+        try:
             category, name = raw_name.split(maxsplit=1)
+        except ValueError:
+            log.error('Invalid character raw_name: %s', raw_name)
+            return
+
+        with models.Session(models.engine) as session:            
+
+            try:
+                category = models.category_str2int(category)
+            except ValueError:
+                log.error('Invalid Character Category: %s', category)
+                return
             
             character = session.scalars(
                 select(models.Character).where(
@@ -64,16 +81,16 @@ class ChoosePhrase(tk.Frame):
 
             character_phrases = session.scalars(
                 select(models.Phrases).where(
-                    models.Phrases.character_id==character.id
+                    models.Phrases.character_id == character.id
                 )
             ).all()
        
         if character_phrases:
-            self.chosen_phrase.set(character_phrases[0])
+            self.chosen_phrase.set(character_phrases[0].text)
         else:
             self.chosen_phrase.set(
                 f'I have no record of what {raw_name} says.')
-        self.options["values"] = character_phrases
+        self.options["values"] = [p.text for p in character_phrases]
 
     def say_it(self):
         message = self.chosen_phrase.get()
@@ -252,15 +269,15 @@ class EngineSelectAndConfigure(tk.Frame):
         """
         category, name = self.get_category_name()
 
-        try:
-            with models.Session(models.engine) as session:
-                character = session.scalars(
-                    select(models.Character).where(
-                        name==name,
-                        category==category
-                    )
-                ).first()
-        except exc.NoResultFound:
+        with models.Session(models.engine) as session:
+            character = session.scalars(
+                select(models.Character).where(
+                    name==name,
+                    category==category
+                )
+            ).first()
+
+        if character is None:
             log.error('Character %s does not exist.', name)
             return None
        
@@ -438,16 +455,14 @@ class EffectList(tk.Frame):
         self.effects.remove(effect_obj)
         
         # remove it from the database
-        cursor = db.get_cursor()
-        cursor.execute("""
-            DELETE
-                FROM effects
-            WHERE
-                id=?
-            """, (effect_obj.effect_id.get(), )
-        )
-        db.commit()
-        cursor.close()
+        with models.Session(models.engine) as session:
+            session.execute(
+                delete(models.Effects).where(
+                    models.Effects.id == effect_obj.effect_id.get()
+                )
+            )
+            session.commit()
+
         # forget the widgets for this object
         effect_obj.pack_forget()
 
@@ -666,7 +681,7 @@ class ListSide(tk.Frame):
 
         if all_characters:
             self.list_items.set(
-                [f"{character.category} {character.name}" for character in all_characters]
+                [f"{character.cat_str()} {character.name}" for character in all_characters]
             )
 
 

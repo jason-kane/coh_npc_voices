@@ -19,7 +19,6 @@ log = logging.getLogger("__name__")
 engine = create_engine("sqlite:///voices.db", echo=True)
 
 Base = declarative_base()
-metadata = Base.metadata
 
 class Settings(Base):
     __tablename__ = "settings"
@@ -29,8 +28,8 @@ class Settings(Base):
 
 def get_settings():
     with Session(engine) as session:
-        settings = session.query(
-            Settings
+        settings = session.scalars(
+            select(Settings)
         ).first()
     
         if settings is None:
@@ -44,12 +43,8 @@ def get_settings():
         log.info(dir(settings))
         return settings
 
-
-
-npc = 1
-player = 2
-system = 3
-
+def category_str2int(instr):
+    return ['', 'npc', 'player', 'system'].index(instr)
 
 class Character(Base):
     __tablename__ = "character"
@@ -57,6 +52,9 @@ class Character(Base):
     name = mapped_column(String(64))
     engine = mapped_column(String(64))
     category = mapped_column(Integer, index=True)
+
+    def cat_str(self):
+        return ['', 'npc', 'player', 'system'][self.category]
 
 class BaseTTSConfig(Base):
     __tablename__ = "base_tts_config"
@@ -73,13 +71,16 @@ class GoogleVoices(Base):
     ssml_gender = mapped_column(String(64))
 
     def __str__(self):
-        return json.loads(self.__dict__)
+        return json.dumps(self.__dict__)
 
 class Phrases(Base):
     __tablename__ = "phrases"
     id = mapped_column(Integer, primary_key=True)
     character_id = mapped_column(ForeignKey("character.id"))
     text = mapped_column(String(256))
+
+    def __repr__(self):
+        return json.dumps({'id': self.id, 'character_id': self.character_id, 'text': self.text})
 
 class Effects(Base):
     __tablename__ = "effects"
