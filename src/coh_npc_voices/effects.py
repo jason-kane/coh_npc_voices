@@ -198,7 +198,7 @@ class EffectParameterEditor(tk.Frame):
                 )
             ).all()
 
-            log.info('Sync to db')
+            log.debug('Sync to db')
             for effect_setting in effect_settings:
                 try:
                     new_value = str(getattr(self, effect_setting.key).get())
@@ -213,7 +213,7 @@ class EffectParameterEditor(tk.Frame):
                     effect_setting.value = new_value
                     session.commit()
                 else:
-                    log.info(f'Value for {effect_setting.key} has not changed')
+                    log.debug(f'Value for {effect_setting.key} has not changed')
 
 
 # scipy iir filters
