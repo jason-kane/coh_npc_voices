@@ -44,14 +44,16 @@ def create(character, message, cachefile):
     effect_list = []
     for effect in voice_effects:
         log.info(f'Adding effect {effect} found in the database')
-        effect_class = effects.EFFECTS[effect.name]
+        effect_class = effects.EFFECTS[effect.effect_name]
 
         effect = effect_class(None)
 
         with models.Session(models.engine) as session:
-            effect_settings = session.query(
-                models.EffectSetting
-            ).filter_by(effect_id=effect.id)
+            effect_settings = session.scalars(
+                select(models.EffectSetting).where(
+                    models.EffectSetting.effect_id == effect.id
+                )
+            ).all            
 
         # reach into effect() and set the values this
         # plugin expects.
