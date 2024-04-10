@@ -29,6 +29,24 @@ logging.basicConfig(
 
 log = logging.getLogger("__name__")
 
+PRESETS = {
+    "Zombie": {
+        "engine": "Google Text-to-Speech",
+        "BaseTTSConfig": {
+            "voice_name": "Microsoft Zira Desktop - English (United States)",
+            "rate": "2"
+        }, 
+        "Effects": {
+            "Chorus": {
+                "rate_hz": "10.0",
+                "mix": "0.5",
+                "depth": "0.25",
+                "feedback": "0.0"
+            }
+        }
+    }
+}
+
 
 class ChoosePhrase(tk.Frame):
     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
@@ -52,7 +70,6 @@ class ChoosePhrase(tk.Frame):
         play_btn.pack(side="left")
 
     def populate_phrases(self):
-        log.info('**** populate_phrases() ****')
         raw_name = self.selected_character.get()
         try:
             category, name = raw_name.split(maxsplit=1)
@@ -104,12 +121,12 @@ class ChoosePhrase(tk.Frame):
             e.get_effect() for e in self.detailside.effect_list.effects
         ]
 
-        full_name = self.selected_character.get()
-        if not full_name:
+        raw_name = self.selected_character.get()
+        if not raw_name:
             log.warning('Name is required')
             return
         
-        category, name = full_name.split(maxsplit=1)
+        category, name = raw_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
             character = session.scalars(
@@ -129,7 +146,7 @@ class ChoosePhrase(tk.Frame):
 
         _, clean_name = db.clean_customer_name(character.name)
         filename = db.cache_filename(character.name, message)
-        log.info(f'all_phrases: {all_phrases}')
+        log.debug(f'all_phrases: {all_phrases}')
         if message in all_phrases:
             cachefile = os.path.abspath(
                 os.path.join(
@@ -301,15 +318,6 @@ class EffectList(tk.Frame):
         self.selected_character = selected_character
         self.load_effects()
 
-    def get_category_name(self):
-        full_name = self.selected_character.get()
-        if not full_name:
-            log.warning('Name is required')
-            return None, None
-        
-        category, name = full_name.split(maxsplit=1)
-        return category, name
-
     def load_effects(self):
         log.info('EffectList.load_effects()')
 
@@ -318,7 +326,11 @@ class EffectList(tk.Frame):
             effect = self.effects.pop()
             effect.pack_forget()
 
-        category, name = self.get_category_name()
+        raw_name = self.selected_character.get()
+        if raw_name in ["", None]:
+            return
+
+        category, name = raw_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
             character = session.scalars(
@@ -414,14 +426,15 @@ class EffectList(tk.Frame):
             effect_config_frame.pack(side="top", fill="x", expand=True)
             self.effects.append(effect_config_frame)
 
-            category, name = self.selected_character.get().split(maxsplit=1)
+            raw_name = self.selected_character.get()
+            category, name = raw_name.split(maxsplit=1)
 
             with models.Session(models.engine) as session:
                 # retrieve this character
                 character = session.scalars(
                     select(models.Character).where(
                         models.Character.name==name,
-                        models.Character.category==category
+                        models.Character.category==models.category_str2int(category)
                     )
                 ).first()
 
@@ -549,6 +562,11 @@ class DetailSide(tk.Frame):
         )
         self.phrase_selector.pack(side="top", fill="x", expand=True)
 
+        self.presetSelect = PresetSelector(
+            self.frame, self, self.selected_character
+        )
+        self.presetSelect.pack(side="top", fill="x", expand=True)
+
         self.engineSelect = EngineSelectAndConfigure(
             self.frame, self.selected_character
         )
@@ -573,7 +591,9 @@ class DetailSide(tk.Frame):
         # add each effect
         # set parameters for each effect
         log.debug(f'DetailSide.load_character({raw_name})')
-        self.selected_character.set(raw_name)
+        raw_was = self.selected_character.get()
+        if raw_was != raw_name:
+            self.selected_character.set(raw_name)
 
         category, name = raw_name.split(maxsplit=1)
         
@@ -597,6 +617,108 @@ class DetailSide(tk.Frame):
         
         # effects
         self.effect_list.load_effects()
+
+        # reset the preset selector
+        self.presetSelect.reset()
+
+
+class PresetSelector(tk.Frame):
+    choose_a_preset = f"{'< Use a Preset >': ^70}"
+
+    def __init__(self, parent, detailside, selected_character, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.selected_character = selected_character
+        self.detailside = detailside
+       
+        self.chosen_preset = tk.StringVar(value=self.choose_a_preset)
+        self.chosen_preset.trace_add("write", self.choose_preset)
+
+        preset_combobox = ttk.Combobox(
+            self,
+            textvariable=self.chosen_preset
+        )
+        preset_combobox["values"] = list(PRESETS.keys())
+        preset_combobox["state"] = "readonly"
+
+        preset_combobox.pack(side="left", fill="x", expand=True)
+
+    def reset(self):
+        self.chosen_preset.set(self.choose_a_preset)
+
+    def choose_preset(self, varname, lindex, operation):
+        preset_name = self.chosen_preset.get()
+        if preset_name == self.choose_a_preset:
+            return
+
+        raw_name = self.selected_character.get()
+        category, name = raw_name.split(maxsplit=1)
+
+        with models.Session(models.engine) as session:
+            character = session.scalars(
+                select(models.Character).where(
+                    models.Character.name==name,
+                    models.Character.category==models.category_str2int(category)
+                )
+            ).first()
+
+        preset = PRESETS[preset_name]
+
+        with models.Session(models.engine) as session:
+            character.engine = preset['engine']
+            
+            for model in ("BaseTTSConfig", "Effects"):
+                # wipe any existing entries for this character
+                session.execute(
+                    delete(getattr(models, model)).where(
+                        getattr(models, model).character_id == character.id
+                    )
+                )
+            
+            for key in preset['BaseTTSConfig']:
+                session.add(
+                    models.BaseTTSConfig(
+                        character_id=character.id,
+                        key=key,
+                        value=preset['BaseTTSConfig'][key]
+                    )
+                )
+            
+            # TODO
+            # we aren't cleaning up old effectsettings, so they database is going to
+            # very gradually bloat with unreachable objects.
+            if 'Effects' in preset:
+                # wipe any existing effects
+                session.execute(
+                    delete(models.Effects).where(
+                        models.Effects.character_id == character.id
+                    )
+                )
+
+            for effect_name in preset.get('Effects', []):
+                effect = models.Effects(
+                    character_id=character.id,
+                    effect_name=effect_name
+                )
+                session.add(effect)
+
+                # we need the effect.id
+                session.commit()
+                session.refresh(effect)
+
+                for effect_setting_key in preset['Effects'][effect_name]:
+                    value = preset['Effects'][effect_name][effect_setting_key]
+                    
+                    session.add(
+                        models.EffectSetting(
+                            effect_id=effect.id,
+                            key=effect_setting_key,
+                            value=str(value)
+                        )
+                    )
+
+            session.commit()
+
+        self.detailside.load_character(self.selected_character.get())
 
 
 class Character:

@@ -12,7 +12,7 @@ import queue
 import sys
 import tkinter as tk
 from tkinter import font, ttk
-
+from sqlalchemy import func, select
 import db
 import effects
 import engines
@@ -66,31 +66,24 @@ class ChartFrame(tk.Frame):
             # plotting the graph 
             # plot1.plot(y) 
             #data = get_total_xp(starttime, endtime, bin_size=60)
-            cursor = db.get_cursor()
+            # cursor = db.get_cursor()
 
             # end time should be the most recent timestamp
             # not now()
             log.info(f'Retrieving {self.category} data')
-            try:
-                latest_event = cursor.execute("""
-                    SELECT 
-                        event_time
-                    FROM 
-                        hero_stat_events
-                    WHERE 
-                        hero=? 
-                    ORDER BY 
-                        event_time DESC 
-                    LIMIT 1
-                """, (self.hero.id, )).fetchone()
-            except Exception as err:
-                log.error(err)
-                raise
-
+            with models.Session(models.engine) as session:
+                latest_event = session.scalar(
+                    select(models.HeroStatEvent).where(
+                        models.HeroStatEvent.hero == self.hero.id
+                    ).order_by(
+                        models.HeroStatEvent.event_time.desc
+                    )
+                ).first()
+            
             log.info(f'latest_event: {latest_event}')
 
             if latest_event:
-                end_time = datetime.fromisoformat(latest_event[0])
+                end_time = latest_event.event_time
             else:
                 log.info(f'No previous events found for {self.hero.name}')
                 end_time = datetime.now()
@@ -98,26 +91,43 @@ class ChartFrame(tk.Frame):
             start_time = end_time - timedelta(minutes=60)
             log.info(f'Graphing {self.category} gain between {start_time} and {end_time}')
 
-            try:
-                samples = cursor.execute("""
-                    SELECT
-                        STRFTIME('%Y-%m-%d %H:%M:00', event_time) as EventMinute,
-                        SUM(xp_gain),
-                        SUM(inf_gain)
-                    FROM 
-                        hero_stat_events
-                    WHERE
-                        hero = ? AND
-                        event_time > ? AND
-                        event_time <= ?
-                    GROUP BY
-                        STRFTIME('%Y-%m-%d %H:%M:00', event_time)
-                    ORDER BY
-                        EventMinute
-                """, (self.hero.id, start_time, end_time)).fetchall()
-            except Exception as err:
-                log.error(err)
-                raise
+            with models.Session(models.engine) as session:
+                samples = session.scalar(
+                    select(
+                        func.STRFTIME('%Y-%m-%d %H:%M:00', models.HeroStatEvent.event_time),
+                        func.sum(models.HeroStatEvent.xp_gain),
+                        func.sum(models.HeroStatEvent.inf_gain),
+                        models.HeroStatEvent
+                    ).where(
+                        models.HeroStatEvent.hero == self.hero.id,
+                        models.HeroStatEvent.event_time >= start_time,
+                        models.HeroStatEvent.event_time <= end_time,
+                    ).group_by(
+                        func.STRFTIME('%Y-%m-%d %H:%M:00', models.HeroStatEvent.event_time)
+                    ).order_by(
+                        models.HeroStatEvent.event_time
+                    )
+                ).all()
+            # try:
+            #     samples = cursor.execute("""
+            #         SELECT
+            #             STRFTIME('%Y-%m-%d %H:%M:00', event_time) as EventMinute,
+            #             SUM(xp_gain),
+            #             SUM(inf_gain)
+            #         FROM 
+            #             hero_stat_events
+            #         WHERE
+            #             hero = ? AND
+            #             event_time > ? AND
+            #             event_time <= ?
+            #         GROUP BY
+            #             STRFTIME('%Y-%m-%d %H:%M:00', event_time)
+            #         ORDER BY
+            #             EventMinute
+            #     """, (self.hero.id, start_time, end_time)).fetchall()
+            # except Exception as err:
+            #     log.error(err)
+            #     raise
             
             log.info(f'Found {len(samples)} samples')
 
@@ -126,14 +136,17 @@ class ChartFrame(tk.Frame):
             
             for row in samples:
                 data_x.append(
-                    datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+                    row.event_time
+                    # datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
                 )
                 # log.info(row)
 
                 if self.category == "xp":
-                    data_y.append(row[1])
+                    data_y.append(row.xp_gain)
+                    # row[1])
                 elif self.category == "inf":
-                    data_y.append(row[2])
+                    data_y.append(row.inf_gain)
+                    # row[2])
                 
             log.info(f'Plotting {data_x}:{data_y}')
             # data = ((0, 1), (1, 10), (2, 10), (3, 500), (5, 200))

@@ -201,7 +201,7 @@ class EffectParameterEditor(tk.Frame):
             log.info('Sync to db')
             for effect_setting in effect_settings:
                 try:
-                    new_value = getattr(self, effect_setting.key).get()
+                    new_value = str(getattr(self, effect_setting.key).get())
                 except AttributeError:
                     log.error(f'Invalid configuration.  Cannot set {effect_setting.key} on a {self} effect.')
                     continue

@@ -1,4 +1,5 @@
 clip_library/
+clip_library_saved/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

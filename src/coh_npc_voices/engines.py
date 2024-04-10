@@ -56,15 +56,6 @@ class WindowsSapi(voicebox.tts.tts.TTS):
         return audio
 
 
-def get_character_by_raw_name(character_name):
-    cursor = get_cursor()
-    category, name = character_name.split(maxsplit=1)
-    return cursor.execute(
-        'SELECT id, name, engine, category FROM character WHERE name = ? AND category = ?',
-        (name, category)
-    ).fetchone()
-
-
 # Base Class for engines
 class TTSEngine(tk.Frame):
     def __init__(self, parent, selected_character, *args, **kwargs):        
@@ -112,6 +103,7 @@ class TTSEngine(tk.Frame):
             for config in tts_config:
                 if config.key in self.parameters:
                     getattr(self, config.key).set(config.value)
+                    setattr(self, config.key + "_base", config.value)
         
         return character
                 
@@ -142,7 +134,7 @@ class TTSEngine(tk.Frame):
                 session.refresh(character)
 
             for key in self.parameters:
-                log.info(f'Processing attribute {key}...')
+                log.debug(f'Processing attribute {key}...')
                 # do we already have a value for this key?
                 value = str(getattr(self, key).get())
 
@@ -223,13 +215,17 @@ class WindowsTTS(TTSEngine):
         rate_frame.pack(side='top', fill='x', expand=True)
 
     def change_voice_rate(self, a, b, c):
-        self.save_character(self.selected_character.get())
+        rate = self.rate.get()
+        if getattr(self, "rate_base", -20) != rate:
+            self.save_character(self.selected_character.get())
     
     def change_voice_name(self, a, b, c):
         # pull the chosen voice name out of variable linked to the widget
         voice_name = self.voice_name.get()
-        log.warning(f'saving change of voice_name to {voice_name}')
-        self.save_character(self.selected_character.get())
+        
+        if getattr(self, "voice_name_base", "") != voice_name:
+            log.warning(f'saving change of voice_name to {voice_name}')
+            self.save_character(self.selected_character.get())
 
     def get_tts(self):
         return WindowsSapi(

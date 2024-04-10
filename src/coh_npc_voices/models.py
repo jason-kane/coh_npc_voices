@@ -16,7 +16,7 @@ logging.basicConfig(
 
 log = logging.getLogger("__name__")
 
-engine = create_engine("sqlite:///voices.db", echo=True)
+engine = create_engine("sqlite:///voices.db", echo=False)
 
 Base = declarative_base()
 

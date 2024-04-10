@@ -81,7 +81,7 @@ class TightTTS(threading.Thread):
             log.info(f'Speaking thread received {category} {name}:{message}')
 
             name, clean_name = db.clean_customer_name(name)
-            log.info(f"{name} -- {clean_name}")
+            log.debug(f"{name} -- {clean_name}")
 
             #ie: abcde_timetodan.mp3
             filename = db.cache_filename(name, message)
