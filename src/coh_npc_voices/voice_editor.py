@@ -44,6 +44,32 @@ PRESETS = {
             "rate": "1"
         }
     },
+    "Robot": {
+        "engine": "Windows TTS",
+        "BaseTTSConfig": {
+            "voice_name": "David",
+            "rate": "1"
+        },
+        "Effects": {
+            "Vocoder": {
+                "carrier_freq": "160",
+                "min_freq": "80",
+                "max_freq": "8000",
+                "bands": "40",
+                "bandwidth": "0.5",
+                "bandpass_filter_order": "3"
+            },
+            "RingMod": {
+                "carrier_freq": "160",
+                "blend": "0.5",
+                "carrier_wave": "sin"
+            },
+            "Normalize": {
+                "max_amplitude": "1.0",
+                "remove_dc_offset": True
+            }
+        }
+    },
     "Zombie": {
         "engine": "Windows TTS",
         "BaseTTSConfig": {
