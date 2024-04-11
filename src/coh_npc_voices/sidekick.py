@@ -1,34 +1,31 @@
 """
 There is more awesome to be had.
 """
-
-"""Hello World application for Tkinter"""
-
 import logging
 import multiprocessing
-import os
 from datetime import datetime, timedelta
-import queue
 import sys
 import tkinter as tk
 from tkinter import font, ttk
 from sqlalchemy import func, select
-import db
-import effects
-import engines
 import models
 
 import voice_editor
 import npc_chatter
-from pedalboard.io import AudioFile
-from voicebox.sinks import Distributor, SoundDevice, WaveFile
 
-from matplotlib import pyplot
 from matplotlib.figure import Figure 
 from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg,  
     NavigationToolbar2Tk
 ) 
+
+import ctypes
+# this unlinks us from python so windows will
+# use our icon instead of the python icon in the
+# taskbar.
+myappid = u'fun.side.projects.sidekick.1.0'
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -53,32 +50,27 @@ class ChartFrame(tk.Frame):
 
             # the figure that will contain the plot 
             fig = Figure(
-                figsize = (5, 5), 
+                figsize = (5, 2), 
                 dpi = 100
             ) 
-        
-            # list of squares 
-            # y = [i**2 for i in range(101)] 
-        
+               
             # adding the subplot 
             plot1 = fig.add_subplot(111) 
         
-            # plotting the graph 
-            # plot1.plot(y) 
-            #data = get_total_xp(starttime, endtime, bin_size=60)
-            # cursor = db.get_cursor()
-
-            # end time should be the most recent timestamp
-            # not now()
             log.info(f'Retrieving {self.category} data')
-            with models.Session(models.engine) as session:
-                latest_event = session.scalar(
-                    select(models.HeroStatEvent).where(
-                        models.HeroStatEvent.hero == self.hero.id
-                    ).order_by(
-                        models.HeroStatEvent.event_time.desc
-                    )
-                ).first()
+            try:
+                with models.Session(models.engine) as session:
+                    latest_event = session.scalars(
+                        select(models.HeroStatEvent).where(
+                            models.HeroStatEvent.hero_id == self.hero.id
+                        ).order_by(
+                            models.HeroStatEvent.event_time.desc()
+                        )
+                    ).first()
+            except Exception as err:
+                log.error('Unable to determine latest event')
+                log.error(err)
+                raise
             
             log.info(f'latest_event: {latest_event}')
 
@@ -92,64 +84,48 @@ class ChartFrame(tk.Frame):
             log.info(f'Graphing {self.category} gain between {start_time} and {end_time}')
 
             with models.Session(models.engine) as session:
-                samples = session.scalar(
-                    select(
-                        func.STRFTIME('%Y-%m-%d %H:%M:00', models.HeroStatEvent.event_time),
-                        func.sum(models.HeroStatEvent.xp_gain),
-                        func.sum(models.HeroStatEvent.inf_gain),
-                        models.HeroStatEvent
-                    ).where(
-                        models.HeroStatEvent.hero == self.hero.id,
-                        models.HeroStatEvent.event_time >= start_time,
-                        models.HeroStatEvent.event_time <= end_time,
-                    ).group_by(
-                        func.STRFTIME('%Y-%m-%d %H:%M:00', models.HeroStatEvent.event_time)
-                    ).order_by(
-                        models.HeroStatEvent.event_time
-                    )
-                ).all()
-            # try:
-            #     samples = cursor.execute("""
-            #         SELECT
-            #             STRFTIME('%Y-%m-%d %H:%M:00', event_time) as EventMinute,
-            #             SUM(xp_gain),
-            #             SUM(inf_gain)
-            #         FROM 
-            #             hero_stat_events
-            #         WHERE
-            #             hero = ? AND
-            #             event_time > ? AND
-            #             event_time <= ?
-            #         GROUP BY
-            #             STRFTIME('%Y-%m-%d %H:%M:00', event_time)
-            #         ORDER BY
-            #             EventMinute
-            #     """, (self.hero.id, start_time, end_time)).fetchall()
-            # except Exception as err:
-            #     log.error(err)
-            #     raise
+                try:
+                    samples = session.execute(
+                        select(
+                            func.STRFTIME('%Y-%m-%d %H:%M:00', models.HeroStatEvent.event_time).label('EventMinute'),
+                            func.sum(models.HeroStatEvent.xp_gain).label('xp_gain'),
+                            func.sum(models.HeroStatEvent.inf_gain).label('inf_gain')
+                        ).where(
+                            models.HeroStatEvent.hero_id == self.hero.id,
+                            models.HeroStatEvent.event_time >= start_time,
+                            models.HeroStatEvent.event_time <= end_time,
+                        ).group_by(
+                            'EventMinute'
+                            # func.STRFTIME('%Y-%m-%d %H:%M:00', models.HeroStatEvent.event_time)
+                        ).order_by(
+                            'EventMinute'
+                        )
+                    ).all()
+                except Exception as err:
+                    log.error('Error gathering data samples')
+                    log.error(err)
+                    raise
             
             log.info(f'Found {len(samples)} samples')
 
             data_x = []
             data_y = []
-            
+            # log.info(samples)
+
             for row in samples:
+                datestring, xp_gain, inf_gain = row
+                event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
+                
                 data_x.append(
-                    row.event_time
-                    # datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+                    event_time
                 )
-                # log.info(row)
 
                 if self.category == "xp":
-                    data_y.append(row.xp_gain)
-                    # row[1])
+                    data_y.append(xp_gain)
                 elif self.category == "inf":
-                    data_y.append(row.inf_gain)
-                    # row[2])
+                    data_y.append(inf_gain)
                 
-            log.info(f'Plotting {data_x}:{data_y}')
-            # data = ((0, 1), (1, 10), (2, 10), (3, 500), (5, 200))
+            # log.info(f'Plotting {data_x}:{data_y}')
             plot1.plot(data_x, data_y)
         
             # creating the Tkinter canvas 
@@ -161,7 +137,7 @@ class ChartFrame(tk.Frame):
             canvas.draw() 
         
             # placing the canvas on the Tkinter window 
-            canvas.get_tk_widget().pack() 
+            # canvas.get_tk_widget().pack()
         
             # creating the Matplotlib toolbar 
             toolbar = NavigationToolbar2Tk(
@@ -208,10 +184,10 @@ class CharacterTab(tk.Frame):
     # character.name.trace_add('write', set_hero)
     
 
-
 def main():
     root = tk.Tk()
-    # root.iconbitmap("myIcon.ico")
+    root.iconbitmap("sidekick.ico")
+
     root.geometry("640x480+200+200")
     root.resizable(True, True)
     root.title("City of Heroes Sidekick")
