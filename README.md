@@ -38,6 +38,8 @@ Choose "Add voices" under Manage voices
 
 By itselt that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.
 
+You probably have to logout/login before the extra voices are available.
+
 # Running it
 
 Then open a cmd terminal and run:
