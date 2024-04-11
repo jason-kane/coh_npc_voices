@@ -36,8 +36,7 @@ Open Settings, choose Time & Language
 Choose Speech on the left side
 Choose "Add voices" under Manage voices
 
-It won't list everything you install and I don't know why.
-
+By itselt that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.
 
 # Running it
 

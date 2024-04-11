@@ -4,21 +4,21 @@ import logging
 import multiprocessing
 import os
 import queue
+import random
 import sys
 import tkinter as tk
 from tkinter import font, ttk
-from sqlalchemy.orm import Session
-from sqlalchemy import select, update, delete
-from sqlalchemy import exc
-import db
 
-import models
+import db
 import effects
 import engines
+import models
 
 # import voice_builder
 import npc_chatter
 from pedalboard.io import AudioFile
+from sqlalchemy import delete, exc, select, update
+from sqlalchemy.orm import Session
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 
 logging.basicConfig(
@@ -30,10 +30,24 @@ logging.basicConfig(
 log = logging.getLogger("__name__")
 
 PRESETS = {
-    "Zombie": {
-        "engine": "Google Text-to-Speech",
+    "Random Female": {
+        "engine": "Windows TTS",
         "BaseTTSConfig": {
-            "voice_name": "Microsoft Zira Desktop - English (United States)",
+            "voice_name": ('random', 'female'),
+            "rate": "1"
+        }
+    },
+    "Random Male": {
+        "engine": "Windows TTS",
+        "BaseTTSConfig": {
+            "voice_name": ('random', 'male'),
+            "rate": "1"
+        }
+    },
+    "Zombie": {
+        "engine": "Windows TTS",
+        "BaseTTSConfig": {
+            "voice_name": "Zira Desktop",
             "rate": "2"
         }, 
         "Effects": {
@@ -44,7 +58,7 @@ PRESETS = {
                 "feedback": "0.0"
             }
         }
-    }
+    },    
 }
 
 
@@ -234,6 +248,7 @@ class EngineSelectAndConfigure(tk.Frame):
         # No problem.
         # clear the old engine configuration
         # show the selected engine configuration
+        log.info('EngineSelectAndConfigure.chage_selected_engine()')
         if self.engine_parameters:
             self.engine_parameters.pack_forget()
 
@@ -248,7 +263,7 @@ class EngineSelectAndConfigure(tk.Frame):
         """
         save this engine selection to the database
         """
-        log.debug('234 Saving engine selection')
+        log.info('EngineSelectAndConfig.save_character()')
         raw_name = self.selected_character.get()
         if not raw_name:
             log.warning('Name is required to save a character')
@@ -284,7 +299,7 @@ class EngineSelectAndConfigure(tk.Frame):
             log.error('Cannot load_character() with no character name.')
             return
         
-        log.info(f'Loading "{raw_name}"')
+        log.info(f'EngineSelectAndConfigure.load_character: {raw_name}!r')
         category, name = raw_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
@@ -646,8 +661,10 @@ class PresetSelector(tk.Frame):
         self.chosen_preset.set(self.choose_a_preset)
 
     def choose_preset(self, varname, lindex, operation):
+        log.info('PresetSeelctor.choose_preset()')
         preset_name = self.chosen_preset.get()
         if preset_name == self.choose_a_preset:
+            log.info('** No choice detected **')
             return
 
         raw_name = self.selected_character.get()
@@ -662,6 +679,7 @@ class PresetSelector(tk.Frame):
             ).first()
 
         preset = PRESETS[preset_name]
+        log.info(f'Applying preset {preset}')
 
         with models.Session(models.engine) as session:
             character.engine = preset['engine']
@@ -675,11 +693,26 @@ class PresetSelector(tk.Frame):
                 )
             
             for key in preset['BaseTTSConfig']:
+                log.info(f'key: {key}, value: {preset["BaseTTSConfig"][key]}')
+                value = preset['BaseTTSConfig'][key]
+
+                if key == "voice_name" and len(value) == 2:
+                    # I know, sloppy.  what happens if there is a two character
+                    # voice installed and used as a preset?
+                    choice, gender = preset['BaseTTSConfig'][key]
+                    if choice == "random":
+                        all_available_names = engines.get_engine(character.engine).get_voice_names(gender=gender)
+                        log.info(f'Choosing a random voice from {all_available_names}')
+                        value = random.choice(all_available_names)
+                        log.info(f'Selected voice: {value}')
+                    else:
+                        log.error(f'Unknown variable preset setting: {choice}')   
+
                 session.add(
                     models.BaseTTSConfig(
                         character_id=character.id,
                         key=key,
-                        value=preset['BaseTTSConfig'][key]
+                        value=value
                     )
                 )
             
@@ -951,7 +984,6 @@ if __name__ == '__main__':
 #        can't get multiprocessing to work :(  it spawns a whole
 #        new editor when you attach.
 # more effects 
-# better icon
 
 # Not-blocking Glitches
 #######################

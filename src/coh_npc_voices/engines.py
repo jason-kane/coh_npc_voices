@@ -3,10 +3,9 @@ import sys
 import tempfile
 import time
 import tkinter as tk
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from tkinter import ttk
-from sqlalchemy import select, update
-import db
+from sqlalchemy import select
 import models
 import tts.sapi
 import voicebox
@@ -29,10 +28,13 @@ default_engine = 'Windows TTS'
 class WindowsSapi(voicebox.tts.tts.TTS):
 
     rate: int = 1
+    voice: str = "Zira"
 
     def get_speech(self, text: StrOrSSML) -> Audio:
         voice = tts.sapi.Sapi()
+        log.debug(f'Saying {text!r} as {self.voice} at rate {self.rate}')
         voice.set_rate(self.rate)
+        voice.set_voice(self.voice)
 
         with tempfile.NamedTemporaryFile() as tmp:
             # just need the safe filename
@@ -105,6 +107,7 @@ class TTSEngine(tk.Frame):
                     getattr(self, config.key).set(config.value)
                     setattr(self, config.key + "_base", config.value)
         
+        log.info('TTSEngine.load_character complete')
         return character
                 
     def save_character(self, raw_name):
@@ -229,10 +232,12 @@ class WindowsTTS(TTSEngine):
 
     def get_tts(self):
         return WindowsSapi(
-            rate=self.rate.get()
+            rate=self.rate.get(),
+            voice=self.voice_name.get()
         )
     
-    def get_voice_names(self):
+    @staticmethod
+    def get_voice_names(language_code=None, gender=None):
         """
         return a sorted list of available voices
         I don't know how much this list will vary
@@ -240,7 +245,30 @@ class WindowsTTS(TTSEngine):
         machine to machine.
         """
         voice = tts.sapi.Sapi()
-        return sorted(voice.get_voice_names())
+        nice_names = []
+        for voice in voice.get_voice_names():
+            name = " ".join(voice.split('-')[0].split()[1:])
+
+            if gender == "female":
+                # filter to only include female voices.  No doubt
+                # this list is ridiculously incomplete.
+                if name not in [
+                    'Catherine', 'Hazel', 'Hazel Desktop',
+                    'Heera', 'Linda', 'Susan', 
+                    'Zira', 'Zira Desktop'
+                ]:
+                    continue
+            elif gender == "male":
+                if name not in [
+                    'David', 'David Desktop', 
+                    'George', 'James', 'Mark',
+                    'Ravi', 'Richard', 'Sean'
+                ]:
+                    continue
+
+            nice_names.append(name)
+
+        return sorted(nice_names)
 
 
 class GoogleCloud(TTSEngine):
@@ -295,7 +323,7 @@ class GoogleCloud(TTSEngine):
             voice_frame, 
             textvariable=self.voice_name, 
         )
-        all_voices = self.get_voice_names()
+        all_voices = self.get_voice_names(language_code=self.language_code.get())
         voice_combo['values'] = all_voices
         voice_combo['state'] = 'readonly'
         voice_combo.pack(side='left', fill='x', expand=True)
@@ -374,36 +402,51 @@ class GoogleCloud(TTSEngine):
     def change_voice_pitch(self, a, b, c):
         self.save_character(self.selected_character.get())
 
-    def get_language_codes(self):
+    @staticmethod
+    def get_language_codes():
         return ['en-US', ]
     
-    def get_voice_names(self):
+    @staticmethod
+    def get_voice_names(language_code='en-US', gender=None):
         with models.Session(models.engine) as session:
             all_voices = session.execute(
                 select(models.GoogleVoices).where(
-                    models.GoogleVoices.language_code==self.language_code.get()
+                    models.GoogleVoices.language_code==language_code
                 ).order_by(models.GoogleVoices.name)
             ).scalars()
         
             if all_voices:
-                return [voice.name for voice in all_voices]
+                if gender:
+                    return [voice.name for voice in all_voices if voice.ssml_gender == gender]
+                else:
+                    return [voice.name for voice in all_voices]
             else:
                 # we don't have voices in the DB
                 client = texttospeech.TextToSpeechClient()
-                req = texttospeech.ListVoicesRequest(language_code=self.language_code.get())
+                req = texttospeech.ListVoicesRequest(language_code=language_code)
                 resp = client.list_voices(req)
                 
                 for voice in resp.voices:
                     new_voice = models.GoogleVoices(
                         name=voice.name,
-                        language_code=self.language_code.get(),
+                        language_code=GoogleCloud.language_code.get(),
                         ssml_gender=texttospeech.SsmlVoiceGender(voice.ssml_gender).name
                     )
                     session.add(new_voice)
                 session.commit()
 
                 return sorted([n.name for n in resp.voices])
-        
+    
+    @staticmethod
+    def get_voice_gender(voice_name):
+        with models.Session(models.engine) as session:
+            ssml_gender = session.scalars(
+                select(models.GoogleVoices.ssml_gender).where(
+                    models.GoogleVoices.name == voice_name
+                )
+            ).first()
+        return ssml_gender
+
     def get_tts(self):
         # self.rate?
         # self.pitch?
