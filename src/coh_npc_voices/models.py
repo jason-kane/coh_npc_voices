@@ -44,7 +44,7 @@ def get_settings():
                 select(Settings)
             ).first()
 
-        log.info(dir(settings))
+        log.debug(dir(settings))
         return settings
 
 def category_str2int(instr):

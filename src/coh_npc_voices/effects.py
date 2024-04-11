@@ -274,7 +274,7 @@ class BandpassFilter(EffectParameterEditor):
         # also get widget to set the ripple and min attenuation
 
     def get_effect(self):
-        log.info('get_effect()')
+        log.debug('get_effect()')
         effect = voicebox.effects.Filter.build(
             btype='bandpass',
             freq=(self.low_frequency.get(), self.high_frequency.get()),
@@ -512,7 +512,7 @@ class Glitch(EffectParameterEditor):
         ).pack(side='top', fill='x', expand=True)
 
     def get_effect(self):
-        log.info('get_effect()')
+        log.debug('get_effect()')
         effect = voicebox.effects.Glitch(
             chunk_time=self.chunk_time.get(),
             p_repeat=self.p_repeat.get(),

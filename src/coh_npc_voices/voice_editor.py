@@ -248,7 +248,7 @@ class EngineSelectAndConfigure(tk.Frame):
         """
         save this engine selection to the database
         """
-        log.info('234 Saving engine selection')
+        log.debug('234 Saving engine selection')
         raw_name = self.selected_character.get()
         if not raw_name:
             log.warning('Name is required to save a character')
@@ -950,7 +950,7 @@ if __name__ == '__main__':
 #     pyinstaller?
 #        can't get multiprocessing to work :(  it spawns a whole
 #        new editor when you attach.
-# more effects (I really want the vocoder for clockworks)
+# more effects 
 # better icon
 
 # Not-blocking Glitches

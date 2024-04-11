@@ -75,7 +75,7 @@ def create(character, message, cachefile):
             )
         ).first()
         
-        log.info(phrase)
+        log.debug(phrase)
 
         if phrase is None:
             log.info('Phrase not found.  Creating...')
