@@ -204,8 +204,7 @@ class LogStream:
         # now move the file handle to the end, we 
         # will starting parsing everything for real this
         # time.
-        self.handle.seek(0, 0)
-                         # io.SEEK_END)
+        self.handle.seek(0, io.SEEK_END)
 
 
     def tail(self):
