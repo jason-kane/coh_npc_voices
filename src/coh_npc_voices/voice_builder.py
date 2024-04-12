@@ -45,15 +45,14 @@ def create(character, message, cachefile):
     for effect in voice_effects:
         log.info(f'Adding effect {effect} found in the database')
         effect_class = effects.EFFECTS[effect.effect_name]
-
-        effect = effect_class(None)
+        effect_instance = effect_class(None)
 
         with models.Session(models.engine) as session:
             effect_settings = session.scalars(
                 select(models.EffectSetting).where(
                     models.EffectSetting.effect_id == effect.id
                 )
-            ).all            
+            ).all()
 
         # reach into effect() and set the values this
         # plugin expects.
@@ -64,7 +63,7 @@ def create(character, message, cachefile):
             else:
                 log.error(f'Invalid configuration.  {effect_setting.key} is not available for {effect}')
 
-        effect_list.append(effect.get_effect())
+        effect_list.append(effect_instance.get_effect())
 
     # have we seen this particular phrase before?
     with models.Session(models.engine) as session:
