@@ -95,6 +95,9 @@ class Effects(Base):
     character_id = mapped_column(ForeignKey("character.id"))
     effect_name = mapped_column(String(256))
 
+    def __repr__(self):
+        return json.dumps({'id': self.id, 'character_id': self.character_id, 'effect_name': self.effect_name})
+
 class EffectSetting(Base):
     __tablename__ = "effect_setting"
     id = mapped_column(Integer, primary_key=True)

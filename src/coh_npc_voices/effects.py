@@ -38,6 +38,8 @@ class LScale(tk.Frame):
                 value=default
             )
         variable.trace_add("write", parent.reconfig)
+        parent.traces.append(variable)
+
         setattr(parent, pname, variable)
         parent.parameters.append(pname)
 
@@ -77,6 +79,8 @@ class LCombo(tk.Frame):
 
         variable = tk.StringVar(value=default)
         variable.trace_add("write", parent.reconfig)
+        parent.traces.append(variable)
+
         setattr(parent, pname, variable)
         parent.parameters.append(pname)
 
@@ -115,6 +119,8 @@ class LBoolean(tk.Frame):
             value=default
         )
         variable.trace_add("write", parent.reconfig)
+        parent.traces.append(variable)
+
         setattr(parent, pname, variable)
         parent.parameters.append(pname)  
 
@@ -144,6 +150,7 @@ class EffectParameterEditor(tk.Frame):
         self.parent = parent  # parent is the effectlist
         self.effect_id = tk.IntVar()
         self.parameters = []
+        self.traces = []
 
         topbar = tk.Frame(self)
         tk.Label(
@@ -178,6 +185,10 @@ class EffectParameterEditor(tk.Frame):
         return None
     
     def remove_effect(self):
+        # remove any variable traces
+        for v in self.traces:
+            v.trace_remove('write', v.trace_info())
+
         self.parent.remove_effect(self)
         # self.pack_forget()
         return

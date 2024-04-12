@@ -89,6 +89,7 @@ PRESETS = {
 
 
 class ChoosePhrase(tk.Frame):
+    ALL_PHRASES = "< Rebuild all phrases >"
     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.selected_character = selected_character
@@ -147,10 +148,13 @@ class ChoosePhrase(tk.Frame):
         else:
             self.chosen_phrase.set(
                 f'I have no record of what {raw_name} says.')
-        self.options["values"] = [p.text for p in character_phrases]
+        self.options["values"] = [
+            p.text for p in character_phrases
+        ] + [ self.ALL_PHRASES ]
 
     def say_it(self):
         message = self.chosen_phrase.get()
+
         log.debug(f"Speak: {message}")
         # parent is the frame inside DetailSide
         engine_name = self.detailside.engineSelect.selected_engine.get()
@@ -184,42 +188,48 @@ class ChoosePhrase(tk.Frame):
                 ).all()
             ]
 
-        _, clean_name = db.clean_customer_name(character.name)
-        filename = db.cache_filename(character.name, message)
-        log.debug(f'all_phrases: {all_phrases}')
-        if message in all_phrases:
-            cachefile = os.path.abspath(
-                os.path.join(
-                    "clip_library",
-                    character.cat_str(),
-                    clean_name,
-                    filename
-                )
-            )
-
-            sink = Distributor([
-                SoundDevice(),
-                WaveFile(cachefile + '.wav')
-            ])
-
-            log.info(f'effect_list: {effect_list}')
-            # None because we aren't attaching any widgets
-            ttsengine(None, self.selected_character).say(message, effect_list, sink=sink)
-
-            log.info('Converting to mp3...')
-            with AudioFile(cachefile + ".wav") as input:
-                with AudioFile(
-                    filename=cachefile, 
-                    samplerate=input.samplerate,
-                    num_channels=input.num_channels
-                ) as output:
-                    while input.tell() < input.frames:
-                        output.write(input.read(1024))
-                    log.info(f'Wrote {cachefile}')
+        if message == self.ALL_PHRASES:
+            message = self.options["values"]
         else:
-            # No Cache
-            log.info(f'Bypassing filesystem caching ({message})')
-            ttsengine(None, self.selected_character).say(message, effect_list)
+            message = [ message ]
+
+        for msg in message:
+            _, clean_name = db.clean_customer_name(character.name)
+            filename = db.cache_filename(character.name, msg)
+            log.debug(f'all_phrases: {all_phrases}')
+            if msg in all_phrases:
+                cachefile = os.path.abspath(
+                    os.path.join(
+                        "clip_library",
+                        character.cat_str(),
+                        clean_name,
+                        filename
+                    )
+                )
+
+                sink = Distributor([
+                    SoundDevice(),
+                    WaveFile(cachefile + '.wav')
+                ])
+
+                log.info(f'effect_list: {effect_list}')
+                # None because we aren't attaching any widgets
+                ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+
+                log.info('Converting to mp3...')
+                with AudioFile(cachefile + ".wav") as input:
+                    with AudioFile(
+                        filename=cachefile, 
+                        samplerate=input.samplerate,
+                        num_channels=input.num_channels
+                    ) as output:
+                        while input.tell() < input.frames:
+                            output.write(input.read(1024))
+                        log.info(f'Wrote {cachefile}')
+            else:
+                # No Cache
+                log.info(f'Bypassing filesystem caching ({msg})')
+                ttsengine(None, self.selected_character).say(msg, effect_list)
 
 
 class EngineSelection(tk.Frame):
