@@ -243,9 +243,10 @@ class LogStream:
                 elif self.tell_speak and lstring[0] == "[Tell]":
                     # why is there an extra colon for Tell?  IDK.
                     #2024-04-02 17:56:21 [Tell] :Dressy Bessie: I can bump you up a few levels if you want
-                    if lstring[1][:2] == "-->":
+                    if lstring[1][:3] == "-->":
+                        # 2024-04-06 20:23:32 [Tell] -->Toxic Timber: pls
                         # this is a reply to a tell, or an outbound tell.
-                        dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+                        dialog = " ".join(lstring[1:]).split(":", maxsplit=1)[-1].strip()
                         name = None
                     else:
                         try:

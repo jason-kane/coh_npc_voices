@@ -490,6 +490,9 @@ class ElevenLabs(TTSEngine):
         super().__init__(parent, selected_character, *args, **kwargs)
 
 
+# https://github.com/coqui-ai/tts
+
+
 def get_engine(engine_name):
     for engine_cls in ENGINE_LIST:
         if engine_name == engine_cls.cosmetic:

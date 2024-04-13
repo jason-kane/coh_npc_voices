@@ -85,6 +85,7 @@ class Phrases(Base):
     id = mapped_column(Integer, primary_key=True)
     character_id = mapped_column(ForeignKey("character.id"))
     text = mapped_column(String(256))
+    ssml = mapped_column(String(512))
 
     def __repr__(self):
         return json.dumps({'id': self.id, 'character_id': self.character_id, 'text': self.text})

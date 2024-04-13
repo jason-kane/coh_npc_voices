@@ -72,6 +72,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('character_id', sa.Integer(), nullable=True),
     sa.Column('text', sa.String(length=256), nullable=True),
+    sa.Column('ssml', sa.String(length=512), nullable=True),
     sa.ForeignKeyConstraint(['character_id'], ['character.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
