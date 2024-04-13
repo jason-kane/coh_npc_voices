@@ -205,6 +205,7 @@ class LogStream:
         # will starting parsing everything for real this
         # time.
         self.handle.seek(0, io.SEEK_END)
+        #self.handle.seek(0, 0)
 
 
     def tail(self):
@@ -292,7 +293,7 @@ class LogStream:
                         
                         # You gain 250 influence.
                         try:
-                            influence_index = lstring.index("influence") - 1
+                            influence_index = lstring.index("influence.") - 1
                             inf_gain = int(lstring[influence_index])
                         except ValueError:
                             inf_gain = None                       

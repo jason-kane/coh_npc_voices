@@ -233,6 +233,8 @@ class WindowsTTS(TTSEngine):
             self.save_character(self.selected_character.get())
 
     def get_tts(self):
+        # So.  What happens when the chosen voice isn't actually
+        # installed?
         return WindowsSapi(
             rate=self.rate.get(),
             voice=self.voice_name.get()
