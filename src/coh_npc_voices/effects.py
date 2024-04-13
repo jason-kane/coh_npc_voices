@@ -184,10 +184,17 @@ class EffectParameterEditor(tk.Frame):
         log.error(f'You must override get_effect() in {self} to return an instance of Effect()')
         return None
     
+    def clear_traces(self):
+        while self.traces:
+            v = self.traces.pop()
+            for trace in v.trace_info():
+                log.info(f"trace: {trace!r}")
+                v.trace_remove(trace[0], trace[1])
+
     def remove_effect(self):
+        log.info("EffectParamaterEngine.remove_effect()")
         # remove any variable traces
-        for v in self.traces:
-            v.trace_remove('write', v.trace_info())
+        self.clear_traces()
 
         self.parent.remove_effect(self)
         # self.pack_forget()
@@ -531,6 +538,7 @@ class Glitch(EffectParameterEditor):
         )
         return effect
 
+
 class Normalize(EffectParameterEditor):
     label = "Normalize"
     desc = "Normalizes audio such that any DC offset is removed"
@@ -562,6 +570,127 @@ class Normalize(EffectParameterEditor):
         effect = voicebox.effects.Normalize(
             max_amplitude=self.max_amplitude.get(),
             remove_dc_offset=self.remove_dc_offset.get(),
+        )
+        return effect
+
+
+class PitchShift(EffectParameterEditor):
+    label = "PitchShift"
+    desc = "A pitch shifting effect that can change the pitch of audio without affecting its duration."
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LScale(
+            self,
+            pname="semitones",
+            label='Semitones', 
+            desc="How far to shift the pitch",
+            default=0.5,
+            from_=-8,
+            to=8,
+            digits=2,
+            resolution=0.25
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.PitchShift(
+                semitones=self.semitones.get(), 
+            )
+        )
+        return effect
+
+class Reverb(EffectParameterEditor):
+    label = "Reverb"
+    desc = (
+        "A simple reverb effect. Uses a simple stereo reverb algorithm, based "
+        "on the technique and tunings used in FreeVerb "
+        "<https://ccrma.stanford.edu/~jos/pasp/Freeverb.html>_.  "
+        "The delay lengths are optimized for a sample rate of 44100 Hz."
+    )
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LScale(
+            self,
+            pname="room_size",
+            label='Room size', 
+            desc="Room Size",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="damping",
+            label='Damping', 
+            desc="damping parameter [0=low damping, 1=higher damping]",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="wet_level",
+            label='Wet level', 
+            desc="Wet Level",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="dry_level",
+            label='Dry level', 
+            desc="Dry Level",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="width",
+            label='Width', 
+            desc="width (left-right mixing) parameter",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LBoolean(
+            self,
+            pname="freeze_mode",
+            label='Freeze mode', 
+            desc="frozen/unfrozen",
+            default=False
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.Reverb(
+                room_size=self.room_size.get(), 
+                damping=self.damping.get(), 
+                wet_level=self.wet_level.get(),
+                dry_level=self.dry_level.get(), 
+                width=self.width.get(), 
+                freeze_mode= 1 if self.freeze_mode.get() else 0
+            )
         )
         return effect
 
@@ -944,10 +1073,10 @@ EFFECTS = {
     'Normalize': Normalize,
     # 'PeakFilter': None, # Pedalboard
     # 'Phaser': None, # Pedalboard
-    # 'PitchShift': None, # Pedalboard
+    'PitchShift': PitchShift, # Pedalboard
     # 'Remove DC Offset': None,
     # 'Resample': None, # Pedalboard
-    # 'Reverb': None, # Pedalboard
+    'Reverb': Reverb, # Pedalboard
     'RingMod': RingMod,
     'Vocoder': Vocoder,
 }

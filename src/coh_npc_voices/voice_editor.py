@@ -194,6 +194,9 @@ class ChoosePhrase(tk.Frame):
             message = [ message ]
 
         for msg in message:
+            if msg == self.ALL_PHRASES:
+                continue
+
             _, clean_name = db.clean_customer_name(character.name)
             filename = db.cache_filename(character.name, msg)
             log.debug(f'all_phrases: {all_phrases}')
@@ -363,18 +366,23 @@ class EffectList(tk.Frame):
 
     """
     def __init__(self, parent, selected_character, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
+        real_parent = parent.frame
+        super().__init__(real_parent, *args, **kwargs)
         self.effects = []
-        self.parent = parent
+        self.parent = real_parent
+        self.detailside = parent
+        self.buffer = False
         self.selected_character = selected_character
         self.load_effects()
 
     def load_effects(self):
         log.info('EffectList.load_effects()')
+        has_effects = False
 
         # teardown any effects already in place
         while self.effects:
             effect = self.effects.pop()
+            effect.clear_traces()
             effect.pack_forget()
 
         raw_name = self.selected_character.get()
@@ -405,6 +413,7 @@ class EffectList(tk.Frame):
             ).all()
 
             for effect in voice_effects:
+                has_effects = True
                 log.info(f'Adding effect {effect} found in the database')
                 effect_class = effects.EFFECTS[effect.effect_name]
 
@@ -436,7 +445,27 @@ class EffectList(tk.Frame):
                             f'Invalid configuration.  '
                             f'{setting.key} is not available for '
                             f'{effect_config_frame}')
+                        
+            #self.parent.pack(side="top", fill="x", expand=True)
+            if not has_effects:
+                self.buffer = tk.Frame(self, width=1, height=1).pack(side="top")
+            else:
+                if self.buffer:
+                    self.buffer.pack_forget()
 
+            if hasattr(self.detailside, "add_effect"):
+                log.info("Rebuilding add_effect")
+                self.detailside.add_effect.pack_forget()
+                # .pack(side="top", fill="x", expand=True)
+                self.detailside.add_effect = AddEffect(self.parent, self)
+                self.detailside.add_effect.pack(side="top", fill='x', expand=True)
+                # self.detailside.effect_list.pack(side="top", fill="x")
+                # self.detailside.frame.pack(side="top", fill="x", expand=True)
+                # self.detailside.canvas.pack(side="left", fill="both", expand=True)
+                # self.detailside.pack(side="left", fill="both", expand=True)
+                # self.detailside.parent.pack(side="top", fill="both", expand=True)
+            else:
+                log.info('DetailSide has no add_effect()')
 
     def add_effect(self, effect_name):
         """
@@ -530,6 +559,7 @@ class EffectList(tk.Frame):
 
         # forget the widgets for this object
         effect_obj.pack_forget()
+        self.pack()
 
 
 class AddEffect(tk.Frame):
@@ -585,6 +615,7 @@ class DetailSide(tk.Frame):
     """
     def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+        self.parent = parent
         self.selected_character = selected_character
 
         self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
@@ -624,9 +655,10 @@ class DetailSide(tk.Frame):
         self.engineSelect.pack(side="top", fill="x", expand=True)
 
         # list of effects already configured
-        self.effect_list = EffectList(self.frame, selected_character)
-        self.effect_list.pack(side="top", fill="both", expand=True)
-        AddEffect(self.frame, self.effect_list).pack(side="top", fill="x", expand=True)
+        self.effect_list = EffectList(self, selected_character)
+        self.effect_list.pack(side="top", fill="x", expand=True)
+        self.add_effect = AddEffect(self.frame, self.effect_list)
+        self.add_effect.pack(side="top", fill="x", expand=True)
 
     def onFrameConfigure(self, event):
         """Reset the scroll region to encompass the inner frame"""
@@ -671,6 +703,10 @@ class DetailSide(tk.Frame):
 
         # reset the preset selector
         self.presetSelect.reset()
+
+        # scroll to the top
+        self.vsb.set(0, 1)
+        self.canvas.yview_moveto(0)
 
 
 class PresetSelector(tk.Frame):
@@ -997,8 +1033,8 @@ def main():
     detailside = DetailSide(editor, selected_character)
     listside = ListSide(editor, detailside)
 
-    listside.pack(side="left", fill="both", expand=True)
-    detailside.pack(side="left", fill="both", expand=True)
+    listside.pack(side="left", fill="x", expand=True)
+    detailside.pack(side="left", fill="x", expand=True)
 
     root.mainloop()
 

@@ -72,7 +72,9 @@ class TTSEngine(tk.Frame):
             effects=effects,
             sink=sink
         )
-        vb.say(message)
+        if message:
+            log.info(message)
+            vb.say(message)
 
     def get_tts(self):
         return voicebox.tts.tts.TTS()
