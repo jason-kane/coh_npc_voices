@@ -9,9 +9,10 @@ import tkinter as tk
 from tkinter import font, ttk
 from sqlalchemy import func, select
 import models
-
+import matplotlib.dates as mdates
 import voice_editor
 import npc_chatter
+import numpy as np
 
 from matplotlib.figure import Figure 
 from matplotlib.backends.backend_tkagg import (
@@ -36,9 +37,8 @@ logging.basicConfig(
 log = logging.getLogger("__name__")
 
 class ChartFrame(tk.Frame):
-    def __init__(self, parent, hero, category, *args, **kwargs):
+    def __init__(self, parent, hero, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.category = category
 
         if not hero:
             return
@@ -55,8 +55,11 @@ class ChartFrame(tk.Frame):
             ) 
                
             # adding the subplot 
-            plot1 = fig.add_subplot(111) 
+            ax = fig.add_subplot(111) 
+            ax.tick_params(axis='x', rotation=60)
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%H-%M'))
         
+            self.category = "xp"
             log.info(f'Retrieving {self.category} data')
             try:
                 with models.Session(models.engine) as session:
@@ -80,7 +83,7 @@ class ChartFrame(tk.Frame):
                 log.info(f'No previous events found for {self.hero.name}')
                 end_time = datetime.now()
 
-            start_time = end_time - timedelta(minutes=60)
+            start_time = end_time - timedelta(minutes=120)
             log.info(f'Graphing {self.category} gain between {start_time} and {end_time}')
 
             with models.Session(models.engine) as session:
@@ -110,23 +113,40 @@ class ChartFrame(tk.Frame):
 
             data_x = []
             data_y = []
-            # log.info(samples)
-
+            rolling_data_x = []
+            rolling_data_y = []
+            last_n = []
+            roll_size = 5
             for row in samples:
                 datestring, xp_gain, inf_gain = row
                 event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
                 
-                data_x.append(
-                    event_time
-                )
-
                 if self.category == "xp":
+                    if xp_gain is None:
+                        continue
+
+                    data_x.append(event_time)
                     data_y.append(xp_gain)
+                    last_n.append(xp_gain)
+
+                    try:
+                        rolling_data_y.append(np.mean(last_n))
+                    except Exception as err:
+                        log.error(err)
+                        log.error(f'last_n: {last_n}')
+                        raise
+
+                    if len(last_n) > roll_size:
+                        log.info(f"clipping {len(last_n)} is too many.  {last_n}")
+                        last_n.pop(0)
+
                 elif self.category == "inf":
+                    data_x.append(event_time)
                     data_y.append(inf_gain)
-                
+
             # log.info(f'Plotting {data_x}:{data_y}')
-            plot1.plot(data_x, data_y)
+            ax.plot(data_x, data_y, drawstyle="steps", label=f"{self.category}")
+            ax.plot(data_x, rolling_data_y, 'o--')
         
             # creating the Tkinter canvas 
             # containing the Matplotlib figure 
@@ -134,20 +154,8 @@ class ChartFrame(tk.Frame):
                 fig, 
                 master = self
             )   
-            canvas.draw() 
-        
-            # placing the canvas on the Tkinter window 
-            # canvas.get_tk_widget().pack()
-        
-            # creating the Matplotlib toolbar 
-            toolbar = NavigationToolbar2Tk(
-                canvas, 
-                self
-            ) 
-            toolbar.update() 
-        
-            # placing the toolbar on the Tkinter window 
-            canvas.get_tk_widget().pack()
+            canvas.draw()         
+            canvas.get_tk_widget().pack(fill="both", expand=True)
             log.info('graph constructed')      
 
 class CharacterTab(tk.Frame):
@@ -170,14 +178,17 @@ class CharacterTab(tk.Frame):
         if hasattr(self, "xp_chart"):
             self.xp_chart.pack_forget()
 
-        self.xp_chart = ChartFrame(self, self.chatter.hero, 'xp')
-        self.xp_chart.pack(side="top", fill="x", expand=True)
+        try:
+            self.xp_chart = ChartFrame(self, self.chatter.hero)
+            self.xp_chart.pack(side="top", fill="both", expand=True)
+        except Exception as err:
+            log.error(err)
 
-        if hasattr(self, "inf_chart"):
-            self.inf_chart.pack_forget()
+        # if hasattr(self, "inf_chart"):
+        #     self.inf_chart.pack_forget()
 
-        self.inf_chart = ChartFrame(self, self.chatter.hero, 'inf')
-        self.inf_chart.pack(side="top", fill="x", expand=True)
+        # self.inf_chart = ChartFrame(self, self.chatter.hero, 'inf')
+        # self.inf_chart.pack(side="top", fill="x", expand=True)
 
         # character.pack(side="top", fill="both", expand=True)
 
@@ -188,7 +199,7 @@ def main():
     root = tk.Tk()
     root.iconbitmap("sidekick.ico")
 
-    root.geometry("640x480+200+200")
+    root.geometry("640x640+200+200")
     root.resizable(True, True)
     root.title("City of Heroes Sidekick")
 
