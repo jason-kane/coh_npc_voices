@@ -1,12 +1,15 @@
 import enum
 from datetime import datetime
 import json
-from sqlalchemy import Enum, ForeignKey, Integer, String, create_engine, orm, select
+from sqlalchemy import Enum, ForeignKey, Integer, String, create_engine, orm, select, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import Session
 import logging
 import sys
+from typing import Optional
+from sqlalchemy.orm import Mapped
+from typing_extensions import Annotated
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,10 +23,12 @@ engine = create_engine("sqlite:///voices.db", echo=False)
 
 Base = declarative_base()
 
+intpk = Annotated[int, mapped_column(primary_key=True)]
+
 class Settings(Base):
     __tablename__ = "settings"
-    id = mapped_column(Integer, primary_key=True)
-    logdir = orm.mapped_column(String(256))
+    id: Mapped[intpk]
+    logdir: Mapped[Optional[str]] = orm.mapped_column(String(256))
 
 
 def get_settings():
@@ -55,9 +60,9 @@ def category_str2int(instr):
 
 class Character(Base):
     __tablename__ = "character"
-    id = mapped_column(Integer, primary_key=True)
-    name = mapped_column(String(64))
-    engine = mapped_column(String(64))
+    id: Mapped[intpk]
+    name: Mapped[str] = mapped_column(String(64))
+    engine: Mapped[str] = mapped_column(String(64))
     category = mapped_column(Integer, index=True)
 
     def cat_str(self):
@@ -65,56 +70,56 @@ class Character(Base):
 
 class BaseTTSConfig(Base):
     __tablename__ = "base_tts_config"
-    id = mapped_column(Integer, primary_key=True)
-    character_id = mapped_column(ForeignKey("character.id"))
-    key = mapped_column(String(64))
-    value = mapped_column(String(64))
+    id: Mapped[intpk]
+    character_id: Mapped[intpk] = mapped_column(ForeignKey("character.id"))
+    key: Mapped[str] = mapped_column(String(64))
+    value: Mapped[str] = mapped_column(String(64))
 
 class GoogleVoices(Base):
     __tablename__ = "google_voices"
-    id = mapped_column(Integer, primary_key=True)
-    name = mapped_column(String(64))
-    language_code = mapped_column(String(64))
-    ssml_gender = mapped_column(String(64))
+    id: Mapped[intpk]
+    name: Mapped[str] = mapped_column(String(64))
+    language_code: Mapped[str] = mapped_column(String(64))
+    ssml_gender: Mapped[str] = mapped_column(String(64))
 
     def __str__(self):
         return json.dumps(self.__dict__)
 
 class Phrases(Base):
     __tablename__ = "phrases"
-    id = mapped_column(Integer, primary_key=True)
-    character_id = mapped_column(ForeignKey("character.id"))
-    text = mapped_column(String(256))
-    ssml = mapped_column(String(512))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[intpk] = mapped_column(ForeignKey("character.id"))
+    text: Mapped[str] = mapped_column(String(256))
+    ssml: Mapped[str] = mapped_column(String(512))
 
     def __repr__(self):
         return json.dumps({'id': self.id, 'character_id': self.character_id, 'text': self.text})
 
 class Effects(Base):
     __tablename__ = "effects"
-    id = mapped_column(Integer, primary_key=True)
-    character_id = mapped_column(ForeignKey("character.id"))
-    effect_name = mapped_column(String(256))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[intpk] = mapped_column(ForeignKey("character.id"))
+    effect_name: Mapped[str] = mapped_column(String(256))
 
     def __repr__(self):
         return json.dumps({'id': self.id, 'character_id': self.character_id, 'effect_name': self.effect_name})
 
 class EffectSetting(Base):
     __tablename__ = "effect_setting"
-    id = mapped_column(Integer, primary_key=True)
-    effect_id = mapped_column(ForeignKey("effects.id"))
-    key = mapped_column(String(256))
-    value = mapped_column(String(256))
+    id: Mapped[intpk]
+    effect_id: Mapped[intpk] = mapped_column(ForeignKey("effects.id"))
+    key: Mapped[str] = mapped_column(String(256))
+    value: Mapped[str] = mapped_column(String(256))
 
 class Hero(Base):
     __tablename__ = "hero"
-    id = mapped_column(Integer, primary_key=True)
-    name = mapped_column(String(256))
+    id: Mapped[intpk]
+    name: Mapped[str] = mapped_column(String(256))
 
 class HeroStatEvent(Base):
     __tablename__ = "hero_stat_events"
-    id = mapped_column(Integer, primary_key=True)
-    hero_id = mapped_column(ForeignKey("hero.id"))
-    event_time: orm.Mapped[datetime] = mapped_column()
-    xp_gain = mapped_column(Integer)
-    inf_gain = mapped_column(Integer)
+    id: Mapped[intpk]
+    hero_id: Mapped[intpk] = mapped_column(ForeignKey("hero.id"))
+    event_time: orm.Mapped[datetime] 
+    xp_gain: Mapped[int]
+    inf_gain: Mapped[int]

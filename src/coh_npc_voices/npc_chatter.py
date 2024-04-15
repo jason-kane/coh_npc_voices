@@ -9,6 +9,7 @@ import re
 import sys
 import threading
 import time
+import concurrent.futures
 
 import db
 import models
@@ -41,6 +42,123 @@ log = logging.getLogger('__name__')
 #       exports to a stringified voice profile
 #       players can tell other players what they sound like, and you then hear them.
 #       speech-to-text chat input (whisper?)
+
+class ParallelTTS(threading.Thread):
+    def __init__(self, speaking_queue, event_queue, parallelism=2):
+        """
+        parallelism > 2 seems to be pretty unstable.  This is fun, but essentially wrong.  What 
+        happens when the same character says two things one right after the other?  Yes, they talk
+        on top of themselves.  
+        """
+        threading.Thread.__init__(self)
+        self.speaking_queue = speaking_queue
+        self.event_queue = event_queue
+        self.daemon = True
+        self.parallelism = parallelism
+
+        # so we can do this much once.
+        for category in ['npc', 'player', 'system']:
+            for dir in [
+                os.path.join("clip_library"),
+                os.path.join("clip_library", category)
+            ]:
+                try:
+                    os.mkdir(dir)
+                except OSError as error:
+                    # the directory already exists.  This is not a problem.
+                    pass
+
+        self.start()
+
+    def playfile(self, cachefile):
+        log.info(f'Cache Hit: {cachefile}')
+        # requires pydub
+        with AudioFile(cachefile) as input:
+            with AudioFile(
+                filename=cachefile + ".wav",
+                samplerate=input.samplerate, 
+                num_channels=input.num_channels
+            ) as output:
+
+                while input.tell() < input.frames:
+                    output.write(input.read(1024))
+
+        audio = get_audio_from_wav_file(
+            cachefile + ".wav"
+        )
+        os.unlink(cachefile + ".wav")
+
+        voicebox.sinks.SoundDevice().play(audio)
+
+    def makefile(self, cachefile, name, category, message):
+        log.info(f'Cache Miss -- {cachefile} not found')
+        # ok, what kind of voice do we want for this NPC?
+        
+        with models.Session(models.engine) as session:
+            character = session.scalars(
+                select(models.Character).where(
+                    models.Character.name == name,
+                    models.Character.category == models.category_str2int(category)
+                )
+            ).first()
+
+        if character is None:
+            # this is the first time we've gotten a message from this
+            # NPC, so they don't have a voice yet.  We will default to
+            # the windows voice because it is free and no voice effects.
+            with models.Session(models.engine) as session:
+                character = models.Character(
+                    name=name,
+                    engine=voice_builder.default_engine,
+                    category=models.category_str2int(category)
+                )
+                session.add(character)
+                session.commit()
+                session.refresh(character)
+
+        voice_builder.create(character, message, cachefile)        
+
+    def pluck_and_speak(self, name, message, category):
+        name, clean_name = db.clean_customer_name(name)
+        filename = db.cache_filename(name, message)
+            
+        try:
+            cachefile = os.path.abspath(
+                os.path.join("clip_library", category, clean_name, filename)
+            )
+        except Exception:
+            log.error(f'invalid os.path.join("clip_library", {category}, {clean_name}, {filename})')
+            raise
+        
+        try:
+            os.mkdir(os.path.join("clip_library", category, clean_name))
+        except OSError as error:
+            # the directory already exists.  This is not a problem.
+            pass
+
+        if os.path.exists(cachefile):
+            self.playfile(cachefile)
+        else:
+            self.makefile(cachefile, name, category, message)
+
+        self.speaking_queue.task_done()
+
+
+    def run(self):
+        pythoncom.CoInitialize()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers = self.parallelism) as executor:
+            while True:
+                raw_message = self.speaking_queue.get()
+                try:
+                    name, message, category = raw_message
+                    if category not in ['npc', 'player', 'system']:
+                        log.error('invalid category: %s', category)
+                    else:
+                        executor.submit(self.pluck_and_speak, name, message, category)
+                except ValueError:
+                    log.warning('Unexpected queue message: %s', raw_message)
+
 
 class TightTTS(threading.Thread):
     def __init__(self, speaking_queue, event_queue):
@@ -75,7 +193,7 @@ class TightTTS(threading.Thread):
 
             if category not in ['npc', 'player', 'system']:
                 log.error('invalid category: %s', category)
-                self.q.task_done()
+                self.speaking_queue.task_done()
                 continue
 
             log.info(f'Speaking thread received {category} {name}:{message}')
@@ -205,7 +323,7 @@ class LogStream:
         # will starting parsing everything for real this
         # time.
         self.handle.seek(0, io.SEEK_END)
-        #self.handle.seek(0, 0)
+        # self.handle.seek(0, 0)
 
 
     def tail(self):

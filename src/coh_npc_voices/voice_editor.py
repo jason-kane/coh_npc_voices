@@ -617,6 +617,7 @@ class DetailSide(tk.Frame):
         super().__init__(parent, *args, **kwargs)
         self.parent = parent
         self.selected_character = selected_character
+        self.listside = None
 
         self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
         self.frame = tk.Frame(self.canvas, background="#ffffff")
@@ -632,12 +633,25 @@ class DetailSide(tk.Frame):
         self.frame.bind("<Configure>", self.onFrameConfigure)
         # self.frame.pack(side='top', fill='x')
 
+        name_frame = tk.Frame(self.frame)
+
         self.character_name = tk.Label(
-            self.frame,
+            name_frame,
             textvariable=selected_character,
             anchor="center",
             font=font.Font(weight="bold"),
-        ).pack(side="top", fill="x", expand=True)
+        ).pack(side="left", fill="x", expand=True)
+
+        tk.Button(
+            name_frame,
+            text="X",
+            anchor="center",
+            width=1,
+            height=1,
+            command=self.remove_character
+        ).pack(side="right")
+
+        name_frame.pack(side="top", fill="x", expand=True)
 
         self.phrase_selector = ChoosePhrase(
             self.frame, self, selected_character
@@ -659,6 +673,16 @@ class DetailSide(tk.Frame):
         self.effect_list.pack(side="top", fill="x", expand=True)
         self.add_effect = AddEffect(self.frame, self.effect_list)
         self.add_effect.pack(side="top", fill="x", expand=True)
+
+    def remove_character(self):
+        #self.parent = parent
+        # parent of detailside is 'editor', a Frame of root.
+        # what we really need is listside, which is passed
+        # a detailside -- maybe we can do this backwards.
+        #
+        #self.selected_character = selected_character        
+        if self.listside:
+            self.listside.delete_selected_character()
 
     def onFrameConfigure(self, event):
         """Reset the scroll region to encompass the inner frame"""
@@ -868,6 +892,8 @@ class ListSide(tk.Frame):
     def __init__(self, parent, detailside, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.detailside = detailside
+        #wait, what?
+        self.detailside.listside = self
 
         self.list_items = tk.Variable(value=[])
         self.refresh_character_list()
@@ -885,7 +911,7 @@ class ListSide(tk.Frame):
         )
 
         action_frame.pack(side="top", expand=False, fill=tk.X)
-
+        self.listbox.select_set(0)
         self.listbox.bind("<<ListboxSelect>>", self.character_selected)
 
     def character_selected(self, event=None):
@@ -911,6 +937,36 @@ class ListSide(tk.Frame):
             self.list_items.set(
                 [f"{character.cat_str()} {character.name}" for character in all_characters]
             )
+    
+    def delete_selected_character(self):
+        index = int(self.listbox.curselection()[0])
+        raw_name = self.listbox.get(index)
+        log.info(f'Deleting character {raw_name!r}')
+
+        category, name = raw_name.split(maxsplit=1)
+        log.info(f'Name: {name!r}  Category: {category!r}')
+        with models.Session(models.engine) as session:
+            try:
+                session.execute(
+                    delete(models.Character)
+                    .where(
+                        models.Character.name == name,
+                        models.Character.category == models.category_str2int(category)
+                    )
+                )
+                session.commit()
+
+            except Exception as err:
+                log.error(f'DB Error: {err}')
+                raise
+
+        # dude, delete everything they have ever said from
+        # disk too.
+
+        self.refresh_character_list()
+        self.listbox.select_clear(0, 'end')
+        self.listbox.select_set(0)
+        self.listbox.event_generate("<<ListboxSelect>>")
 
 
 class ChatterService:
