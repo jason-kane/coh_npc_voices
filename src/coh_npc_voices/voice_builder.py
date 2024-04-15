@@ -81,7 +81,8 @@ def create(character, message, cachefile):
             # it does not exist, now it does.
             phrase = models.Phrases(
                 character_id=character.id,
-                text=message
+                text=message,
+                ssml=""
             )
             session.add(phrase)
             session.commit()

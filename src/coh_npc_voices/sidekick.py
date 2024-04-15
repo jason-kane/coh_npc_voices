@@ -113,11 +113,11 @@ class ChartFrame(tk.Frame):
 
             data_x = []
             data_y = []
-            rolling_data_x = []
             rolling_data_y = []
             last_n = []
             roll_size = 5
             for row in samples:
+                log.info(f'row: {row}')
                 datestring, xp_gain, inf_gain = row
                 event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
                 
@@ -144,9 +144,13 @@ class ChartFrame(tk.Frame):
                     data_x.append(event_time)
                     data_y.append(inf_gain)
 
-            # log.info(f'Plotting {data_x}:{data_y}')
-            ax.plot(data_x, data_y, drawstyle="steps", label=f"{self.category}")
-            ax.plot(data_x, rolling_data_y, 'o--')
+            log.info(f'Plotting {data_x}:{data_y}/{rolling_data_y}')
+            try:
+                ax.plot(data_x, data_y, drawstyle="steps", label=f"{self.category}")
+                ax.plot(data_x, rolling_data_y, 'o--')
+            except Exception as err:
+                log.error(err)
+                log.error(data_x, data_y, rolling_data_y)
         
             # creating the Tkinter canvas 
             # containing the Matplotlib figure 

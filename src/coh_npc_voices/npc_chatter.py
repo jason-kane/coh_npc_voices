@@ -340,7 +340,7 @@ class LogStream:
                     continue
 
                 previous = lstring
-                lstring = line_string.split()
+                lstring = line_string.replace('.', '').strip().split()
                 if self.npc_speak and lstring[0] == "[NPC]":
                     name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
                     log.debug(f'Adding {name}/{dialog} to reading queue')
@@ -409,17 +409,20 @@ class LogStream:
                         # I'm just going to make the database carry the burden, so much easier.
                         # is this string stable enough to get away with this?  It's friggin'
                         # cheating.
-                        
+                        log.info(lstring)
                         # You gain 250 influence.
-                        try:
-                            influence_index = lstring.index("influence.") - 1
-                            inf_gain = int(lstring[influence_index])
-                        except ValueError:
-                            inf_gain = None                       
+
+                        inf_gain = None
+                        for inftype in ['influence', 'information']:
+                            try:
+                                influence_index = lstring.index(inftype) - 1
+                                inf_gain = int(lstring[influence_index].replace(",", ""))
+                            except ValueError:
+                                pass
 
                         try:
                             xp_index = lstring.index('experience') - 1
-                            xp_gain = int(lstring[xp_index])
+                            xp_gain = int(lstring[xp_index].replace(",", ""))
                         except ValueError:
                             xp_gain = None                            
 
@@ -431,6 +434,7 @@ class LogStream:
                             # points for it.  Lazybones.
                             foe = None                       
 
+                        log.info(f'Awarding xp: {xp_gain} and inf: {inf_gain}')
                         with models.Session(models.engine) as session:
                             new_event = models.HeroStatEvent(
                                 hero_id=self.hero.id,

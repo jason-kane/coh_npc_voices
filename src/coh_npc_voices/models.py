@@ -23,11 +23,9 @@ engine = create_engine("sqlite:///voices.db", echo=False)
 
 Base = declarative_base()
 
-intpk = Annotated[int, mapped_column(primary_key=True)]
-
 class Settings(Base):
     __tablename__ = "settings"
-    id: Mapped[intpk]
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     logdir: Mapped[Optional[str]] = orm.mapped_column(String(256))
 
 
@@ -60,7 +58,7 @@ def category_str2int(instr):
 
 class Character(Base):
     __tablename__ = "character"
-    id: Mapped[intpk]
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64))
     engine: Mapped[str] = mapped_column(String(64))
     category = mapped_column(Integer, index=True)
@@ -70,14 +68,14 @@ class Character(Base):
 
 class BaseTTSConfig(Base):
     __tablename__ = "base_tts_config"
-    id: Mapped[intpk]
-    character_id: Mapped[intpk] = mapped_column(ForeignKey("character.id"))
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("character.id"))
     key: Mapped[str] = mapped_column(String(64))
     value: Mapped[str] = mapped_column(String(64))
 
 class GoogleVoices(Base):
     __tablename__ = "google_voices"
-    id: Mapped[intpk]
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64))
     language_code: Mapped[str] = mapped_column(String(64))
     ssml_gender: Mapped[str] = mapped_column(String(64))
@@ -87,8 +85,8 @@ class GoogleVoices(Base):
 
 class Phrases(Base):
     __tablename__ = "phrases"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    character_id: Mapped[intpk] = mapped_column(ForeignKey("character.id"))
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("character.id"))
     text: Mapped[str] = mapped_column(String(256))
     ssml: Mapped[str] = mapped_column(String(512))
 
@@ -97,8 +95,8 @@ class Phrases(Base):
 
 class Effects(Base):
     __tablename__ = "effects"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    character_id: Mapped[intpk] = mapped_column(ForeignKey("character.id"))
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("character.id"))
     effect_name: Mapped[str] = mapped_column(String(256))
 
     def __repr__(self):
@@ -106,20 +104,20 @@ class Effects(Base):
 
 class EffectSetting(Base):
     __tablename__ = "effect_setting"
-    id: Mapped[intpk]
-    effect_id: Mapped[intpk] = mapped_column(ForeignKey("effects.id"))
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    effect_id: Mapped[int] = mapped_column(ForeignKey("effects.id"))
     key: Mapped[str] = mapped_column(String(256))
     value: Mapped[str] = mapped_column(String(256))
 
 class Hero(Base):
     __tablename__ = "hero"
-    id: Mapped[intpk]
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(256))
 
 class HeroStatEvent(Base):
     __tablename__ = "hero_stat_events"
-    id: Mapped[intpk]
-    hero_id: Mapped[intpk] = mapped_column(ForeignKey("hero.id"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    hero_id = mapped_column(ForeignKey("hero.id"))
     event_time: orm.Mapped[datetime] 
-    xp_gain: Mapped[int]
-    inf_gain: Mapped[int]
+    xp_gain: Mapped[Optional[int]]
+    inf_gain: Mapped[Optional[int]]
