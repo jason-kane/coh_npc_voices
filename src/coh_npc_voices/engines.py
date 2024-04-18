@@ -413,19 +413,20 @@ class GoogleCloud(TTSEngine):
     @staticmethod
     def get_voice_names(language_code='en-US', gender=None):
         with models.Session(models.engine) as session:
-            all_voices = session.execute(
+            all_voices = list(session.execute(
                 select(models.GoogleVoices).where(
                     models.GoogleVoices.language_code==language_code
                 ).order_by(models.GoogleVoices.name)
-            ).scalars()
+            ).scalars())
         
             if all_voices:
+                log.info(f'{len(all_voices)} voices found in database')
                 if gender:
                     return [voice.name for voice in all_voices if voice.ssml_gender == gender]
                 else:
                     return [voice.name for voice in all_voices]
             else:
-                # we don't have voices in the DB
+                log.info("Voices are not in the database")
                 client = texttospeech.TextToSpeechClient()
                 req = texttospeech.ListVoicesRequest(language_code=language_code)
                 resp = client.list_voices(req)
@@ -433,7 +434,7 @@ class GoogleCloud(TTSEngine):
                 for voice in resp.voices:
                     new_voice = models.GoogleVoices(
                         name=voice.name,
-                        language_code=GoogleCloud.language_code.get(),
+                        language_code=language_code,
                         ssml_gender=texttospeech.SsmlVoiceGender(voice.ssml_gender).name
                     )
                     session.add(new_voice)
