@@ -315,9 +315,20 @@ class LogStream:
                     self.event_queue.put(
                         ('SET_CHARACTER', self.hero.name)
                     )
+            elif (lstring[0:5] == ["Now", "entering", "the", "Rogue", "Isles,"]):
+                # 2024-04-17 17:10:27 Now entering the Rogue Isles, Kim Chee!
+                self.hero = Hero(" ".join(lstring[5:]).strip('!'))
+                # we want to notify upstream UI about this.
+                if self.event_queue:
+                    self.event_queue.put(
+                        ('SET_CHARACTER', self.hero.name)
+                    )
         
         if self.hero is None:
+            self.speaking_queue.put((None, "User name not detected", 'system'))
             log.info('Could NOT find hero name.. good luck.')
+        else:
+            self.speaking_queue.put((None, f"Welcome back {self.hero.name}", 'system'))
 
         # now move the file handle to the end, we 
         # will starting parsing everything for real this

@@ -44,7 +44,7 @@ PRESETS = {
             "rate": "1"
         }
     },
-    "Robot": {
+    "Clockwork": {
         "engine": "Windows TTS",
         "BaseTTSConfig": {
             "voice_name": "David",
@@ -70,7 +70,7 @@ PRESETS = {
             }
         }
     },
-    "Zombie": {
+    "Vahzilok": {
         "engine": "Windows TTS",
         "BaseTTSConfig": {
             "voice_name": "Zira Desktop",
@@ -84,7 +84,21 @@ PRESETS = {
                 "feedback": "0.0"
             }
         }
-    },    
+    },
+    "Circle of Thorns": {
+        "engine": "Windows TTS",
+        "BaseTTSConfig": {
+            "voice_name": "Zira Desktop",
+            "rate": "1.25"
+        },
+        "Effects": {
+            "Delay": {
+                "delay_seconds": "0.1",
+                "feedback": "0.1",
+                "mix": "0.1"
+            }
+        }
+    }
 }
 
 
