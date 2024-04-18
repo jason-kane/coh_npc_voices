@@ -116,10 +116,19 @@ class ChartFrame(tk.Frame):
             rolling_data_y = []
             last_n = []
             roll_size = 5
+            last_event = None
+
             for row in samples:
                 log.info(f'row: {row}')
                 datestring, xp_gain, inf_gain = row
                 event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
+                while last_event and (event_time - last_event) > timedelta(minutes=1, seconds=30):
+                    # We have a time gap; fill it with zeroes
+                    new_event_time = last_event + timedelta(minutes=1)
+                    data_x.append(new_event_time)
+                    data_y.append(0)
+                    last_n.append(0)
+                    last_event = new_event_time
                 
                 if self.category == "xp":
                     if xp_gain is None:
@@ -136,7 +145,7 @@ class ChartFrame(tk.Frame):
                         log.error(f'last_n: {last_n}')
                         raise
 
-                    if len(last_n) > roll_size:
+                    while len(last_n) > roll_size:
                         log.info(f"clipping {len(last_n)} is too many.  {last_n}")
                         last_n.pop(0)
 
