@@ -4,7 +4,7 @@ import logging
 import multiprocessing
 import os
 import queue
-import random
+
 import sys
 import tkinter as tk
 from tkinter import font, ttk
@@ -14,8 +14,9 @@ import effects
 import engines
 import models
 
-# import voice_builder
+import voice_builder
 import npc_chatter
+from npc import PRESETS
 from pedalboard.io import AudioFile
 from sqlalchemy import delete, exc, select, update
 from sqlalchemy.orm import Session
@@ -28,78 +29,6 @@ logging.basicConfig(
 )
 
 log = logging.getLogger("__name__")
-
-PRESETS = {
-    "Random Female": {
-        "engine": "Windows TTS",
-        "BaseTTSConfig": {
-            "voice_name": ('random', 'female'),
-            "rate": "1"
-        }
-    },
-    "Random Male": {
-        "engine": "Windows TTS",
-        "BaseTTSConfig": {
-            "voice_name": ('random', 'male'),
-            "rate": "1"
-        }
-    },
-    "Clockwork": {
-        "engine": "Windows TTS",
-        "BaseTTSConfig": {
-            "voice_name": "David",
-            "rate": "1"
-        },
-        "Effects": {
-            "Vocoder": {
-                "carrier_freq": "160",
-                "min_freq": "80",
-                "max_freq": "8000",
-                "bands": "40",
-                "bandwidth": "0.5",
-                "bandpass_filter_order": "3"
-            },
-            "RingMod": {
-                "carrier_freq": "160",
-                "blend": "0.5",
-                "carrier_wave": "sin"
-            },
-            "Normalize": {
-                "max_amplitude": "1.0",
-                "remove_dc_offset": True
-            }
-        }
-    },
-    "Vahzilok": {
-        "engine": "Windows TTS",
-        "BaseTTSConfig": {
-            "voice_name": "Zira Desktop",
-            "rate": "2"
-        }, 
-        "Effects": {
-            "Chorus": {
-                "rate_hz": "10.0",
-                "mix": "0.5",
-                "depth": "0.25",
-                "feedback": "0.0"
-            }
-        }
-    },
-    "Circle of Thorns": {
-        "engine": "Windows TTS",
-        "BaseTTSConfig": {
-            "voice_name": "Zira Desktop",
-            "rate": "1.25"
-        },
-        "Effects": {
-            "Delay": {
-                "delay_seconds": "0.1",
-                "feedback": "0.1",
-                "mix": "0.1"
-            }
-        }
-    }
-}
 
 
 class ChoosePhrase(tk.Frame):
@@ -788,78 +717,8 @@ class PresetSelector(tk.Frame):
                 )
             ).first()
 
-        preset = PRESETS[preset_name]
-        log.info(f'Applying preset {preset}')
-
-        with models.Session(models.engine) as session:
-            character.engine = preset['engine']
-            
-            for model in ("BaseTTSConfig", "Effects"):
-                # wipe any existing entries for this character
-                session.execute(
-                    delete(getattr(models, model)).where(
-                        getattr(models, model).character_id == character.id
-                    )
-                )
-            
-            for key in preset['BaseTTSConfig']:
-                log.info(f'key: {key}, value: {preset["BaseTTSConfig"][key]}')
-                value = preset['BaseTTSConfig'][key]
-
-                if key == "voice_name" and len(value) == 2:
-                    # I know, sloppy.  what happens if there is a two character
-                    # voice installed and used as a preset?
-                    choice, gender = preset['BaseTTSConfig'][key]
-                    if choice == "random":
-                        all_available_names = engines.get_engine(character.engine).get_voice_names(gender=gender)
-                        log.info(f'Choosing a random voice from {all_available_names}')
-                        value = random.choice(all_available_names)
-                        log.info(f'Selected voice: {value}')
-                    else:
-                        log.error(f'Unknown variable preset setting: {choice}')   
-
-                session.add(
-                    models.BaseTTSConfig(
-                        character_id=character.id,
-                        key=key,
-                        value=value
-                    )
-                )
-            
-            # TODO
-            # we aren't cleaning up old effectsettings, so they database is going to
-            # very gradually bloat with unreachable objects.
-            if 'Effects' in preset:
-                # wipe any existing effects
-                session.execute(
-                    delete(models.Effects).where(
-                        models.Effects.character_id == character.id
-                    )
-                )
-
-            for effect_name in preset.get('Effects', []):
-                effect = models.Effects(
-                    character_id=character.id,
-                    effect_name=effect_name
-                )
-                session.add(effect)
-
-                # we need the effect.id
-                session.commit()
-                session.refresh(effect)
-
-                for effect_setting_key in preset['Effects'][effect_name]:
-                    value = preset['Effects'][effect_name][effect_setting_key]
-                    
-                    session.add(
-                        models.EffectSetting(
-                            effect_id=effect.id,
-                            key=effect_setting_key,
-                            value=str(value)
-                        )
-                    )
-
-            session.commit()
+        log.info(f'Applying preset {preset_name}')
+        voice_builder.apply_preset(character, preset_name)
 
         self.detailside.load_character(self.selected_character.get())
 

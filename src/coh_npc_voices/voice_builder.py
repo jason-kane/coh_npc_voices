@@ -4,11 +4,14 @@ import re
 
 import db
 import effects
+import random
 import models
-from engines import get_engine
+import engines
 from pedalboard.io import AudioFile
 from sqlalchemy import select, update
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
+from sqlalchemy import delete, exc, select, update
+from npc import PRESETS, GROUP_ALIASES
 
 log = logging.getLogger("__name__")
 
@@ -20,6 +23,104 @@ class tkvar_ish:
         self.value = value
     def get(self):
         return self.value
+
+def apply_preset(character, preset_name, gender=None):
+    preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
+    
+    if preset is None:
+        log.info(f'No preset is available for {preset_name}')
+        return
+
+    with models.Session(models.engine) as session:
+        character.engine = preset['engine']
+        
+        for model in ("BaseTTSConfig", "Effects"):
+            # wipe any existing entries for this character
+            session.execute(
+                delete(getattr(models, model)).where(
+                    getattr(models, model).character_id == character.id
+                )
+            )
+        
+        for key in preset['BaseTTSConfig']:
+            log.info(f'key: {key}, value: {preset["BaseTTSConfig"][key]}')
+            value = preset['BaseTTSConfig'][key]
+
+            if key == "voice_name" and len(value) == 2:
+                # I know, sloppy.  what happens if there is a two character
+                # voice installed and used as a preset?
+                if gender:
+                    # we have a gender override, probably from
+                    # all_npcs.json
+                    choice, default_gender = preset['BaseTTSConfig'][key]
+                    if "FEMALE" in gender.upper():
+                        gender="female"
+                    elif "MALE" in gender.upper():
+                        gender="male"
+                    else:
+                        gender = default_gender
+                    
+                else:
+                    choice, gender = preset['BaseTTSConfig'][key]
+
+                if choice == "random":
+                    if gender == "any":
+                        gender = None
+
+                    all_available_names = engines.get_engine(
+                        character.engine
+                    ).get_voice_names(
+                        gender=gender
+                    )
+                    log.info(f'Choosing a random voice from {all_available_names}')
+                    value = random.choice(all_available_names)
+                    log.info(f'Selected voice: {value}')
+                else:
+                    log.error(f'Unknown variable preset setting: {choice}')   
+
+            session.add(
+                models.BaseTTSConfig(
+                    character_id=character.id,
+                    key=key,
+                    value=value
+                )
+            )
+        
+        # TODO
+        # we aren't cleaning up old effectsettings, so they database is going to
+        # very gradually bloat with unreachable objects.
+        if 'Effects' in preset:
+            # wipe any existing effects
+            session.execute(
+                delete(models.Effects).where(
+                    models.Effects.character_id == character.id
+                )
+            )
+
+        for effect_name in preset.get('Effects', []):
+            effect = models.Effects(
+                character_id=character.id,
+                effect_name=effect_name
+            )
+            session.add(effect)
+
+            # we need the effect.id
+            session.commit()
+            session.refresh(effect)
+
+            for effect_setting_key in preset['Effects'][effect_name]:
+                value = preset['Effects'][effect_name][effect_setting_key]
+                
+                session.add(
+                    models.EffectSetting(
+                        effect_id=effect.id,
+                        key=effect_setting_key,
+                        value=str(value)
+                    )
+                )
+
+        session.commit()
+
 
 def create(character, message, cachefile):
     """
@@ -101,7 +202,7 @@ def create(character, message, cachefile):
     
     selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
 
-    get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
+    engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
 
     with AudioFile(cachefile + ".wav") as input:
         with AudioFile(

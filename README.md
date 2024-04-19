@@ -91,3 +91,5 @@ https://github.com/DeepHorizons/tts
 https://github.com/spotify/pedalboard
 
 Big thanks and shoutout for the creators of these packages.
+
+Raw entity data from https://cod.uberguy.net/html/index.html
