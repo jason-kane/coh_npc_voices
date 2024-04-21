@@ -66,6 +66,9 @@ class Character(Base):
     def cat_str(self):
         return ['', 'npc', 'player', 'system'][self.category]
 
+    def __str__(self):
+        return f"Character {self.category} {self.id}:{self.name} ({self.engine})"
+
 class BaseTTSConfig(Base):
     __tablename__ = "base_tts_config"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -82,6 +85,15 @@ class GoogleVoices(Base):
 
     def __str__(self):
         return json.dumps(self.__dict__)
+
+class ElevenLabsVoices(Base):
+    __tablename__ = "eleven_labs"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64))
+    voice_id: Mapped[str] = mapped_column(String(64))
+
+    def __str__(self):
+        return json.dumps(self.__dict__)    
 
 class Phrases(Base):
     __tablename__ = "phrases"

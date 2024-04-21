@@ -26,7 +26,9 @@ dependencies = [
     "matplotlib",
     "sqlalchemy",
     "sqlalchemy-utils",
-    "alembic"
+    "alembic",
+    "elevenlabs",
+    "voicebox-tts[elevenlabs]"
 ]
 
 [build-system]

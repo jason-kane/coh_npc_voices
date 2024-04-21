@@ -102,7 +102,7 @@ class ChoosePhrase(tk.Frame):
         # parent is the frame inside DetailSide
         engine_name = self.detailside.engineSelect.selected_engine.get()
         ttsengine = engines.get_engine(engine_name)
-        log.debug(f"Engine: {ttsengine}")
+        log.info(f"Engine: {ttsengine}")
 
         effect_list = [
             e.get_effect() for e in self.detailside.effect_list.effects
@@ -159,6 +159,7 @@ class ChoosePhrase(tk.Frame):
                 ])
 
                 log.info(f'effect_list: {effect_list}')
+                log.info(f"Creating ttsengine for {self.selected_character.get()}")
                 # None because we aren't attaching any widgets
                 ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
 
@@ -257,19 +258,23 @@ class EngineSelectAndConfigure(tk.Frame):
             engine_string = engines.default_engine
 
         with models.Session(models.engine) as session:
-            session.execute(
-                update(models.Character).values(
-                    engine=engine_string
-                ).filter_by(
-                    name=name,
-                    category=models.category_str2int(category)
+            
+            character = session.scalars(
+                select(models.Character).where(
+                    models.Character.name == name,
+                    models.Character.category == models.category_str2int(category)
                 )
-            )
-            session.commit()
+            ).first()
 
-        log.debug(
-            f"Saved engine={engine_string} for {category} named {name}"
-        )
+            if character.engine != engine_string:
+                log.info(
+                    'Saving changed engine_string (%s): %s -> %s', 
+                    character.name,
+                    character.engine, 
+                    engine_string
+                )
+                character.engine = engine_string
+                session.commit()
 
     def load_character(self):
         """
@@ -640,7 +645,7 @@ class DetailSide(tk.Frame):
         # loop effects
         # add each effect
         # set parameters for each effect
-        log.debug(f'DetailSide.load_character({raw_name})')
+        log.info(f'DetailSide.load_character({raw_name})')
         raw_was = self.selected_character.get()
         if raw_was != raw_name:
             self.selected_character.set(raw_name)

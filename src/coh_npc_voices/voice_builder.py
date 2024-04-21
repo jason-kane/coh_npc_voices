@@ -78,6 +78,7 @@ def apply_preset(character, preset_name, gender=None):
                 else:
                     log.error(f'Unknown variable preset setting: {choice}')   
 
+            log.info(f'Adding new BaseTTSConfig for {key} => {value}')
             session.add(
                 models.BaseTTSConfig(
                     character_id=character.id,
