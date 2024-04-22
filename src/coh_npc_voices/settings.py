@@ -8,6 +8,10 @@ DEFAULT_ENGINE="Windows TTS"
 PRESETS = "presets.json"
 ALIASES = "aliases.json"
 
+# by default, don't save things players say.  It's not likely
+# to cache hit anyway.  
+PERSIST_PLAYER_CHAT = False
+
 logging.basicConfig(
     level=LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",

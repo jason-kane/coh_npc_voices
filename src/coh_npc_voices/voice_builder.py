@@ -11,8 +11,11 @@ from sqlalchemy import select
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from sqlalchemy import delete
 from npc import PRESETS, GROUP_ALIASES, add_group_alias_stub
+import settings
 
 log = logging.getLogger("__name__")
+
+PLAYER_CATEGORY = models.category_str2int("player")
 
 # act like this is a tk.var
 class tkvar_ish:
@@ -20,6 +23,7 @@ class tkvar_ish:
         self.value = value
     def get(self):
         return self.value
+
 
 def apply_preset(character_name, character_category, preset_name, gender=None):
     preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
@@ -141,6 +145,7 @@ def create(character, message, cachefile):
     2. Render message based on that data
     3. persist as an mp3 in cachefile
     """
+
     with models.Session(models.engine) as session:
         voice_effects = session.scalars(
             select(models.Effects).where(
@@ -160,62 +165,67 @@ def create(character, message, cachefile):
         effect_list.append(effect_instance.get_effect())
 
     # have we seen this particular phrase before?
-    with models.Session(models.engine) as session:
-        phrase = session.execute(
-            select(models.Phrases).where(
-                models.Phrases.character_id == character.id,
-                models.Phrases.text == message
-            )
-        ).first()
-        
-        log.debug(phrase)
+    if character.category != PLAYER_CATEGORY or settings.PERSIST_PLAYER_CHAT:
+        with models.Session(models.engine) as session:
+            phrase = session.execute(
+                select(models.Phrases).where(
+                    models.Phrases.character_id == character.id,
+                    models.Phrases.text == message
+                )
+            ).first()
+            
+            log.debug(phrase)
 
-        if phrase is None:
-            log.info('Phrase not found.  Creating...')
-            # it does not exist, now it does.
-            phrase = models.Phrases(
-                character_id=character.id,
-                text=message,
-                ssml=""
-            )
-            session.add(phrase)
-            session.commit()
+            if phrase is None:
+                log.info('Phrase not found.  Creating...')
+                # it does not exist, now it does.
+                phrase = models.Phrases(
+                    character_id=character.id,
+                    text=message,
+                    ssml=""
+                )
+                session.add(phrase)
+                session.commit()
 
-    try:
-        clean_name = re.sub(r'[^\w]', '',character.name)
-        os.mkdir(os.path.join("clip_library", character.cat_str(), clean_name))
-    except OSError:
-        # the directory already exists.  This is not a problem.
-        pass
+        try:
+            clean_name = re.sub(r'[^\w]', '',character.name)
+            os.mkdir(os.path.join("clip_library", character.cat_str(), clean_name))
+        except OSError:
+            # the directory already exists.  This is not a problem.
+            pass
 
-    sink = Distributor([
-        SoundDevice(),
-        WaveFile(cachefile + '.wav')
-    ])
+        sink = Distributor([
+            SoundDevice(),
+            WaveFile(cachefile + '.wav')
+        ])
+        save = False
+    else:
+        sink = Distributor([
+            SoundDevice()
+        ])
+        save = True 
     
     selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
-
     engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
 
-    with AudioFile(cachefile + ".wav") as input:
-        with AudioFile(
-            filename=cachefile,
-            samplerate=input.samplerate,
-            num_channels=input.num_channels
-        ) as output:
-            while input.tell() < input.frames:
-                retries = 5
-                success = False
-                while not success and retries > 0:
-                    try:
-                        output.write(input.read(1024))
-                        success = True
-                    except RuntimeError as err:
-                        log.errror(err)
-                    retries -= 1
-                
-        log.info(f'Created {cachefile}')
+    if save:
+        with AudioFile(cachefile + ".wav") as input:
+            with AudioFile(
+                filename=cachefile,
+                samplerate=input.samplerate,
+                num_channels=input.num_channels
+            ) as output:
+                while input.tell() < input.frames:
+                    retries = 5
+                    success = False
+                    while not success and retries > 0:
+                        try:
+                            output.write(input.read(1024))
+                            success = True
+                        except RuntimeError as err:
+                            log.errror(err)
+                        retries -= 1
+                    
+            log.info(f'Created {cachefile}')
 
-    #audio = pydub.AudioSegment.from_wav(cachefile + ".wav")
-    #audio.export(cachefile, format="mp3")
-    os.unlink(cachefile + ".wav")
+        os.unlink(cachefile + ".wav")
