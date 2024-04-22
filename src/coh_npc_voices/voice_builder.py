@@ -11,7 +11,7 @@ from pedalboard.io import AudioFile
 from sqlalchemy import select, update
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from sqlalchemy import delete, exc, select, update
-from npc import PRESETS, GROUP_ALIASES
+from npc import PRESETS, GROUP_ALIASES, add_group_alias_stub
 
 log = logging.getLogger("__name__")
 
@@ -24,15 +24,23 @@ class tkvar_ish:
     def get(self):
         return self.value
 
-def apply_preset(character, preset_name, gender=None):
+def apply_preset(character_name, character_category, preset_name, gender=None):
     preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
     
     if preset is None:
         log.info(f'No preset is available for {preset_name}')
-        return
+        add_group_alias_stub(preset_name)
+        preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
 
     with models.Session(models.engine) as session:
+        log.info('Applying preset: %s', preset)
+        character = models.get_character(
+            character_name,
+            character_category,
+            session=session
+        )
         character.engine = preset['engine']
+        session.commit()
         
         for model in ("BaseTTSConfig", "Effects"):
             # wipe any existing entries for this character

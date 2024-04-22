@@ -146,12 +146,13 @@ class ChartFrame(tk.Frame):
                         raise
 
                     while len(last_n) > roll_size:
-                        log.info(f"clipping {len(last_n)} is too many.  {last_n}")
+                        log.debug(f"clipping {len(last_n)} is too many.  {last_n}")
                         last_n.pop(0)
 
                 elif self.category == "inf":
                     data_x.append(event_time)
                     data_y.append(inf_gain)
+                    .00
 
             log.info(f'Plotting {data_x}:{data_y}/{rolling_data_y}')
             try:

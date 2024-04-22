@@ -219,7 +219,8 @@ class EngineSelectAndConfigure(tk.Frame):
         es = EngineSelection(self, self.selected_engine)
         es.pack(side="top", fill="x", expand=True)
         self.engine_parameters = None
-        self.change_selected_engine("", "", "")
+        # self.change_selected_engine("", "", "")
+        self.load_character()
 
     def set_engine(self, engine_name):
         self.selected_engine.set(engine_name)
@@ -652,19 +653,14 @@ class DetailSide(tk.Frame):
 
         category, name = raw_name.split(maxsplit=1)
         
-        with models.Session(models.engine) as session:
-            character = session.scalars(
-                select(models.Character).where(
-                    name==name, 
-                    category==category
-                )
-            ).first()
+        # load the character 
+        character = models.get_character(name, category)
 
         # update the phrase selector
         self.phrase_selector.populate_phrases()
 
         # set the engine itself
-        log.info('character: %s | %s', character, character.engine)
+        log.info('b character: %s | %s', character, character.engine)
         self.engineSelect.set_engine(character.engine)
 
         # set engine and parameters
@@ -714,6 +710,7 @@ class PresetSelector(tk.Frame):
         raw_name = self.selected_character.get()
         category, name = raw_name.split(maxsplit=1)
 
+        # load the character from the db
         with models.Session(models.engine) as session:
             character = session.scalars(
                 select(models.Character).where(
@@ -723,7 +720,11 @@ class PresetSelector(tk.Frame):
             ).first()
 
         log.info(f'Applying preset {preset_name}')
-        voice_builder.apply_preset(character, preset_name)
+        voice_builder.apply_preset(
+            character.name, 
+            character.category, 
+            preset_name
+        )
 
         self.detailside.load_character(self.selected_character.get())
 

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped
 from typing_extensions import Annotated
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG, # INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
@@ -56,6 +56,35 @@ def category_str2int(instr):
     except ValueError:
         return -1
 
+def get_character(name, category, session=None):
+    log.info(f'get_character({name=}, {category=}, {session=})')
+    try:
+        category=int(category)
+    except ValueError:
+        category=category_str2int(category)
+
+    value = None
+
+    if session is None:
+        with Session(engine) as session:
+            value = session.scalar(
+                select(Character).where(
+                    Character.name==name, 
+                    Character.category==category
+                )
+            )
+    else:
+        log.debug('Using existing session')
+        value = session.scalar(
+            select(Character).where(
+                Character.name==name,
+                Character.category==category
+            )
+        )
+
+    log.info(f'get_character() returning {value}')
+    return value
+
 class Character(Base):
     __tablename__ = "character"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -68,6 +97,9 @@ class Character(Base):
 
     def __str__(self):
         return f"Character {self.category} {self.id}:{self.name} ({self.engine})"
+    
+    def __repr__(self):
+        return f"<Character category={self.category!r} id={self.id!r} name={self.name!r} engine={self.engine!r}/>"
 
 class BaseTTSConfig(Base):
     __tablename__ = "base_tts_config"

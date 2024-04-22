@@ -279,7 +279,8 @@ class TightTTS(threading.Thread):
                         # make a better voice default based on the
                         # faction and gender
                         voice_builder.apply_preset(
-                            character,
+                            character.name,
+                            character.category,
                             found["group_name"],
                             gender=found["gender"],
                         )
