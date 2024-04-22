@@ -2,12 +2,12 @@ import logging
 import tkinter as tk
 from tkinter import font, ttk
 
-import db
 import models
 import numpy as np
 import pedalboard
 import voicebox
-from sqlalchemy import select, update
+from sqlalchemy import select
+import settings
 
 log = logging.getLogger('__name__')
 
@@ -37,11 +37,6 @@ class LScale(tk.Frame):
                 name=f"{pname}",
                 value=default
             )
-        variable.trace_add("write", parent.reconfig)
-        parent.traces.append(variable)
-
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)
 
         tk.Label(
             self,
@@ -63,6 +58,9 @@ class LScale(tk.Frame):
             **kwargs
         ).pack(side='left', fill='x', expand=True)
 
+        setattr(parent, pname, variable)
+        parent.parameters.append(pname)
+
 
 class LCombo(tk.Frame):
 
@@ -78,11 +76,6 @@ class LCombo(tk.Frame):
         super().__init__(parent, *args, **kwargs)
 
         variable = tk.StringVar(value=default)
-        variable.trace_add("write", parent.reconfig)
-        parent.traces.append(variable)
-
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)
 
         tk.Label(
             self,
@@ -101,6 +94,9 @@ class LCombo(tk.Frame):
             
         options.pack(side='left', fill='x', expand=True)
 
+        setattr(parent, pname, variable)
+        parent.parameters.append(pname)        
+
 
 class LBoolean(tk.Frame):
     def __init__(
@@ -118,11 +114,6 @@ class LBoolean(tk.Frame):
             name=f"{pname}",
             value=default
         )
-        variable.trace_add("write", parent.reconfig)
-        parent.traces.append(variable)
-
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)  
 
         tk.Label(
             self,
@@ -139,6 +130,9 @@ class LBoolean(tk.Frame):
             onvalue=True,
             offvalue=False
         ).pack(side='left', fill='x', expand=True)
+
+        setattr(parent, pname, variable)
+        parent.parameters.append(pname)  
 
 
 class EffectParameterEditor(tk.Frame):
@@ -206,13 +200,14 @@ class EffectParameterEditor(tk.Frame):
         persist that change.  Make the database reflect
         the UI.
         """
-        log.info(f'reconfig triggered by {varname}')
+        log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
 
         with models.Session(models.engine) as session:
             effect_settings = session.scalars(
                 select(models.EffectSetting).where(
-                    models.EffectSetting.effect_id==effect_id
+                    models.EffectSetting.effect_id==effect_id,
+                    models.EffectSetting.key==varname
                 )
             ).all()
 
@@ -231,8 +226,38 @@ class EffectParameterEditor(tk.Frame):
                     effect_setting.value = new_value
                     session.commit()
                 else:
-                    log.debug(f'Value for {effect_setting.key} has not changed')
+                    log.info(f'Value for {effect_setting.key} has not changed')
 
+    def load(self, session=None):
+        """
+        reflect the current db values for each effect setting
+        to the tk.Variable tied to the widget for that
+        setting.
+        """
+        if session is None:
+            session = models.Session(models.engine)
+
+        effect_id = self.effect_id.get()
+
+        effect_settings = session.scalars(
+            select(models.EffectSetting).where(
+                models.EffectSetting.effect_id == effect_id
+            )
+        ).all()
+
+        for setting in effect_settings:
+            tkvar = getattr(self, setting.key, None)
+            if tkvar not in self.traces:
+                if tkvar:
+                    tkvar.set(setting.value)
+                else:
+                    log.error(
+                        f'Invalid configuration.  '
+                        f'{setting.key} is not available for '
+                        f'{self}')
+            
+                tkvar.trace_add("write", self.reconfig)
+                self.traces.append(tkvar)
 
 # scipy iir filters
 IIR_FILTERS = ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
@@ -303,6 +328,7 @@ class BandpassFilter(EffectParameterEditor):
         )
         return effect
 
+
 class BandstopFilter(EffectParameterEditor):
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.iirfilter.html
     label = "Bandstop Filter"
@@ -372,6 +398,7 @@ class BandstopFilter(EffectParameterEditor):
         )
         return effect
 
+
 class LowpassFilter(EffectParameterEditor):
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.iirfilter.html
     label = "Lowpass Filter"
@@ -428,6 +455,7 @@ class LowpassFilter(EffectParameterEditor):
             ftype=self.type_.get()
         )
         return effect
+
 
 class HighpassFilter(EffectParameterEditor):
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.iirfilter.html
@@ -486,6 +514,7 @@ class HighpassFilter(EffectParameterEditor):
             ftype=self.type_.get()
         )
         return effect
+
 
 class Glitch(EffectParameterEditor):
     label = "Glitch"
@@ -601,6 +630,7 @@ class PitchShift(EffectParameterEditor):
         )
         return effect
 
+
 class Reverb(EffectParameterEditor):
     label = "Reverb"
     desc = (
@@ -694,6 +724,7 @@ class Reverb(EffectParameterEditor):
         )
         return effect
 
+
 class Bitcrush(EffectParameterEditor):
     label = "Bitcrush"
     desc = "reduces the signal to a given bit depth, giving the audio a lo-fi, digitized sound."
@@ -720,6 +751,7 @@ class Bitcrush(EffectParameterEditor):
             )
         )
         return effect
+
 
 class Chorus(EffectParameterEditor):
     label = "chorus"
@@ -811,6 +843,7 @@ class Chorus(EffectParameterEditor):
         )
         return effect
 
+
 class Clipping(EffectParameterEditor):
     label = "clipping"
     desc = """A distortion plugin that adds hard distortion to the signal by clipping the signal at the provided threshold (in decibels)."""
@@ -837,6 +870,7 @@ class Clipping(EffectParameterEditor):
             )
         )
         return effect
+
 
 class Compressor(EffectParameterEditor):
     label = "compressor"
@@ -1145,7 +1179,6 @@ Depending on the filter’s mode, frequencies above, below, or on both sides of 
             )
         )
         return effect
-
 
 
 class RingMod(EffectParameterEditor):

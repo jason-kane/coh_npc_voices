@@ -4,14 +4,11 @@ import sys
 import tempfile
 import time
 import tkinter as tk
-import wave
 from dataclasses import dataclass
-from io import BytesIO
 from tkinter import ttk
 
 import elevenlabs
 import models
-import numpy
 import tts.sapi
 import voicebox
 from elevenlabs.client import ElevenLabs as ELABS
@@ -20,17 +17,15 @@ from pedalboard.io import AudioFile
 from sqlalchemy import select
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
+import settings
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=settings.LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
 log = logging.getLogger("__name__")
-
-
-default_engine = "Windows TTS"
 
 
 @dataclass
@@ -102,13 +97,7 @@ class TTSEngine(tk.Frame):
         log.info(f"TTSEngine.load_character({raw_name})")
         category, name = raw_name.split(maxsplit=1)
 
-        with models.Session(models.engine) as session:
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name == name,
-                    models.Character.category == models.category_str2int(category),
-                )
-            ).first()
+        character = models.get_character(name, category)
 
         if character is None:
             log.info("No engine configuration available in the database")
@@ -138,19 +127,14 @@ class TTSEngine(tk.Frame):
 
         with models.Session(models.engine) as session:
             category, name = raw_name.split(maxsplit=1)
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name == name,
-                    models.Character.category == models.category_str2int(category),
-                )
-            ).first()
+            character = models.get_character(name, category)
 
             if character is None:
                 # new character?  This is not typical.
                 character = models.Character(
                     name=name,
                     category=models.category_str2int(category),
-                    engine=default_engine,
+                    engine=settings.DEFAULT_ENGINE,
                 )
                 session.add(character)
                 session.commit()

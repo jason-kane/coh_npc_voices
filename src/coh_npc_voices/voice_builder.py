@@ -2,20 +2,17 @@ import logging
 import os
 import re
 
-import db
 import effects
 import random
 import models
 import engines
 from pedalboard.io import AudioFile
-from sqlalchemy import select, update
+from sqlalchemy import select
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
-from sqlalchemy import delete, exc, select, update
+from sqlalchemy import delete
 from npc import PRESETS, GROUP_ALIASES, add_group_alias_stub
 
 log = logging.getLogger("__name__")
-
-default_engine = "Windows TTS"
 
 # act like this is a tk.var
 class tkvar_ish:
@@ -157,21 +154,8 @@ def create(character, message, cachefile):
         effect_class = effects.EFFECTS[effect.effect_name]
         effect_instance = effect_class(None)
 
-        with models.Session(models.engine) as session:
-            effect_settings = session.scalars(
-                select(models.EffectSetting).where(
-                    models.EffectSetting.effect_id == effect.id
-                )
-            ).all()
-
-        # reach into effect() and set the values this
-        # plugin expects.
-        for effect_setting in effect_settings:
-            tkvar = getattr(effect, effect_setting.key, None)
-            if tkvar:
-                tkvar.set(effect_setting.value)
-            else:
-                log.error(f'Invalid configuration.  {effect_setting.key} is not available for {effect}')
+        effect_instance.effect_id.set(effect.id)
+        effect_instance.load()  # load the DB config for this effect
 
         effect_list.append(effect_instance.get_effect())
 

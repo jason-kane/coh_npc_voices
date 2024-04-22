@@ -11,20 +11,18 @@ import sys
 import threading
 import time
 import concurrent.futures
+import settings
 
 import db
 import models
 import pythoncom
-import tts.sapi
-from npc import PRESETS, GROUP_ALIASES
 import voice_builder
 import voicebox
 from pedalboard.io import AudioFile
-from sqlalchemy import select, update
 from voicebox.tts.utils import get_audio_from_wav_file
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=settings.LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
@@ -94,13 +92,7 @@ class ParallelTTS(threading.Thread):
         log.info(f"Cache Miss -- {cachefile} not found")
         # ok, what kind of voice do we want for this NPC?
 
-        with models.Session(models.engine) as session:
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name == name,
-                    models.Character.category == models.category_str2int(category),
-                )
-            ).first()
+        character = models.get_character(name, category)
 
         if character is None:
             # this is the first time we've gotten a message from this
@@ -109,7 +101,7 @@ class ParallelTTS(threading.Thread):
             with models.Session(models.engine) as session:
                 character = models.Character(
                     name=name,
-                    engine=voice_builder.default_engine,
+                    engine=settings.DEFAULT_ENGINE,
                     category=models.category_str2int(category),
                 )
                 session.add(character)
@@ -244,15 +236,7 @@ class TightTTS(threading.Thread):
             else:
                 log.info(f"Cache Miss -- {cachefile} not found")
                 # ok, what kind of voice do we want for this NPC?
-
-                with models.Session(models.engine) as session:
-                    character = session.scalars(
-                        select(models.Character).where(
-                            models.Character.name == name,
-                            models.Character.category
-                            == models.category_str2int(category),
-                        )
-                    ).first()
+                character = models.get_character(name, category)
 
                 if character is None:
                     # this is the first time we've gotten a message from this
@@ -267,7 +251,7 @@ class TightTTS(threading.Thread):
                     with models.Session(models.engine) as session:
                         character = models.Character(
                             name=name,
-                            engine=voice_builder.default_engine,
+                            engine=settings.DEFAULT_ENGINE,
                             category=models.category_str2int(category),
                         )
 

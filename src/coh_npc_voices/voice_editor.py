@@ -1,10 +1,9 @@
-"""Hello World application for Tkinter"""
+"""Voice Editor component"""
 
 import logging
 import multiprocessing
 import os
 import queue
-
 import sys
 import tkinter as tk
 from tkinter import font, ttk
@@ -18,12 +17,12 @@ import voice_builder
 import npc_chatter
 from npc import PRESETS
 from pedalboard.io import AudioFile
-from sqlalchemy import delete, exc, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, select, update
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
+import settings
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=settings.LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
@@ -68,13 +67,8 @@ class ChoosePhrase(tk.Frame):
             except ValueError:
                 log.error('Invalid Character Category: %s', category)
                 return
-            
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name == name,
-                    models.Character.category == category,
-                )
-            ).first()
+
+            character = models.get_character(name, category, session)
 
             if character is None:
                 log.error(f'62 Character {category}|{name} does not exist!')
@@ -116,12 +110,7 @@ class ChoosePhrase(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name == name,
-                    models.Character.category == models.category_str2int(category)
-                )
-            ).first()
+            character = models.get_character(name, category, session)
 
             all_phrases = [ 
                 n.text for n in session.scalars(
@@ -220,7 +209,8 @@ class EngineSelectAndConfigure(tk.Frame):
         es.pack(side="top", fill="x", expand=True)
         self.engine_parameters = None
         # self.change_selected_engine("", "", "")
-        self.load_character()
+        #log.info('EngineSelectAndConfigure.__init__() -> self.load_character()')
+        #self.load_character()
 
     def set_engine(self, engine_name):
         self.selected_engine.set(engine_name)
@@ -256,16 +246,10 @@ class EngineSelectAndConfigure(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
         engine_string = self.selected_engine.get()
         if engine_string in [None, ""]:
-            engine_string = engines.default_engine
+            engine_string = settings.DEFAULT_ENGINE
 
         with models.Session(models.engine) as session:
-            
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name == name,
-                    models.Character.category == models.category_str2int(category)
-                )
-            ).first()
+            character = models.get_character(name, category, session)
 
             if character.engine != engine_string:
                 log.info(
@@ -287,23 +271,15 @@ class EngineSelectAndConfigure(tk.Frame):
             log.error('Cannot load_character() with no character name.')
             return
         
-        log.info(f'EngineSelectAndConfigure.load_character: {raw_name}!r')
         category, name = raw_name.split(maxsplit=1)
-
-        with models.Session(models.engine) as session:
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name==name,
-                    models.Character.category==models.category_str2int(category)
-                )
-            ).first()
+        character = models.get_character(name, category)
 
         if character is None:
             log.error(f'Character {name} does not exist.')
             return None
        
         if character.engine in ["", None]:
-            self.selected_engine.set(engines.default_engine)
+            self.selected_engine.set(settings.DEFAULT_ENGINE)
         else:
             self.selected_engine.set(character.engine)
             
@@ -341,12 +317,7 @@ class EffectList(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name==name,
-                    models.Character.category==models.category_str2int(category)
-                )
-            ).first()
+            character = models.get_character(name, category, session)
             
             if character is None:
                 log.error(
@@ -377,23 +348,7 @@ class EffectList(tk.Frame):
                 effect_config_frame.effect_id.set(effect.id)
                 self.effects.append(effect_config_frame)
 
-                # we are not done yet.
-                effect_settings = session.scalars(
-                    select(models.EffectSetting).where(
-                        models.EffectSetting.effect_id == effect.id
-                    )
-                ).all()
-
-                for setting in effect_settings:
-
-                    tkvar = getattr(effect_config_frame, setting.key, None)
-                    if tkvar:
-                        tkvar.set(setting.value)
-                    else:
-                        log.error(
-                            f'Invalid configuration.  '
-                            f'{setting.key} is not available for '
-                            f'{effect_config_frame}')
+                effect_config_frame.load(session=session)
                         
             #self.parent.pack(side="top", fill="x", expand=True)
             if not has_effects:
@@ -460,12 +415,7 @@ class EffectList(tk.Frame):
 
             with models.Session(models.engine) as session:
                 # retrieve this character
-                character = session.scalars(
-                    select(models.Character).where(
-                        models.Character.name==name,
-                        models.Character.category==models.category_str2int(category)
-                    )
-                ).first()
+                character = models.get_character(name, category, session)
 
                 # save the current effect selection
                 effect = models.Effects(
@@ -496,12 +446,20 @@ class EffectList(tk.Frame):
         
         # remove it from the effects list
         self.effects.remove(effect_obj)
-        
+        effect_id = effect_obj.effect_id.get()
         # remove it from the database
         with models.Session(models.engine) as session:
+            # clear any effect settings
+            session.execute(
+                delete(models.EffectSetting).where(
+                    models.EffectSetting.effect_id == effect_id
+                )
+            )
+
+            # clear the effect itself
             session.execute(
                 delete(models.Effects).where(
-                    models.Effects.id == effect_obj.effect_id.get()
+                    models.Effects.id == effect_id
                 )
             )
             session.commit()
@@ -711,13 +669,7 @@ class PresetSelector(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
 
         # load the character from the db
-        with models.Session(models.engine) as session:
-            character = session.scalars(
-                select(models.Character).where(
-                    models.Character.name==name,
-                    models.Character.category==models.category_str2int(category)
-                )
-            ).first()
+        character = models.get_character(name, category)
 
         log.info(f'Applying preset {preset_name}')
         voice_builder.apply_preset(

@@ -10,9 +10,10 @@ import sys
 from typing import Optional
 from sqlalchemy.orm import Mapped
 from typing_extensions import Annotated
+import settings
 
 logging.basicConfig(
-    level=logging.DEBUG, # INFO,
+    level=settings.LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )

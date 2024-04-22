@@ -6,18 +6,18 @@ import multiprocessing
 from datetime import datetime, timedelta
 import sys
 import tkinter as tk
-from tkinter import font, ttk
+from tkinter import ttk
 from sqlalchemy import func, select
 import models
 import matplotlib.dates as mdates
 import voice_editor
 import npc_chatter
 import numpy as np
+import settings
 
 from matplotlib.figure import Figure 
 from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg,  
-    NavigationToolbar2Tk
+    FigureCanvasTkAgg
 ) 
 
 import ctypes
@@ -29,7 +29,7 @@ ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=settings.LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )

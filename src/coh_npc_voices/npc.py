@@ -1,8 +1,10 @@
 import json
 import os
+import settings
 
-if os.path.exists('aliases.json'):
-    with open('aliases.json') as h:
+
+if os.path.exists(settings.ALIASES):
+    with open(settings.ALIASES) as h:
         GROUP_ALIASES = json.loads(h.read())
 else:
     GROUP_ALIASES = {
@@ -15,12 +17,12 @@ else:
 
 def add_group_alias_stub(group_name):
     global GROUP_ALIASES
-    with open('aliases.json', 'w') as h:
+    with open(settings.ALIASES, 'w') as h:
         GROUP_ALIASES[group_name] = "Random Any"
         h.write(json.dumps(GROUP_ALIASES, indent=2))
 
-if os.path.exists('presets.json'):
-    with open('presets.json') as h:
+if os.path.exists(settings.PRESETS):
+    with open(settings.PRESETS) as h:
         PRESETS = json.loads(h.read())
 else:
     PRESETS = {
