@@ -198,12 +198,12 @@ def create(character, message, cachefile):
             SoundDevice(),
             WaveFile(cachefile + '.wav')
         ])
-        save = False
+        save = True
     else:
         sink = Distributor([
             SoundDevice()
         ])
-        save = True 
+        save = False 
     
     selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
     engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)

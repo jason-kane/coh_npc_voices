@@ -776,7 +776,50 @@ class ListSide(tk.Frame):
 
         category, name = raw_name.split(maxsplit=1)
         log.info(f'Name: {name!r}  Category: {category!r}')
+        
         with models.Session(models.engine) as session:
+            character = models.get_character(name, category, session)
+
+            session.execute(
+                delete(
+                    models.BaseTTSConfig
+                ).where(
+                    models.BaseTTSConfig.character_id == character.id
+                )
+            )
+
+            session.execute(
+                delete(
+                    models.Phrases
+                ).where(
+                    models.Phrases.character_id == character.id
+                )
+            )
+
+            all_effects = session.scalars(
+                select(
+                    models.Effects
+                ).where(
+                    models.Effects.character_id == character.id
+                )
+            ).all()
+            for effect in all_effects:
+                session.execute(
+                    delete(
+                        models.EffectSetting
+                    ).where(
+                        models.EffectSetting.effect_id == effect.id
+                    )
+                )
+
+            session.execute(
+                delete(
+                    models.Effects
+                ).where(
+                    models.Effects.character_id == character.id
+                )
+            )
+
             try:
                 session.execute(
                     delete(models.Character)
@@ -791,7 +834,7 @@ class ListSide(tk.Frame):
                 log.error(f'DB Error: {err}')
                 raise
 
-        # dude, delete everything they have ever said from
+        # TODO: dude, delete everything they have ever said from
         # disk too.
 
         self.refresh_character_list()
@@ -946,18 +989,18 @@ if __name__ == '__main__':
 
 # Not-blocking Glitches
 #######################
-# logging is weird.. debug isn't coming through and I'm not sure why
 # in-app update of app software
 # in-app update of voice database
-# when you edit an NPC, option to rebuild everything they say with the new 
-#     settings saving the mp3 to the file system (same as cache)
 # right side does not fill the width
-# no mechanism to remove NPCs
 # mouse-scroll doesn't move right side scrollbar
-# removing effects does not repack
+# cannot remove the last npc entry
 
 # DONE
 # ----
+# removing effects does not repack
+# no mechanism to remove NPCs
+# when you edit an NPC, option to rebuild everything they say with the new 
+#     settings saving the mp3 to the file system (same as cache)
 # some mechanism to update/refresh the character list when new entries are added
 # effects are not removed when you change between npc
 # persist effects to database
