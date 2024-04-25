@@ -27,7 +27,15 @@ def build_migrate():
 
 if not database_exists(engine.url):
     build_migrate()
-
+    # a default character entry makes everything a little easier.
+    with models.Session(models.engine) as session:
+        default = models.Character(
+            name="default",
+            engine="Windows TTS",
+            category=3
+        )
+        session.add(default)
+        session.commit()
 
 def clean_customer_name(in_name):
     if in_name:

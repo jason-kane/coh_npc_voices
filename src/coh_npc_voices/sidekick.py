@@ -207,10 +207,19 @@ class CharacterTab(tk.Frame):
         # character.pack(side="top", fill="both", expand=True)
 
     # character.name.trace_add('write', set_hero)
-    
+  
+EXIT = False
 
 def main():
-    root = tk.Tk()
+    root = tk.Tk()  
+
+    def on_closing():
+        global EXIT
+        EXIT = True
+        log.info('Exiting...')
+        root.destroy()
+        
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     root.iconbitmap("sidekick.ico")
 
     root.geometry("640x640+200+200")
@@ -251,7 +260,7 @@ def main():
     # update the graph(s) this often
     update_frequency = timedelta(minutes=1)
 
-    while True:
+    while not EXIT:
         try:
             event_action = event_queue.get(block=False)
             # we got an action (no exception)

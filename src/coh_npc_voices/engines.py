@@ -95,7 +95,14 @@ class TTSEngine(tk.Frame):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
         log.info(f"TTSEngine.load_character({raw_name})")
-        category, name = raw_name.split(maxsplit=1)
+        if raw_name:
+            category, name = raw_name.split(maxsplit=1)
+        else:
+            # I think the only way to get here is by
+            # trying to play voices before you've ever
+            # attached to the game log.  
+            category = 'system'
+            name = None
 
         character = models.get_character(name, category)
 

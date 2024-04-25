@@ -666,7 +666,11 @@ class PresetSelector(tk.Frame):
             return
 
         raw_name = self.selected_character.get()
-        category, name = raw_name.split(maxsplit=1)
+        if raw_name:
+            category, name = raw_name.split(maxsplit=1)
+        else:
+            category = 'system'
+            name = None
 
         # load the character from the db
         character = models.get_character(name, category)
@@ -761,7 +765,7 @@ class ListSide(tk.Frame):
 
         with models.Session(models.engine) as session:
             all_characters = session.scalars(
-                select(models.Character).order_by(models.Character.name)
+                select(models.Character).order_by(models.Character.last_spoke)
             ).all()
 
         if all_characters:

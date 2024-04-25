@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 import json
-from sqlalchemy import Enum, ForeignKey, Integer, String, create_engine, orm, select, TIMESTAMP
+from sqlalchemy import Enum, DateTime, ForeignKey, Integer, String, create_engine, orm, select, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import Session
@@ -92,6 +92,7 @@ class Character(Base):
     name: Mapped[str] = mapped_column(String(64))
     engine: Mapped[str] = mapped_column(String(64))
     category = mapped_column(Integer, index=True)
+    last_spoke = mapped_column(DateTime, nullable=True)
 
     def cat_str(self):
         return ['', 'npc', 'player', 'system'][self.category]

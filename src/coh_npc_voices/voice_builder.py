@@ -1,15 +1,14 @@
 import logging
 import os
 import re
-
+import datetime
 import effects
 import random
 import models
 import engines
 from pedalboard.io import AudioFile
-from sqlalchemy import select
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
-from sqlalchemy import delete
+from sqlalchemy import delete, select, update
 from npc import PRESETS, GROUP_ALIASES, add_group_alias_stub
 import settings
 
@@ -145,7 +144,6 @@ def create(character, message, cachefile):
     2. Render message based on that data
     3. persist as an mp3 in cachefile
     """
-
     with models.Session(models.engine) as session:
         voice_effects = session.scalars(
             select(models.Effects).where(
@@ -207,6 +205,14 @@ def create(character, message, cachefile):
     
     selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
     engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
+
+    with models.Session(models.engine) as session:
+        session.execute(
+            update(models.Character).values(
+                last_spoke=datetime.datetime.now()
+            )
+        )
+        session.commit()
 
     if save:
         with AudioFile(cachefile + ".wav") as input:
