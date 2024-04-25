@@ -1,19 +1,20 @@
 import logging
 import os
 import re
-
+import datetime
+import effects
+import random
+import models
+import engines
 from pedalboard.io import AudioFile
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
-
-import effects
-from db import commit, get_cursor
-from engines import get_engine
+from sqlalchemy import delete, select, update
+from npc import PRESETS, GROUP_ALIASES, add_group_alias_stub
+import settings
 
 log = logging.getLogger("__name__")
 
-MESSAGE_CATEGORIES = ['npc', 'system', 'player']
-
-default_engine = "Windows TTS"
+PLAYER_CATEGORY = models.category_str2int("player")
 
 # act like this is a tk.var
 class tkvar_ish:
@@ -22,7 +23,115 @@ class tkvar_ish:
     def get(self):
         return self.value
 
-def create(character_id, message, cachefile):
+
+def apply_preset(character_name, character_category, preset_name, gender=None):
+    preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
+    
+    if preset is None:
+        log.info(f'No preset is available for {preset_name}')
+        add_group_alias_stub(preset_name)
+        preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
+
+    with models.Session(models.engine) as session:
+        log.info('Applying preset: %s', preset)
+        character = models.get_character(
+            character_name,
+            character_category,
+            session=session
+        )
+        character.engine = preset['engine']
+        session.commit()
+        
+        for model in ("BaseTTSConfig", "Effects"):
+            # wipe any existing entries for this character
+            session.execute(
+                delete(getattr(models, model)).where(
+                    getattr(models, model).character_id == character.id
+                )
+            )
+        
+        for key in preset['BaseTTSConfig']:
+            log.info(f'key: {key}, value: {preset["BaseTTSConfig"][key]}')
+            value = preset['BaseTTSConfig'][key]
+
+            if key == "voice_name" and len(value) == 2:
+                # I know, sloppy.  what happens if there is a two character
+                # voice installed and used as a preset?
+                if gender:
+                    # we have a gender override, probably from
+                    # all_npcs.json
+                    choice, default_gender = preset['BaseTTSConfig'][key]
+                    if "FEMALE" in gender.upper():
+                        gender="female"
+                    elif "MALE" in gender.upper():
+                        gender="male"
+                    else:
+                        gender = default_gender
+                    
+                else:
+                    choice, gender = preset['BaseTTSConfig'][key]
+
+                if choice == "random":
+                    if gender == "any":
+                        gender = None
+
+                    all_available_names = engines.get_engine(
+                        character.engine
+                    ).get_voice_names(
+                        gender=gender
+                    )
+                    log.info(f'Choosing a random voice from {all_available_names}')
+                    value = random.choice(all_available_names)
+                    log.info(f'Selected voice: {value}')
+                else:
+                    log.error(f'Unknown variable preset setting: {choice}')   
+
+            log.info(f'Adding new BaseTTSConfig for {key} => {value}')
+            session.add(
+                models.BaseTTSConfig(
+                    character_id=character.id,
+                    key=key,
+                    value=value
+                )
+            )
+        
+        # TODO
+        # we aren't cleaning up old effectsettings, so they database is going to
+        # very gradually bloat with unreachable objects.
+        if 'Effects' in preset:
+            # wipe any existing effects
+            session.execute(
+                delete(models.Effects).where(
+                    models.Effects.character_id == character.id
+                )
+            )
+
+        for effect_name in preset.get('Effects', []):
+            effect = models.Effects(
+                character_id=character.id,
+                effect_name=effect_name
+            )
+            session.add(effect)
+
+            # we need the effect.id
+            session.commit()
+            session.refresh(effect)
+
+            for effect_setting_key in preset['Effects'][effect_name]:
+                value = preset['Effects'][effect_name][effect_setting_key]
+                
+                session.add(
+                    models.EffectSetting(
+                        effect_id=effect.id,
+                        key=effect_setting_key,
+                        value=str(value)
+                    )
+                )
+
+        session.commit()
+
+
+def create(character, message, cachefile):
     """
     This NPC exists in our database but we don't
     have this particular message rendered.
@@ -35,102 +144,94 @@ def create(character_id, message, cachefile):
     2. Render message based on that data
     3. persist as an mp3 in cachefile
     """
-    cursor = get_cursor()
-    name, engine_name, category = cursor.execute(
-        "select name, engine, category from character where id=?", 
-        (character_id, )
-    ).fetchone()
-    engine = get_engine(engine_name)
+    with models.Session(models.engine) as session:
+        voice_effects = session.scalars(
+            select(models.Effects).where(
+                models.Effects.character_id == character.id
+            )
+        ).all()
     
-    # how about a list of audio effects this stream should be 
-    # passed through first?
-    voice_effects = cursor.execute("""
-        SELECT 
-            id, effect_name
-        FROM
-            effects
-        where
-            character_id = ?
-    """, (
-        character_id,
-    )).fetchall()
-
     effect_list = []
     for effect in voice_effects:
         log.info(f'Adding effect {effect} found in the database')
-        id, effect_name = effect
-        effect_class = effects.EFFECTS[effect_name]
+        effect_class = effects.EFFECTS[effect.effect_name]
+        effect_instance = effect_class(None)
 
-        effect = effect_class(None)
+        effect_instance.effect_id.set(effect.id)
+        effect_instance.load()  # load the DB config for this effect
 
-        effect_setting = cursor.execute("""
-            SELECT 
-                key, value
-            FROM
-                effect_setting
-            where
-                effect_id = ?
-        """, (
-            id,
-        )).fetchall()
-
-        # reach into effect() and set the values this
-        # plugin expects.
-        for key, value in effect_setting:
-            tkvar = getattr(effect, key, None)
-            if tkvar:
-                tkvar.set(value)
-            else:
-                log.error(f'Invalid configuration.  {key} is not available for {effect}')
-
-        effect_list.append(effect.get_effect())
+        effect_list.append(effect_instance.get_effect())
 
     # have we seen this particular phrase before?
-    phrase = cursor.execute("""
-        SELECT id FROM phrases WHERE character_id=? AND text=?
-    """, (character_id, message)).fetchone()
-    if phrase is None:
-        # it does not exist, now it does.
-        cursor.execute("""
-            INSERT INTO phrases (character_id, text) VALUES (?, ?)
-        """, (character_id, message))
-        commit()
+    if character.category != PLAYER_CATEGORY or settings.PERSIST_PLAYER_CHAT:
+        with models.Session(models.engine) as session:
+            phrase = session.execute(
+                select(models.Phrases).where(
+                    models.Phrases.character_id == character.id,
+                    models.Phrases.text == message
+                )
+            ).first()
+            
+            log.debug(phrase)
 
-    try:
-        clean_name = re.sub(r'[^\w]', '', name)
-        os.mkdir(os.path.join("clip_library", category, clean_name))
-    except OSError:
-        # the directory already exists.  This is not a problem.
-        pass
+            if phrase is None:
+                log.info('Phrase not found.  Creating...')
+                # it does not exist, now it does.
+                phrase = models.Phrases(
+                    character_id=character.id,
+                    text=message,
+                    ssml=""
+                )
+                session.add(phrase)
+                session.commit()
 
-    sink = Distributor([
-        SoundDevice(),
-        WaveFile(cachefile + '.wav')
-    ])
+        try:
+            clean_name = re.sub(r'[^\w]', '',character.name)
+            os.mkdir(os.path.join("clip_library", character.cat_str(), clean_name))
+        except OSError:
+            # the directory already exists.  This is not a problem.
+            pass
+
+        sink = Distributor([
+            SoundDevice(),
+            WaveFile(cachefile + '.wav')
+        ])
+        save = True
+    else:
+        sink = Distributor([
+            SoundDevice()
+        ])
+        save = False 
     
-    selected_name = tkvar_ish(f"{category} {name}")
+    selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
+    engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
 
-    engine(None, selected_name).say(message, effect_list, sink=sink)
+    with models.Session(models.engine) as session:
+        session.execute(
+            update(models.Character).values(
+                last_spoke=datetime.datetime.now()
+            )
+        )
+        session.commit()
 
-    with AudioFile(cachefile + ".wav") as input:
-        with AudioFile(
-            filename=cachefile,
-            samplerate=input.samplerate,
-            num_channels=input.num_channels
-        ) as output:
-            while input.tell() < input.frames:
-                retries = 5
-                success = False
-                while not success and retries > 0:
-                    try:
-                        output.write(input.read(1024))
-                        success = True
-                    except RuntimeError as err:
-                        log.errror(err)
-                    retries -= 1
-                
-        log.info(f'Created {cachefile}')
+    if save:
+        with AudioFile(cachefile + ".wav") as input:
+            with AudioFile(
+                filename=cachefile,
+                samplerate=input.samplerate,
+                num_channels=input.num_channels
+            ) as output:
+                while input.tell() < input.frames:
+                    retries = 5
+                    success = False
+                    while not success and retries > 0:
+                        try:
+                            output.write(input.read(1024))
+                            success = True
+                        except RuntimeError as err:
+                            log.errror(err)
+                        retries -= 1
+                    
+            log.info(f'Created {cachefile}')
 
-    #audio = pydub.AudioSegment.from_wav(cachefile + ".wav")
-    #audio.export(cachefile, format="mp3")
-    os.unlink(cachefile + ".wav")
+        os.unlink(cachefile + ".wav")

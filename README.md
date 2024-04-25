@@ -46,7 +46,9 @@ Open Settings, choose Time & Language
 Choose Speech on the left side
 Choose "Add voices" under Manage voices
 
-It won't list everything you install and I don't know why.  If you figure out how to get them all recognized let me know.
+By itselt that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.
+
+You probably have to logout/login before the extra voices are available.
 
 # Running it
 
@@ -89,6 +91,18 @@ The python source is in src/coh_npc_voices.  I've only made minimal efforts to m
 
 But it does work, and it is fun.
 
+# Building the Windows Installer
+
+First run fresh.bat
+
+    fresh.bat
+
+That will clean-slate the venv directory and apply some path detection tweaks.  Next run innosetup, load this projects .iss file then -> Build -> Compile.  Build -> Open Output folder will give you the dir with the sidekick_setup.exe.
+
+The way this works is a little bit awesome.  sidekick_setup.exe will install our files and a barebones python venv, then it will run win_install, which is a compiled version of win_install.ps1.  It installs (w/pip) all our dependencies.  End result?  A small (5MB) setup executable that installs all the crap we need (I'm looking at you numpy.  Try eating a salad).  Running it again?  No problem.  If you use the same destination directory it won't even need to re-download the packages.  The best part from my POV is the actual running code is sitting there for the user to poke at with no obfuscation.
+
+I'm currently pleased as punch with the installer.  Kind of hell to get it all figured out but the results are quite nice.
+
 # Preloaded Data
 
 This is a tricky one.  I've only really been gathering processed audio for a little while.  I doubt the 161 characters I have represent more than a 5% of the game dialog and I'm at 61MB.  Each phrase is cached as a 100KB-ish mp3.  You can edit/delete them however you want.  If a cachefile exists it will be played instead of generating new audio.  I do like the idea of sharing the database with all the characters audio configs, especially if users can easily choose to share what they create.  I'm just not sure how best to go about it.  TBD.  I'll at least share my database as the default setup but tweaked to use free voices when it has enough customization to be worthwhile.
@@ -111,3 +125,5 @@ https://github.com/DeepHorizons/tts
 https://github.com/spotify/pedalboard
 
 Big thanks and shoutout for the creators of these packages.
+
+Raw entity data from https://cod.uberguy.net/html/index.html

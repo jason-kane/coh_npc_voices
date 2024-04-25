@@ -23,7 +23,12 @@ dependencies = [
     "voicebox-tts",
     "wheel",
     "setuptools",
-    "matplotlib"
+    "matplotlib",
+    "sqlalchemy",
+    "sqlalchemy-utils",
+    "alembic",
+    "elevenlabs",
+    "voicebox-tts[elevenlabs]"
 ]
 
 [build-system]

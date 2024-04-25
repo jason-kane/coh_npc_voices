@@ -1,4 +1,8 @@
 clip_library/
+clip_library_saved/
+raw_data/
+
+eleven_labs.key
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

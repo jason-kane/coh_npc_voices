@@ -1,4 +1,4 @@
-"""Hello World application for Tkinter"""
+"""Voice Editor component"""
 
 import logging
 import multiprocessing
@@ -11,14 +11,18 @@ from tkinter import font, ttk
 import db
 import effects
 import engines
+import models
 
-# import voice_builder
+import voice_builder
 import npc_chatter
+from npc import PRESETS
 from pedalboard.io import AudioFile
+from sqlalchemy import delete, select, update
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
+import settings
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=settings.LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
@@ -27,13 +31,19 @@ log = logging.getLogger("__name__")
 
 
 class ChoosePhrase(tk.Frame):
+    ALL_PHRASES = "< Rebuild all phrases >"
     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.selected_character = selected_character
         self.detailside = detailside
 
-        self.chosen_phrase = tk.StringVar(value="<Choose or type a phrase>")
-        self.options = ttk.Combobox(self, textvariable=self.chosen_phrase)
+        self.chosen_phrase = tk.StringVar(
+            value="<Choose or type a phrase>"
+        )
+        self.options = ttk.Combobox(
+            self, 
+            textvariable=self.chosen_phrase
+        )
         self.options["values"] = []
 
         self.populate_phrases()
@@ -43,80 +53,119 @@ class ChoosePhrase(tk.Frame):
         play_btn.pack(side="left")
 
     def populate_phrases(self):
-        character = Character.get_by_raw_name(self.selected_character.get())
-        if character is None:
+        raw_name = self.selected_character.get()
+        try:
+            category, name = raw_name.split(maxsplit=1)
+        except ValueError:
+            log.error('Invalid character raw_name: %s', raw_name)
             return
-        log.info(character)
-        
-        character_phrases = character.get_phrases()
-        
+
+        with models.Session(models.engine) as session:            
+
+            try:
+                category = models.category_str2int(category)
+            except ValueError:
+                log.error('Invalid Character Category: %s', category)
+                return
+
+            character = models.get_character(name, category, session)
+
+            if character is None:
+                log.error(f'62 Character {category}|{name} does not exist!')
+                return
+
+            character_phrases = session.scalars(
+                select(models.Phrases).where(
+                    models.Phrases.character_id == character.id
+                )
+            ).all()
+       
         if character_phrases:
-            self.chosen_phrase.set(character_phrases[0])
+            self.chosen_phrase.set(character_phrases[0].text)
         else:
-            self.chosen_phrase.set(f'I have no record of what {self.selected_character.get()} says.')
-        self.options["values"] = character_phrases
+            self.chosen_phrase.set(
+                f'I have no record of what {raw_name} says.')
+        self.options["values"] = [
+            p.text for p in character_phrases
+        ] + [ self.ALL_PHRASES ]
 
     def say_it(self):
         message = self.chosen_phrase.get()
+
         log.debug(f"Speak: {message}")
         # parent is the frame inside DetailSide
         engine_name = self.detailside.engineSelect.selected_engine.get()
         ttsengine = engines.get_engine(engine_name)
-        log.debug(f"Engine: {ttsengine}")
+        log.info(f"Engine: {ttsengine}")
 
-        effect_list = [e.get_effect() for e in self.detailside.effect_list.effects]
-        
-        cursor = db.get_cursor()
-
-        character = Character.get_by_raw_name(self.selected_character.get())
-
-        all_phrases = [
-            n[2] for n in cursor.execute("""
-                SELECT
-                    id, character_id, text 
-                FROM 
-                    phrases 
-                WHERE 
-                    character_id = ?
-            """, (character.id, )).fetchall()
+        effect_list = [
+            e.get_effect() for e in self.detailside.effect_list.effects
         ]
 
-        _, clean_name = db.clean_customer_name(character.name)
-        filename = db.cache_filename(character.name, message)
-        log.info(f'all_phrases: {all_phrases}')
-        if message in all_phrases:
-            cachefile = os.path.abspath(
-                os.path.join(
-                    "clip_library",
-                    character.category,
-                    clean_name,
-                    filename
-                )
-            )
+        raw_name = self.selected_character.get()
+        if not raw_name:
+            log.warning('Name is required')
+            return
+        
+        category, name = raw_name.split(maxsplit=1)
 
-            sink = Distributor([
-                SoundDevice(),
-                WaveFile(cachefile + '.wav')
-            ])
+        with models.Session(models.engine) as session:
+            character = models.get_character(name, category, session)
 
-            log.info(f'effect_list: {effect_list}')
-            # None because we aren't attaching any widgets
-            ttsengine(None, self.selected_character).say(message, effect_list, sink=sink)
+            all_phrases = [ 
+                n.text for n in session.scalars(
+                    select(models.Phrases).where(
+                        models.Phrases.character_id == character.id
+                    )
+                ).all()
+            ]
 
-            log.info('Converting to mp3...')
-            with AudioFile(cachefile + ".wav") as input:
-                with AudioFile(
-                    filename=cachefile, 
-                    samplerate=input.samplerate,
-                    num_channels=input.num_channels
-                ) as output:
-                    while input.tell() < input.frames:
-                        output.write(input.read(1024))
-                    log.info(f'Wrote {cachefile}')
+        if message == self.ALL_PHRASES:
+            message = self.options["values"]
         else:
-            # No Cache
-            log.info(f'Bypassing filesystem caching ({message})')
-            ttsengine(None, self.selected_character).say(message, effect_list)
+            message = [ message ]
+
+        for msg in message:
+            if msg == self.ALL_PHRASES:
+                continue
+
+            _, clean_name = db.clean_customer_name(character.name)
+            filename = db.cache_filename(character.name, msg)
+            log.debug(f'all_phrases: {all_phrases}')
+            if msg in all_phrases:
+                cachefile = os.path.abspath(
+                    os.path.join(
+                        "clip_library",
+                        character.cat_str(),
+                        clean_name,
+                        filename
+                    )
+                )
+
+                sink = Distributor([
+                    SoundDevice(),
+                    WaveFile(cachefile + '.wav')
+                ])
+
+                log.info(f'effect_list: {effect_list}')
+                log.info(f"Creating ttsengine for {self.selected_character.get()}")
+                # None because we aren't attaching any widgets
+                ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+
+                log.info('Converting to mp3...')
+                with AudioFile(cachefile + ".wav") as input:
+                    with AudioFile(
+                        filename=cachefile, 
+                        samplerate=input.samplerate,
+                        num_channels=input.num_channels
+                    ) as output:
+                        while input.tell() < input.frames:
+                            output.write(input.read(1024))
+                        log.info(f'Wrote {cachefile}')
+            else:
+                # No Cache
+                log.info(f'Bypassing filesystem caching ({msg})')
+                ttsengine(None, self.selected_character).say(msg, effect_list)
 
 
 class EngineSelection(tk.Frame):
@@ -159,7 +208,9 @@ class EngineSelectAndConfigure(tk.Frame):
         es = EngineSelection(self, self.selected_engine)
         es.pack(side="top", fill="x", expand=True)
         self.engine_parameters = None
-        self.change_selected_engine("", "", "")
+        # self.change_selected_engine("", "", "")
+        #log.info('EngineSelectAndConfigure.__init__() -> self.load_character()')
+        #self.load_character()
 
     def set_engine(self, engine_name):
         self.selected_engine.set(engine_name)
@@ -171,6 +222,7 @@ class EngineSelectAndConfigure(tk.Frame):
         # No problem.
         # clear the old engine configuration
         # show the selected engine configuration
+        log.info('EngineSelectAndConfigure.chage_selected_engine()')
         if self.engine_parameters:
             self.engine_parameters.pack_forget()
 
@@ -185,49 +237,53 @@ class EngineSelectAndConfigure(tk.Frame):
         """
         save this engine selection to the database
         """
-        cursor = db.get_cursor()
-        full_name = self.selected_character.get()
-        if not full_name:
-            return
-
-        category, name = full_name.split(maxsplit=1)
-        cursor.execute(
-            "UPDATE character SET engine = ? where name = ? and category = ?",
-            (self.selected_engine.get(), name, category),
-        )
-
-        db.commit()
-        cursor.close()
-
-        log.debug(
-            f"Saved engine={self.selected_engine.get()} for {category} named {name}"
-        )
-
-    def load_character(self):
-        cursor = db.get_cursor()
-        full_name = self.selected_character.get()
-        if not full_name:
-            log.warning('Name is required to load a character')
+        log.info('EngineSelectAndConfig.save_character()')
+        raw_name = self.selected_character.get()
+        if not raw_name:
+            log.warning('Name is required to save a character')
             return
         
-        category, name = full_name.split(maxsplit=1)
-        engine_name = cursor.execute("""
-            SELECT 
-                engine 
-            FROM 
-                character 
-            WHERE 
-                name = ? 
-            AND 
-                category = ?
-            """, (name, category)
-        ).fetchone()
-        cursor.close()
+        category, name = raw_name.split(maxsplit=1)
+        engine_string = self.selected_engine.get()
+        if engine_string in [None, ""]:
+            engine_string = settings.DEFAULT_ENGINE
 
-        if engine_name:
-            self.selected_engine.set(engine_name[0])
+        with models.Session(models.engine) as session:
+            character = models.get_character(name, category, session)
+
+            if character.engine != engine_string:
+                log.info(
+                    'Saving changed engine_string (%s): %s -> %s', 
+                    character.name,
+                    character.engine, 
+                    engine_string
+                )
+                character.engine = engine_string
+                session.commit()
+
+    def load_character(self):
+        """
+        We've set the character name, we want the rest of the metadata to
+        populate.  Setting the engine name will domino the rest.
+        """
+        raw_name = self.selected_character.get()
+        if raw_name in [None, ""]:
+            log.error('Cannot load_character() with no character name.')
+            return
+        
+        category, name = raw_name.split(maxsplit=1)
+        character = models.get_character(name, category)
+
+        if character is None:
+            log.error(f'Character {name} does not exist.')
+            return None
+       
+        if character.engine in ["", None]:
+            self.selected_engine.set(settings.DEFAULT_ENGINE)
         else:
-            self.selected_engine.set(engines.default_engine)
+            self.selected_engine.set(character.engine)
+            
+        return character
 
 
 class EffectList(tk.Frame):
@@ -235,71 +291,85 @@ class EffectList(tk.Frame):
 
     """
     def __init__(self, parent, selected_character, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
+        real_parent = parent.frame
+        super().__init__(real_parent, *args, **kwargs)
         self.effects = []
-        self.parent = parent
+        self.parent = real_parent
+        self.detailside = parent
+        self.buffer = False
         self.selected_character = selected_character
         self.load_effects()
 
     def load_effects(self):
         log.info('EffectList.load_effects()')
-        cursor = db.get_cursor()
+        has_effects = False
 
         # teardown any effects already in place
         while self.effects:
             effect = self.effects.pop()
+            effect.clear_traces()
             effect.pack_forget()
 
-        character = Character.get_by_raw_name(self.selected_character.get())
+        raw_name = self.selected_character.get()
+        if raw_name in ["", None]:
+            return
 
-        voice_effects = cursor.execute("""
-            SELECT 
-                id, effect_name
-            FROM
-                effects
-            where
-                character_id = ?
-        """, (
-            character.id,
-        )).fetchall()
+        category, name = raw_name.split(maxsplit=1)
 
-        for effect in voice_effects:
-            log.info(f'Adding effect {effect} found in the database')
-            id, effect_name = effect
-            effect_class = effects.EFFECTS[effect_name]
+        with models.Session(models.engine) as session:
+            character = models.get_character(name, category, session)
+            
+            if character is None:
+                log.error(
+                    'Cannot load effects.  Character %s|%s does not exist.', 
+                    category, name
+                )
+                return
 
-            # not very DRY
-            effect_config_frame = effect_class(
-                self, 
-                borderwidth=1, 
-                highlightbackground="black", 
-                relief="groove"
-            )
-            effect_config_frame.pack(side="top", fill="x", expand=True)
-            effect_config_frame.effect_id.set(id)
-            self.effects.append(effect_config_frame)
+            voice_effects = session.scalars(
+                select(models.Effects).where(
+                    models.Effects.character_id==character.id
+                )
+            ).all()
 
-            # we are not done yet.
-            effect_setting = cursor.execute("""
-                SELECT 
-                    key, value
-                FROM
-                    effect_setting
-                where
-                    effect_id = ?
-            """, (
-                id,
-            )).fetchall()
+            for effect in voice_effects:
+                has_effects = True
+                log.info(f'Adding effect {effect} found in the database')
+                effect_class = effects.EFFECTS[effect.effect_name]
 
-            for key, value in effect_setting:
+                # not very DRY
+                effect_config_frame = effect_class(
+                    self, 
+                    borderwidth=1, 
+                    highlightbackground="black", 
+                    relief="groove"
+                )
+                effect_config_frame.pack(side="top", fill="x", expand=True)
+                effect_config_frame.effect_id.set(effect.id)
+                self.effects.append(effect_config_frame)
 
-                tkvar = getattr(effect_config_frame, key, None)
-                if tkvar:
-                    tkvar.set(value)
-                else:
-                    log.error(f'Invalid configuration.  {key} is not available for {effect_config_frame}')
+                effect_config_frame.load(session=session)
+                        
+            #self.parent.pack(side="top", fill="x", expand=True)
+            if not has_effects:
+                self.buffer = tk.Frame(self, width=1, height=1).pack(side="top")
+            else:
+                if self.buffer:
+                    self.buffer.pack_forget()
 
-        cursor.close()
+            if hasattr(self.detailside, "add_effect"):
+                log.info("Rebuilding add_effect")
+                self.detailside.add_effect.pack_forget()
+                # .pack(side="top", fill="x", expand=True)
+                self.detailside.add_effect = AddEffect(self.parent, self)
+                self.detailside.add_effect.pack(side="top", fill='x', expand=True)
+                # self.detailside.effect_list.pack(side="top", fill="x")
+                # self.detailside.frame.pack(side="top", fill="x", expand=True)
+                # self.detailside.canvas.pack(side="left", fill="both", expand=True)
+                # self.detailside.pack(side="left", fill="both", expand=True)
+                # self.detailside.parent.pack(side="top", fill="both", expand=True)
+            else:
+                log.info('DetailSide has no add_effect()')
 
     def add_effect(self, effect_name):
         """
@@ -340,60 +410,63 @@ class EffectList(tk.Frame):
             effect_config_frame.pack(side="top", fill="x", expand=True)
             self.effects.append(effect_config_frame)
 
-            character = Character.get_by_raw_name(self.selected_character.get())
+            raw_name = self.selected_character.get()
+            category, name = raw_name.split(maxsplit=1)
 
-            # persist this change to the database
-            log.info(f'Saving new effect {effect_name} to database')
-            cursor = db.get_cursor()
-            cursor.execute("""
-                INSERT 
-                    INTO effects (character_id, effect_name)
-                VALUES
-                    (:character_id, :effect_name)
-            """, {
-                'character_id': character.id,
-                'effect_name': effect_name
-            })
-            effect_id = cursor.lastrowid
+            with models.Session(models.engine) as session:
+                # retrieve this character
+                character = models.get_character(name, category, session)
+
+                # save the current effect selection
+                effect = models.Effects(
+                    character_id=character.id,
+                    effect_name=effect_name
+                )
+                session.add(effect)
+                session.commit()
+                session.refresh(effect)
 
             for key in effect_config_frame.parameters:
+                # save the current effect configuration
                 tkvar = getattr(effect_config_frame, key)
                 value = tkvar.get()
 
-                cursor.execute("""
-                    INSERT 
-                        INTO effect_setting (effect_id, key, value)
-                    VALUES
-                        (:effect_id, :key, :value)
-                """, {
-                    'effect_id': effect_id,
-                    'key': key,
-                    'value': value
-                })
-
-            db.commit()
-            cursor.close()
-            effect_config_frame.effect_id.set(effect_id)      
+                new_setting = models.EffectSetting(
+                    effect_id=effect.id,
+                    key=key,
+                    value=value
+                )
+                session.add(new_setting)
+            session.commit()
+            
+            effect_config_frame.effect_id.set(effect.id)      
     
     def remove_effect(self, effect_obj):
         log.info(f'Removing effect {effect_obj}')
         
         # remove it from the effects list
         self.effects.remove(effect_obj)
-        
+        effect_id = effect_obj.effect_id.get()
         # remove it from the database
-        cursor = db.get_cursor()
-        cursor.execute("""
-            DELETE
-                FROM effects
-            WHERE
-                id=?
-            """, (effect_obj.effect_id.get(), )
-        )
-        db.commit()
-        cursor.close()
+        with models.Session(models.engine) as session:
+            # clear any effect settings
+            session.execute(
+                delete(models.EffectSetting).where(
+                    models.EffectSetting.effect_id == effect_id
+                )
+            )
+
+            # clear the effect itself
+            session.execute(
+                delete(models.Effects).where(
+                    models.Effects.id == effect_id
+                )
+            )
+            session.commit()
+
         # forget the widgets for this object
         effect_obj.pack_forget()
+        self.pack()
 
 
 class AddEffect(tk.Frame):
@@ -449,7 +522,9 @@ class DetailSide(tk.Frame):
     """
     def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+        self.parent = parent
         self.selected_character = selected_character
+        self.listside = None
 
         self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
         self.frame = tk.Frame(self.canvas, background="#ffffff")
@@ -465,17 +540,35 @@ class DetailSide(tk.Frame):
         self.frame.bind("<Configure>", self.onFrameConfigure)
         # self.frame.pack(side='top', fill='x')
 
+        name_frame = tk.Frame(self.frame)
+
         self.character_name = tk.Label(
-            self.frame,
+            name_frame,
             textvariable=selected_character,
             anchor="center",
             font=font.Font(weight="bold"),
-        ).pack(side="top", fill="x", expand=True)
+        ).pack(side="left", fill="x", expand=True)
+
+        tk.Button(
+            name_frame,
+            text="X",
+            anchor="center",
+            width=1,
+            height=1,
+            command=self.remove_character
+        ).pack(side="right")
+
+        name_frame.pack(side="top", fill="x", expand=True)
 
         self.phrase_selector = ChoosePhrase(
             self.frame, self, selected_character
         )
         self.phrase_selector.pack(side="top", fill="x", expand=True)
+
+        self.presetSelect = PresetSelector(
+            self.frame, self, self.selected_character
+        )
+        self.presetSelect.pack(side="top", fill="x", expand=True)
 
         self.engineSelect = EngineSelectAndConfigure(
             self.frame, self.selected_character
@@ -483,9 +576,20 @@ class DetailSide(tk.Frame):
         self.engineSelect.pack(side="top", fill="x", expand=True)
 
         # list of effects already configured
-        self.effect_list = EffectList(self.frame, selected_character)
-        self.effect_list.pack(side="top", fill="both", expand=True)
-        AddEffect(self.frame, self.effect_list).pack(side="top", fill="x", expand=True)
+        self.effect_list = EffectList(self, selected_character)
+        self.effect_list.pack(side="top", fill="x", expand=True)
+        self.add_effect = AddEffect(self.frame, self.effect_list)
+        self.add_effect.pack(side="top", fill="x", expand=True)
+
+    def remove_character(self):
+        #self.parent = parent
+        # parent of detailside is 'editor', a Frame of root.
+        # what we really need is listside, which is passed
+        # a detailside -- maybe we can do this backwards.
+        #
+        #self.selected_character = selected_character        
+        if self.listside:
+            self.listside.delete_selected_character()
 
     def onFrameConfigure(self, event):
         """Reset the scroll region to encompass the inner frame"""
@@ -500,29 +604,85 @@ class DetailSide(tk.Frame):
         # loop effects
         # add each effect
         # set parameters for each effect
-        log.debug(f'DetailSide.load_character({raw_name})')
-        self.selected_character.set(raw_name)
+        log.info(f'DetailSide.load_character({raw_name})')
+        raw_was = self.selected_character.get()
+        if raw_was != raw_name:
+            self.selected_character.set(raw_name)
 
         category, name = raw_name.split(maxsplit=1)
-
-        cursor = db.get_cursor()
-        character_id, engine_name = cursor.execute(
-            "SELECT id, engine FROM character WHERE name = ? AND category = ?", 
-            (name, category)
-        ).fetchone()
-        cursor.close()
+        
+        # load the character 
+        character = models.get_character(name, category)
 
         # update the phrase selector
         self.phrase_selector.populate_phrases()
 
         # set the engine itself
-        self.engineSelect.set_engine(engine_name)
+        log.info('b character: %s | %s', character, character.engine)
+        self.engineSelect.set_engine(character.engine)
 
         # set engine and parameters
         self.engineSelect.engine_parameters.load_character(raw_name)
         
         # effects
         self.effect_list.load_effects()
+
+        # reset the preset selector
+        self.presetSelect.reset()
+
+        # scroll to the top
+        self.vsb.set(0, 1)
+        self.canvas.yview_moveto(0)
+
+
+class PresetSelector(tk.Frame):
+    choose_a_preset = f"{'< Use a Preset >': ^70}"
+
+    def __init__(self, parent, detailside, selected_character, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.selected_character = selected_character
+        self.detailside = detailside
+       
+        self.chosen_preset = tk.StringVar(value=self.choose_a_preset)
+        self.chosen_preset.trace_add("write", self.choose_preset)
+
+        preset_combobox = ttk.Combobox(
+            self,
+            textvariable=self.chosen_preset
+        )
+        preset_combobox["values"] = list(PRESETS.keys())
+        preset_combobox["state"] = "readonly"
+
+        preset_combobox.pack(side="left", fill="x", expand=True)
+
+    def reset(self):
+        self.chosen_preset.set(self.choose_a_preset)
+
+    def choose_preset(self, varname, lindex, operation):
+        log.info('PresetSeelctor.choose_preset()')
+        preset_name = self.chosen_preset.get()
+        if preset_name == self.choose_a_preset:
+            log.info('** No choice detected **')
+            return
+
+        raw_name = self.selected_character.get()
+        if raw_name:
+            category, name = raw_name.split(maxsplit=1)
+        else:
+            category = 'system'
+            name = None
+
+        # load the character from the db
+        character = models.get_character(name, category)
+
+        log.info(f'Applying preset {preset_name}')
+        voice_builder.apply_preset(
+            character.name, 
+            character.category, 
+            preset_name
+        )
+
+        self.detailside.load_character(self.selected_character.get())
 
 
 class Character:
@@ -567,6 +727,8 @@ class ListSide(tk.Frame):
     def __init__(self, parent, detailside, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.detailside = detailside
+        #wait, what?
+        self.detailside.listside = self
 
         self.list_items = tk.Variable(value=[])
         self.refresh_character_list()
@@ -584,7 +746,7 @@ class ListSide(tk.Frame):
         )
 
         action_frame.pack(side="top", expand=False, fill=tk.X)
-
+        self.listbox.select_set(0)
         self.listbox.bind("<<ListboxSelect>>", self.character_selected)
 
     def character_selected(self, event=None):
@@ -600,17 +762,89 @@ class ListSide(tk.Frame):
 
     def refresh_character_list(self):
         log.info('Refreshing Character list from the database...')
-        cursor = db.get_cursor()
-        all_characters = cursor.execute("""
-            SELECT 
-                id, name, category 
-            FROM 
-                character 
-            ORDER BY category, name
-        """).fetchall()
-        cursor.close()
+
+        with models.Session(models.engine) as session:
+            all_characters = session.scalars(
+                select(models.Character).order_by(models.Character.last_spoke)
+            ).all()
+
         if all_characters:
-            self.list_items.set([f"{character[2]} {character[1]}" for character in all_characters])
+            self.list_items.set(
+                [f"{character.cat_str()} {character.name}" for character in all_characters]
+            )
+    
+    def delete_selected_character(self):
+        index = int(self.listbox.curselection()[0])
+        raw_name = self.listbox.get(index)
+        log.info(f'Deleting character {raw_name!r}')
+
+        category, name = raw_name.split(maxsplit=1)
+        log.info(f'Name: {name!r}  Category: {category!r}')
+        
+        with models.Session(models.engine) as session:
+            character = models.get_character(name, category, session)
+
+            session.execute(
+                delete(
+                    models.BaseTTSConfig
+                ).where(
+                    models.BaseTTSConfig.character_id == character.id
+                )
+            )
+
+            session.execute(
+                delete(
+                    models.Phrases
+                ).where(
+                    models.Phrases.character_id == character.id
+                )
+            )
+
+            all_effects = session.scalars(
+                select(
+                    models.Effects
+                ).where(
+                    models.Effects.character_id == character.id
+                )
+            ).all()
+            for effect in all_effects:
+                session.execute(
+                    delete(
+                        models.EffectSetting
+                    ).where(
+                        models.EffectSetting.effect_id == effect.id
+                    )
+                )
+
+            session.execute(
+                delete(
+                    models.Effects
+                ).where(
+                    models.Effects.character_id == character.id
+                )
+            )
+
+            try:
+                session.execute(
+                    delete(models.Character)
+                    .where(
+                        models.Character.name == name,
+                        models.Character.category == models.category_str2int(category)
+                    )
+                )
+                session.commit()
+
+            except Exception as err:
+                log.error(f'DB Error: {err}')
+                raise
+
+        # TODO: dude, delete everything they have ever said from
+        # disk too.
+
+        self.refresh_character_list()
+        self.listbox.select_clear(0, 'end')
+        self.listbox.select_set(0)
+        self.listbox.event_generate("<<ListboxSelect>>")
 
 
 class ChatterService:
@@ -644,20 +878,9 @@ class Chatter(tk.Frame):
         self.attached = False
         self.hero = None
 
-        cursor = db.get_cursor()
-        response_tuple = cursor.execute("""
-            SELECT 
-                logdir 
-            FROM 
-                settings
-        """).fetchone()
-        cursor.close()
-        if response_tuple:
-            logdir = response_tuple[0]
-        else:
-            logdir = ""
-
-        self.logdir = tk.StringVar(value=logdir)
+        settings = models.get_settings()
+        
+        self.logdir = tk.StringVar(value=settings.logdir)
         self.logdir.trace_add('write', self.save_logdir)
 
         tk.Button(
@@ -685,15 +908,15 @@ class Chatter(tk.Frame):
         self.cs = ChatterService()
 
     def save_logdir(self, *args):
-        cursor = db.get_cursor()
-        cursor.execute("""
-            UPDATE 
-                settings
-            SET
-                logdir=?
-        """, (self.logdir.get(), ))
-        db.commit()
-        cursor.close()
+        logdir = self.logdir.get()
+        log.info(f'Persisting setting logdir={logdir} to the database...')
+        with models.Session(models.engine) as session:
+            session.execute(
+                update(models.Settings).values(
+                    logdir=logdir
+                )
+            )
+            session.commit()
 
     def ask_directory(self):
         dirname = tk.filedialog.askdirectory()
@@ -720,7 +943,6 @@ class Chatter(tk.Frame):
 
 
 def main():
-    db.prepare_database()
     root = tk.Tk()
     # root.iconbitmap("myIcon.ico")
     root.geometry("640x480+200+200")
@@ -745,8 +967,8 @@ def main():
     detailside = DetailSide(editor, selected_character)
     listside = ListSide(editor, detailside)
 
-    listside.pack(side="left", fill="both", expand=True)
-    detailside.pack(side="left", fill="both", expand=True)
+    listside.pack(side="left", fill="x", expand=True)
+    detailside.pack(side="left", fill="x", expand=True)
 
     root.mainloop()
 
@@ -767,23 +989,22 @@ if __name__ == '__main__':
 #     pyinstaller?
 #        can't get multiprocessing to work :(  it spawns a whole
 #        new editor when you attach.
-# more effects (I really want the vocoder for clockworks)
-# better icon
+# more effects 
 
 # Not-blocking Glitches
 #######################
-# logging is weird.. debug isn't coming through and I'm not sure why
 # in-app update of app software
 # in-app update of voice database
-# when you edit an NPC, option to rebuild everything they say with the new 
-#     settings saving the mp3 to the file system (same as cache)
 # right side does not fill the width
-# no mechanism to remove NPCs
 # mouse-scroll doesn't move right side scrollbar
-# removing effects does not repack
+# cannot remove the last npc entry
 
 # DONE
 # ----
+# removing effects does not repack
+# no mechanism to remove NPCs
+# when you edit an NPC, option to rebuild everything they say with the new 
+#     settings saving the mp3 to the file system (same as cache)
 # some mechanism to update/refresh the character list when new entries are added
 # effects are not removed when you change between npc
 # persist effects to database

@@ -1,36 +1,35 @@
 """
 There is more awesome to be had.
 """
-
-"""Hello World application for Tkinter"""
-
 import logging
 import multiprocessing
-import os
 from datetime import datetime, timedelta
-import queue
 import sys
 import tkinter as tk
-from tkinter import font, ttk
-
-import db
-import effects
-import engines
-
+from tkinter import ttk
+from sqlalchemy import func, select
+import models
+import matplotlib.dates as mdates
 import voice_editor
 import npc_chatter
-from pedalboard.io import AudioFile
-from voicebox.sinks import Distributor, SoundDevice, WaveFile
+import numpy as np
+import settings
 
-from matplotlib import pyplot
 from matplotlib.figure import Figure 
 from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg,  
-    NavigationToolbar2Tk
+    FigureCanvasTkAgg
 ) 
 
+import ctypes
+# this unlinks us from python so windows will
+# use our icon instead of the python icon in the
+# taskbar.
+myappid = u'fun.side.projects.sidekick.1.0'
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
+
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=settings.LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
@@ -38,9 +37,8 @@ logging.basicConfig(
 log = logging.getLogger("__name__")
 
 class ChartFrame(tk.Frame):
-    def __init__(self, parent, hero, category, *args, **kwargs):
+    def __init__(self, parent, hero, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.category = category
 
         if not hero:
             return
@@ -52,91 +50,117 @@ class ChartFrame(tk.Frame):
 
             # the figure that will contain the plot 
             fig = Figure(
-                figsize = (5, 5), 
+                figsize = (5, 2), 
                 dpi = 100
             ) 
-        
-            # list of squares 
-            # y = [i**2 for i in range(101)] 
-        
+               
             # adding the subplot 
-            plot1 = fig.add_subplot(111) 
+            ax = fig.add_subplot(111) 
+            ax.tick_params(axis='x', rotation=60)
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%H-%M'))
         
-            # plotting the graph 
-            # plot1.plot(y) 
-            #data = get_total_xp(starttime, endtime, bin_size=60)
-            cursor = db.get_cursor()
-
-            # end time should be the most recent timestamp
-            # not now()
+            self.category = "xp"
             log.info(f'Retrieving {self.category} data')
             try:
-                latest_event = cursor.execute("""
-                    SELECT 
-                        event_time
-                    FROM 
-                        hero_stat_events
-                    WHERE 
-                        hero=? 
-                    ORDER BY 
-                        event_time DESC 
-                    LIMIT 1
-                """, (self.hero.id, )).fetchone()
+                with models.Session(models.engine) as session:
+                    latest_event = session.scalars(
+                        select(models.HeroStatEvent).where(
+                            models.HeroStatEvent.hero_id == self.hero.id
+                        ).order_by(
+                            models.HeroStatEvent.event_time.desc()
+                        )
+                    ).first()
             except Exception as err:
+                log.error('Unable to determine latest event')
                 log.error(err)
                 raise
-
+            
             log.info(f'latest_event: {latest_event}')
 
             if latest_event:
-                end_time = datetime.fromisoformat(latest_event[0])
+                end_time = latest_event.event_time
             else:
                 log.info(f'No previous events found for {self.hero.name}')
                 end_time = datetime.now()
 
-            start_time = end_time - timedelta(minutes=60)
+            start_time = end_time - timedelta(minutes=120)
             log.info(f'Graphing {self.category} gain between {start_time} and {end_time}')
 
-            try:
-                samples = cursor.execute("""
-                    SELECT
-                        STRFTIME('%Y-%m-%d %H:%M:00', event_time) as EventMinute,
-                        SUM(xp_gain),
-                        SUM(inf_gain)
-                    FROM 
-                        hero_stat_events
-                    WHERE
-                        hero = ? AND
-                        event_time > ? AND
-                        event_time <= ?
-                    GROUP BY
-                        STRFTIME('%Y-%m-%d %H:%M:00', event_time)
-                    ORDER BY
-                        EventMinute
-                """, (self.hero.id, start_time, end_time)).fetchall()
-            except Exception as err:
-                log.error(err)
-                raise
+            with models.Session(models.engine) as session:
+                try:
+                    samples = session.execute(
+                        select(
+                            func.STRFTIME('%Y-%m-%d %H:%M:00', models.HeroStatEvent.event_time).label('EventMinute'),
+                            func.sum(models.HeroStatEvent.xp_gain).label('xp_gain'),
+                            func.sum(models.HeroStatEvent.inf_gain).label('inf_gain')
+                        ).where(
+                            models.HeroStatEvent.hero_id == self.hero.id,
+                            models.HeroStatEvent.event_time >= start_time,
+                            models.HeroStatEvent.event_time <= end_time,
+                        ).group_by(
+                            'EventMinute'
+                            # func.STRFTIME('%Y-%m-%d %H:%M:00', models.HeroStatEvent.event_time)
+                        ).order_by(
+                            'EventMinute'
+                        )
+                    ).all()
+                except Exception as err:
+                    log.error('Error gathering data samples')
+                    log.error(err)
+                    raise
             
             log.info(f'Found {len(samples)} samples')
 
             data_x = []
             data_y = []
-            
-            for row in samples:
-                data_x.append(
-                    datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
-                )
-                log.info(row)
+            rolling_data_y = []
+            last_n = []
+            roll_size = 5
+            last_event = None
 
-                if self.category == "xp":
-                    data_y.append(row[1])
-                elif self.category == "inf":
-                    data_y.append(row[2])
+            for row in samples:
+                log.info(f'row: {row}')
+                datestring, xp_gain, inf_gain = row
+                event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
+                while last_event and (event_time - last_event) > timedelta(minutes=1, seconds=30):
+                    # We have a time gap; fill it with zeroes
+                    new_event_time = last_event + timedelta(minutes=1)
+                    data_x.append(new_event_time)
+                    data_y.append(0)
+                    last_n.append(0)
+                    last_event = new_event_time
                 
-            log.info(f'Plotting {data_x}:{data_y}')
-            # data = ((0, 1), (1, 10), (2, 10), (3, 500), (5, 200))
-            plot1.plot(data_x, data_y)
+                if self.category == "xp":
+                    if xp_gain is None:
+                        continue
+
+                    data_x.append(event_time)
+                    data_y.append(xp_gain)
+                    last_n.append(xp_gain)
+
+                    try:
+                        rolling_data_y.append(np.mean(last_n))
+                    except Exception as err:
+                        log.error(err)
+                        log.error(f'last_n: {last_n}')
+                        raise
+
+                    while len(last_n) > roll_size:
+                        log.debug(f"clipping {len(last_n)} is too many.  {last_n}")
+                        last_n.pop(0)
+
+                elif self.category == "inf":
+                    data_x.append(event_time)
+                    data_y.append(inf_gain)
+                    .00
+
+            log.info(f'Plotting {data_x}:{data_y}/{rolling_data_y}')
+            try:
+                ax.plot(data_x, data_y, drawstyle="steps", label=f"{self.category}")
+                ax.plot(data_x, rolling_data_y, 'o--')
+            except Exception as err:
+                log.error(err)
+                log.error(data_x, data_y, rolling_data_y)
         
             # creating the Tkinter canvas 
             # containing the Matplotlib figure 
@@ -144,20 +168,8 @@ class ChartFrame(tk.Frame):
                 fig, 
                 master = self
             )   
-            canvas.draw() 
-        
-            # placing the canvas on the Tkinter window 
-            canvas.get_tk_widget().pack() 
-        
-            # creating the Matplotlib toolbar 
-            toolbar = NavigationToolbar2Tk(
-                canvas, 
-                self
-            ) 
-            toolbar.update() 
-        
-            # placing the toolbar on the Tkinter window 
-            canvas.get_tk_widget().pack()
+            canvas.draw()         
+            canvas.get_tk_widget().pack(fill="both", expand=True)
             log.info('graph constructed')      
 
 class CharacterTab(tk.Frame):
@@ -180,26 +192,37 @@ class CharacterTab(tk.Frame):
         if hasattr(self, "xp_chart"):
             self.xp_chart.pack_forget()
 
-        self.xp_chart = ChartFrame(self, self.chatter.hero, 'xp')
-        self.xp_chart.pack(side="top", fill="x", expand=True)
+        try:
+            self.xp_chart = ChartFrame(self, self.chatter.hero)
+            self.xp_chart.pack(side="top", fill="both", expand=True)
+        except Exception as err:
+            log.error(err)
 
-        if hasattr(self, "inf_chart"):
-            self.inf_chart.pack_forget()
+        # if hasattr(self, "inf_chart"):
+        #     self.inf_chart.pack_forget()
 
-        self.inf_chart = ChartFrame(self, self.chatter.hero, 'inf')
-        self.inf_chart.pack(side="top", fill="x", expand=True)
+        # self.inf_chart = ChartFrame(self, self.chatter.hero, 'inf')
+        # self.inf_chart.pack(side="top", fill="x", expand=True)
 
         # character.pack(side="top", fill="both", expand=True)
 
     # character.name.trace_add('write', set_hero)
-    
-
+  
+EXIT = False
 
 def main():
-    db.prepare_database()
-    root = tk.Tk()
-    # root.iconbitmap("myIcon.ico")
-    root.geometry("640x480+200+200")
+    root = tk.Tk()  
+
+    def on_closing():
+        global EXIT
+        EXIT = True
+        log.info('Exiting...')
+        root.destroy()
+        
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    root.iconbitmap("sidekick.ico")
+
+    root.geometry("640x640+200+200")
     root.resizable(True, True)
     root.title("City of Heroes Sidekick")
 
@@ -214,12 +237,11 @@ def main():
     voices.pack(side="top", fill="both", expand=True)
     notebook.add(voices, text='Voices')
 
-    cursor = db.get_cursor()
-    first_character = cursor.execute("select id, name, category from character order by name").fetchone()
-    cursor.close()
+    with models.Session(models.engine) as session:
+        first_character = session.query(models.Character).order_by(models.Character.name).first()
 
     if first_character:
-        selected_character = tk.StringVar(value=f"{first_character[2]} {first_character[1]}")
+        selected_character = tk.StringVar(value=f"{first_character.cat_str()} {first_character.name}")
     else:
         selected_character = tk.StringVar()
 
@@ -238,7 +260,7 @@ def main():
     # update the graph(s) this often
     update_frequency = timedelta(minutes=1)
 
-    while True:
+    while not EXIT:
         try:
             event_action = event_queue.get(block=False)
             # we got an action (no exception)

@@ -1,11 +1,13 @@
 import logging
 import tkinter as tk
 from tkinter import font, ttk
-import numpy as np
 
+import models
+import numpy as np
 import pedalboard
 import voicebox
-from db import commit, get_cursor
+from sqlalchemy import select
+import settings
 
 log = logging.getLogger('__name__')
 
@@ -35,9 +37,6 @@ class LScale(tk.Frame):
                 name=f"{pname}",
                 value=default
             )
-        variable.trace_add("write", parent.reconfig)
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)
 
         tk.Label(
             self,
@@ -59,6 +58,9 @@ class LScale(tk.Frame):
             **kwargs
         ).pack(side='left', fill='x', expand=True)
 
+        setattr(parent, pname, variable)
+        parent.parameters.append(pname)
+
 
 class LCombo(tk.Frame):
 
@@ -74,9 +76,6 @@ class LCombo(tk.Frame):
         super().__init__(parent, *args, **kwargs)
 
         variable = tk.StringVar(value=default)
-        variable.trace_add("write", parent.reconfig)
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)
 
         tk.Label(
             self,
@@ -95,6 +94,9 @@ class LCombo(tk.Frame):
             
         options.pack(side='left', fill='x', expand=True)
 
+        setattr(parent, pname, variable)
+        parent.parameters.append(pname)        
+
 
 class LBoolean(tk.Frame):
     def __init__(
@@ -112,9 +114,6 @@ class LBoolean(tk.Frame):
             name=f"{pname}",
             value=default
         )
-        variable.trace_add("write", parent.reconfig)
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)  
 
         tk.Label(
             self,
@@ -132,6 +131,9 @@ class LBoolean(tk.Frame):
             offvalue=False
         ).pack(side='left', fill='x', expand=True)
 
+        setattr(parent, pname, variable)
+        parent.parameters.append(pname)  
+
 
 class EffectParameterEditor(tk.Frame):
     label = "Label"
@@ -142,6 +144,7 @@ class EffectParameterEditor(tk.Frame):
         self.parent = parent  # parent is the effectlist
         self.effect_id = tk.IntVar()
         self.parameters = []
+        self.traces = []
 
         topbar = tk.Frame(self)
         tk.Label(
@@ -175,62 +178,86 @@ class EffectParameterEditor(tk.Frame):
         log.error(f'You must override get_effect() in {self} to return an instance of Effect()')
         return None
     
+    def clear_traces(self):
+        while self.traces:
+            v = self.traces.pop()
+            for trace in v.trace_info():
+                log.info(f"trace: {trace!r}")
+                v.trace_remove(trace[0], trace[1])
+
     def remove_effect(self):
+        log.info("EffectParamaterEngine.remove_effect()")
+        # remove any variable traces
+        self.clear_traces()
+
         self.parent.remove_effect(self)
         # self.pack_forget()
         return
 
     def reconfig(self, varname, lindex, operation):
         """
-        The user changed one of the parameters.  Lets
+        The user changed one of the effect parameters.  Lets
         persist that change.  Make the database reflect
         the UI.
         """
-        log.info(f'reconfig triggered by {varname}')
-        cursor = get_cursor()
+        log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
 
-        effect_setting = cursor.execute("""
-            SELECT 
-                id, key, value
-            FROM
-                effect_setting
-            where
-                effect_id = ?
-        """, (
-            effect_id,
-        )).fetchall()
+        with models.Session(models.engine) as session:
+            effect_settings = session.scalars(
+                select(models.EffectSetting).where(
+                    models.EffectSetting.effect_id==effect_id,
+                    models.EffectSetting.key==varname
+                )
+            ).all()
 
-        log.info('Sync to db')
-        for id, key, value in effect_setting:
-            try:
-                value = float(value)
-            except ValueError:
-                pass
+            log.debug('Sync to db')
+            for effect_setting in effect_settings:
+                try:
+                    new_value = str(getattr(self, effect_setting.key).get())
+                except AttributeError:
+                    log.error(f'Invalid configuration.  Cannot set {effect_setting.key} on a {self} effect.')
+                    continue
 
-            try:
-                new_value = getattr(self, key).get()
-            except AttributeError:
-                log.error(f'Invalid configuration.  Cannot set {key} on a {self} effect.')
-                continue
+                if new_value != effect_setting.value:
+                    log.info(f'Saving changed value {effect_setting.key} {effect_setting.value!r}=>{new_value!r}')
+                    # this value is different than what
+                    # we have in the database
+                    effect_setting.value = new_value
+                    session.commit()
+                else:
+                    log.info(f'Value for {effect_setting.key} has not changed')
 
-            if new_value != value:
-                log.info(f'Saving changed value {id}:{key} {value!r}=>{new_value!r}')
-                # this value is different than what
-                # we have in the database
-                cursor.execute("""
-                    UPDATE
-                        effect_setting
-                    SET
-                        value=?
-                    WHERE
-                        id=?
-                """, (str(new_value), id, ))
-            else:
-                log.info(f'Value for {key} has not changed')
+    def load(self, session=None):
+        """
+        reflect the current db values for each effect setting
+        to the tk.Variable tied to the widget for that
+        setting.
+        """
+        if session is None:
+            session = models.Session(models.engine)
 
-        commit()
+        effect_id = self.effect_id.get()
 
+        effect_settings = session.scalars(
+            select(models.EffectSetting).where(
+                models.EffectSetting.effect_id == effect_id
+            )
+        ).all()
+
+        for setting in effect_settings:
+            tkvar = getattr(self, setting.key, None)
+            if tkvar not in self.traces:
+                if tkvar:
+                    tkvar.set(setting.value)
+                else:
+                    log.error(
+                        f'Invalid configuration.  '
+                        f'{setting.key} is not available for '
+                        f'{self}')
+            
+                tkvar.trace_add("write", self.reconfig)
+                self.traces.append(tkvar)
 
 # scipy iir filters
 IIR_FILTERS = ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
@@ -290,7 +317,7 @@ class BandpassFilter(EffectParameterEditor):
         # also get widget to set the ripple and min attenuation
 
     def get_effect(self):
-        log.info('get_effect()')
+        log.debug('get_effect()')
         effect = voicebox.effects.Filter.build(
             btype='bandpass',
             freq=(self.low_frequency.get(), self.high_frequency.get()),
@@ -300,6 +327,7 @@ class BandpassFilter(EffectParameterEditor):
             ftype=self.type_.get()
         )
         return effect
+
 
 class BandstopFilter(EffectParameterEditor):
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.iirfilter.html
@@ -316,39 +344,43 @@ class BandstopFilter(EffectParameterEditor):
 
         LScale(
             self,
-            'Low Frequency', 
-            "Filter frequency in Hz",
-            from_=0,
+            pname='low_frequency',
+            label='Low Frequency', 
+            desc="Filter frequency in Hz",
+            default=100,
+            from_=100,
             to=4000,
-            variable=self.low_frequency,
             resolution=100
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
             self,
-            'High Frequency', 
-            "Filter frequency in Hz",
-            from_=0,
+            pname="high_frequency",
+            label='High Frequency', 
+            desc="Filter frequency in Hz",
+            default=600,
+            from_=1,
             to=4000,
-            variable=self.high_frequency,
             resolution=100
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
             self,
-            'Order', 
-            "Higher orders will have faster dropoffs.",
+            pname="order",
+            label='Order', 
+            desc="Higher orders will have faster dropoffs.",
+            default=0,
             from_=0,
             to=10,
-            variable=self.order,
         ).pack(side='top', fill='x', expand=True)
 
         LCombo(
             self,
-            'Type',
-            'type of IIR filter to design',
+            pname="type_",
+            label='Type',
+            desc='type of IIR filter to design',
+            default="butter",
             choices=IIR_FILTERS,
-            variable=self.type_
         ).pack(side='top', fill='x', expand=True)
 
         # TODO:
@@ -366,6 +398,7 @@ class BandstopFilter(EffectParameterEditor):
         )
         return effect
 
+
 class LowpassFilter(EffectParameterEditor):
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.iirfilter.html
     label = "Lowpass Filter"
@@ -380,29 +413,32 @@ class LowpassFilter(EffectParameterEditor):
 
         LScale(
             self,
-            'Frequency', 
-            "Filter frequency in Hz",
-            from_=0,
+            pname='frequency',
+            label='Frequency (Hz)', 
+            desc="Filter frequency in Hz",
+            default=100,
+            from_=100,
             to=4000,
-            variable=self.low_frequency,
             resolution=100
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
             self,
-            'Order', 
-            "Higher orders will have faster dropoffs.",
+            pname="order",
+            label='Order', 
+            desc="Higher orders will have faster dropoffs.",
+            default=0,
             from_=0,
             to=10,
-            variable=self.order,
         ).pack(side='top', fill='x', expand=True)
 
         LCombo(
             self,
-            'Type',
-            'type of IIR filter to design',
+            pname="type_",
+            label='Type',
+            desc='type of IIR filter to design',
+            default="butter",
             choices=IIR_FILTERS,
-            variable=self.type_
         ).pack(side='top', fill='x', expand=True)
 
         # TODO:
@@ -420,6 +456,7 @@ class LowpassFilter(EffectParameterEditor):
         )
         return effect
 
+
 class HighpassFilter(EffectParameterEditor):
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.iirfilter.html
     label = "Highass Filter"
@@ -434,30 +471,34 @@ class HighpassFilter(EffectParameterEditor):
 
         LScale(
             self,
-            'Frequency', 
-            "Filter frequency in Hz",
-            from_=0,
+            pname='frequency',
+            label='Frequency (Hz)', 
+            desc="Filter frequency in Hz",
+            default=100,
+            from_=100,
             to=4000,
-            variable=self.low_frequency,
             resolution=100
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
             self,
-            'Order', 
-            "Higher orders will have faster dropoffs.",
+            pname="order",
+            label='Order', 
+            desc="Higher orders will have faster dropoffs.",
+            default=0,
             from_=0,
             to=10,
-            variable=self.order,
         ).pack(side='top', fill='x', expand=True)
 
         LCombo(
             self,
-            'Type',
-            'type of IIR filter to design',
+            pname="type_",
+            label='Type',
+            desc='type of IIR filter to design',
+            default="butter",
             choices=IIR_FILTERS,
-            variable=self.type_
         ).pack(side='top', fill='x', expand=True)
+
 
         # TODO:
         # this is incomplete, when users choose chebyshev or elliptic they should
@@ -473,6 +514,7 @@ class HighpassFilter(EffectParameterEditor):
             ftype=self.type_.get()
         )
         return effect
+
 
 class Glitch(EffectParameterEditor):
     label = "Glitch"
@@ -517,13 +559,14 @@ class Glitch(EffectParameterEditor):
         ).pack(side='top', fill='x', expand=True)
 
     def get_effect(self):
-        log.info('get_effect()')
+        log.debug('get_effect()')
         effect = voicebox.effects.Glitch(
             chunk_time=self.chunk_time.get(),
             p_repeat=self.p_repeat.get(),
             max_repeats=self.max_repeats.get()
         )
         return effect
+
 
 class Normalize(EffectParameterEditor):
     label = "Normalize"
@@ -559,6 +602,129 @@ class Normalize(EffectParameterEditor):
         )
         return effect
 
+
+class PitchShift(EffectParameterEditor):
+    label = "PitchShift"
+    desc = "A pitch shifting effect that can change the pitch of audio without affecting its duration."
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LScale(
+            self,
+            pname="semitones",
+            label='Semitones', 
+            desc="How far to shift the pitch",
+            default=0.5,
+            from_=-8,
+            to=8,
+            digits=2,
+            resolution=0.25
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.PitchShift(
+                semitones=self.semitones.get(), 
+            )
+        )
+        return effect
+
+
+class Reverb(EffectParameterEditor):
+    label = "Reverb"
+    desc = (
+        "A simple reverb effect. Uses a simple stereo reverb algorithm, based "
+        "on the technique and tunings used in FreeVerb "
+        "<https://ccrma.stanford.edu/~jos/pasp/Freeverb.html>_.  "
+        "The delay lengths are optimized for a sample rate of 44100 Hz."
+    )
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LScale(
+            self,
+            pname="room_size",
+            label='Room size', 
+            desc="Room Size",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="damping",
+            label='Damping', 
+            desc="damping parameter [0=low damping, 1=higher damping]",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="wet_level",
+            label='Wet level', 
+            desc="Wet Level",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="dry_level",
+            label='Dry level', 
+            desc="Dry Level",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="width",
+            label='Width', 
+            desc="width (left-right mixing) parameter",
+            default=0.4,
+            from_=0.05,
+            to=1,
+            digits=3,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LBoolean(
+            self,
+            pname="freeze_mode",
+            label='Freeze mode', 
+            desc="frozen/unfrozen",
+            default=False
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.Reverb(
+                room_size=self.room_size.get(), 
+                damping=self.damping.get(), 
+                wet_level=self.wet_level.get(),
+                dry_level=self.dry_level.get(), 
+                width=self.width.get(), 
+                freeze_mode= 1 if self.freeze_mode.get() else 0
+            )
+        )
+        return effect
+
+
 class Bitcrush(EffectParameterEditor):
     label = "Bitcrush"
     desc = "reduces the signal to a given bit depth, giving the audio a lo-fi, digitized sound."
@@ -585,6 +751,7 @@ class Bitcrush(EffectParameterEditor):
             )
         )
         return effect
+
 
 class Chorus(EffectParameterEditor):
     label = "chorus"
@@ -676,6 +843,7 @@ class Chorus(EffectParameterEditor):
         )
         return effect
 
+
 class Clipping(EffectParameterEditor):
     label = "clipping"
     desc = """A distortion plugin that adds hard distortion to the signal by clipping the signal at the provided threshold (in decibels)."""
@@ -702,6 +870,7 @@ class Clipping(EffectParameterEditor):
             )
         )
         return effect
+
 
 class Compressor(EffectParameterEditor):
     label = "compressor"
@@ -765,6 +934,248 @@ class Compressor(EffectParameterEditor):
                 ratio=self.ratio.get(),
                 attack_ms=self.attack_ms.get(),
                 release_ms=self.release_ms.get()
+            )
+        )
+        return effect
+
+
+class Delay(EffectParameterEditor):
+    label = "Delay"
+    desc = """A digital delay plugin with controllable delay time, feedback percentage, and dry/wet mix."""
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LScale(
+            self,
+            pname="delay_seconds",
+            label='Delay (sec)', 
+            desc="",
+            default=0.5,
+            from_=-0.1,
+            to=1,
+            digits=2,
+            resolution=0.1
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="feedback",
+            label='Feedback (%)', 
+            desc="",
+            default=0.0,
+            from_=0,
+            to=1,
+            digits=2,
+            resolution=0.05
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="mix",
+            label='Mix', 
+            desc="",
+            default=0.5,
+            from_=0,
+            to=1,
+            digits=2,
+            resolution=0.1
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.Delay(
+                delay_seconds=self.delay_seconds.get(), 
+                feedback=self.feedback.get(),
+                mix=self.mix.get(),
+            )
+        )
+        return effect
+
+
+class Distortion(EffectParameterEditor):
+    label = "distortion"
+    desc = """A distortion effect, which applies a non-linear (tanh, or hyperbolic tangent) waveshaping function to apply harmonically pleasing distortion to a signal."""
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LScale(
+            self,
+            pname="drive_db",
+            label='Drive (db)', 
+            desc="",
+            default=25,
+            from_=-1,
+            to=50,
+            digits=1,
+            resolution=1
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.Distortion(
+                delay_seconds=self.drive_db.get(), 
+            )
+        )
+        return effect
+
+
+class Gain(EffectParameterEditor):
+    label = "gain"
+    desc = """A gain plugin that increases or decreases the volume of a signal by amplifying or attenuating it by the provided value (in decibels). No distortion or other effects are applied.
+        Think of this as a volume control."""
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LScale(
+            self,
+            pname="gain_db",
+            label='Gain (db)', 
+            desc="",
+            default=1,
+            from_=-1,
+            to=20,
+            digits=2,
+            resolution=0.5
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.Gain(
+                gain_db=self.gain_db.get(), 
+            )
+        )
+        return effect
+
+
+class HighShelfFilter(EffectParameterEditor):
+    # I can't hear this doing anyting, but it does mess with the stream such that
+    # you need to normalize to avoid range errors.
+    label = "High Shelf Filter"
+    desc = """A high shelf filter plugin with variable Q and gain, as would be used in an equalizer. Frequencies above the cutoff frequency will be boosted (or cut) by the provided gain (in decibels)."""
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LScale(
+            self,
+            pname="cutoff_frequency_hz",
+            label='Cutoff Frequency (Hz)', 
+            desc="",
+            default=440,
+            from_=-1,
+            to=1000,
+            digits=1,
+            resolution=10
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="gain_db",
+            label='Gain (db)', 
+            desc="",
+            default=0,
+            from_=-0,
+            to=20,
+            digits=2,
+            resolution=0.5
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="q",
+            label='Q', 
+            desc="the ratio of center frequency to bandwidth",
+            default=0.707106,
+            from_=-0,
+            to=1,
+            digits=3,
+            resolution=0.01
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.HighShelfFilter(
+                cutoff_frequency_hz=self.cutoff_frequency_hz.get(),
+                gain_db=self.gain_db.get(), 
+                q=self.q.get()
+            )
+        )
+        return effect
+
+
+class LadderFilter(EffectParameterEditor):
+    label = "Ladder Filter"
+    desc = """A multi-mode audio filter based on the classic Moog synthesizer ladder filter, invented by Dr. Bob Moog in 1968.
+
+Depending on the filter’s mode, frequencies above, below, or on both sides of the cutoff frequency will be attenuated. Higher values for the resonance parameter may cause peaks in the frequency response around the cutoff frequency."""
+    mode_choices = [
+        "LPF12 low-pass 12dB filter",
+        "HPF12 high-pass 12dB filter",
+        "BPF12 band-pass 12dB filter",
+        "LPF24 low-pass 24dB filter",
+        "HPF24 high-pass 24dB filter",
+        "BPF24 band-pass 24dB filter",
+    ]
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        LCombo(
+            self,
+            pname="mode",
+            label="Mode",
+            desc="The type of filter architecture to use.",
+            default=self.mode_choices[0],
+            choices=self.mode_choices
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="cutoff_hz",
+            label='Cutoff (Hz)', 
+            desc="",
+            default=200,
+            from_=0,
+            to=1000,
+            digits=1,
+            resolution=10
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="resonance",
+            label='Resonance', 
+            desc="",
+            default=0,
+            from_=-0,
+            to=1,
+            digits=2,
+            resolution=0.1
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="drive",
+            label='Drive (db?)', 
+            desc="",
+            default=1.0,
+            from_=0,
+            to=10,
+            digits=3,
+            resolution=0.5
+        ).pack(side='top', fill='x', expand=True)
+
+    def get_effect(self):
+        effect = voicebox.effects.PedalboardEffect(
+            pedalboard.LadderFilter(
+                mode=getattr(pedalboard.LadderFilter.Mode, self.mode.get().split()[0]),
+                # self.mode_choices.index(),
+                cutoff_hz=self.cutoff_hz.get(), 
+                resonance=self.resonance.get(),
+                drive=self.drive.get()
             )
         )
         return effect
@@ -922,14 +1333,14 @@ EFFECTS = {
     'Chorus': Chorus, # Pedalboard
     'Clipping': Clipping, # Pedalboard
     'Compressor': Compressor, # Pedalboard
-    # 'Delay': None, # Pedalboard
-    # 'Distortion': None, # Pedalboard
-    # 'Gain': None, # Pedalboard
+    'Delay': Delay, # Pedalboard
+    'Distortion': Distortion, # Pedalboard
+    'Gain': Gain, # Pedalboard
     'Glitch': Glitch,
     # 'GSMFullRateCompressor': None, # Pedalboard
     'Highpass Filter': HighpassFilter,
-    # 'HighShelfFilter': None, # Pedalboard
-    # 'LadderFilter': None, # Pedalboard
+    'HighShelfFilter': HighShelfFilter, # Pedalboard
+    'LadderFilter': LadderFilter, # Pedalboard
     # 'Limiter': None, # Pedalboard
     'Lowpass Filter': LowpassFilter,
     # 'LowShelfFilter': None, # Pedalboard
@@ -938,10 +1349,10 @@ EFFECTS = {
     'Normalize': Normalize,
     # 'PeakFilter': None, # Pedalboard
     # 'Phaser': None, # Pedalboard
-    # 'PitchShift': None, # Pedalboard
+    'PitchShift': PitchShift, # Pedalboard
     # 'Remove DC Offset': None,
     # 'Resample': None, # Pedalboard
-    # 'Reverb': None, # Pedalboard
+    'Reverb': Reverb, # Pedalboard
     'RingMod': RingMod,
     'Vocoder': Vocoder,
 }
