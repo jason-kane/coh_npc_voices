@@ -72,6 +72,17 @@ The python source is in src/coh_npc_voices.  I've only made minimal efforts to m
 
 But it works, and it is fun.  Hence v1.
 
+# Building the Windows Installer
+
+First run fresh.bat
+
+    fresh.bat
+
+That will clean-slate the venv directory and apply some path detection tweaks.  Next run innosetup, load this projects .iss file then -> Build -> Compile.  Build -> Open Output folder will give you the dir with the sidekick_setup.exe.
+
+The way this works is a little bit awesome.  sidekick_setup.exe will install our files and a barebones python venv, then it will run win_install, which is a compiled version of win_install.ps1.  It installs (w/pip) all our dependencies.  End result?  A small (5MB) setup executable that installs all the crap we need (I'm looking at you numpy.  Try eating a salad).  Running it again?  No problem.  If you use the same destination directory it won't even need to re-download the packages.  The best part from my POV is the actual running code is sitting there for the user to poke at with no obfuscation.
+
+I'm currently pleased as punch with the installer.  Kind of hell to get it all figured out but the results are quite nice.
 
 # Problems?
 
