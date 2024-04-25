@@ -6,11 +6,27 @@ It still does that, mostly.  Instead of using the same built-in voice for everyt
 
 When Sidekick starts you get a GUI.  It shows every character you've seen and allows you to modify the voice profile for each of them.
 
-You can then "Attach to Log" and it will find the newest logfile in your CoH log dir, open it up and watch for additions.  When a character on the list says something, it speaks for them using their voice profile.  New characters are automatically entered with default values.
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/4c9f2372-ce67-43f3-b13a-c822d1b4a952)
+
+So we have audio effects.  Currently these filters:
+    Bandpass Filter
+    Bandstop Filter
+    Bitcrush
+    Chorus
+    Clipping
+    Compressor
+    Glitch
+    Highpass Filter
+    Lowpass Filter
+    Normalize
+    RingMod
+    Vocoder
 
 Paid text-to-speech services are supported.  Right now that includes both google text-to-speech and ElevenLabs.  For google you'll need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  I know it is a pain.  The quality and flexibility are much better than windows defaults but it takes a moment to generate.  Responses are cached to keep costs down to near zero.
 
 ElevenLabs voices support is just barely getting started.  To use it you will need to place a text file named "eleven_labs.key" containing only your API key in the main sidekick directory.
+
+Voice effects can be configured and layered with some fun results.  For better or worse, the UI for manipulating this is immediate --  Whenever you change something it is automatically saved and if you are in-game you will start to hear the new voice.
 
 The voices used by default are the free Windows TTS API voices.  It isn't great.  Install more windows voices first.
 
@@ -80,19 +96,21 @@ You probably have to logout/login before the extra voices are available.
 
 # Running it (Manual Install)
 
-Then open a cmd terminal and run:
+Start a cmd terminal and run:
 
     sidekick.exe
 
-First start City of Heroes, login and pick a character.  Then enable chat logging.
+Start City of Heroes; any host.  login and pick any character.  Then enable chat logging.
 
 You can use this slash command in the chat window:
 
     /logchat
 
-You will have to do this once for each character you want to enable.
+It is also in the settings UI somewhere.
 
-You'll need to figure out where your logs are stored.  It will vary based on the installer.
+This is a per-character thing so if you aren't getting voices double check this first.
+
+Next you will need to figure out where your logs are stored.  It will vary based on the installer.
 
     <COH Install Directory>/accounts/<Account Name>/logs/
     <COH Install Directory>/homecoming/accounts/<Account Name>/Logs/
@@ -101,14 +119,25 @@ Use "Set Log Dir" in the upper right corner to configure it for your log locatio
 
 Once you are ready You will need to click "Attach to Log" in the upper left corner after you are in-game.  The "Attach" button changes to a "Detach".  You can attach/detach whenever you want.
 
+The right directory will have files with names like "chatlog 2024-03-31.txt".  If you are having trouble turn on /logchat for a few minutes in-game, then look for file named after todays date.
+
+Use "Set Log Dir" in the upper right corner to configure it for your log location.  You should only need to do this once.
+
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/73c1b2de-04ed-4096-bf10-b1baaa19d152)
+
+Once you are ready You will need to click "Attach to Log" in the upper left corner after you are in-game.  The "Attach" button changes to a "Detach".  You can attach/detach whenever you want.
+
+
 # Local Development
+
+If you are curious and want to poke around at the source code it is right here.  You can download your own copy with "git".
 
     git clone https://github.com/jason-kane/coh_npc_voices.git
     cd coh_npc_voices
 
 The python source is in src/coh_npc_voices.  I've only made minimal efforts to make it nice.  It is tied to tkinter more than I would like.  The blend of multiprocess and threads is confusing; and core functionality is replicated for no good reason.
 
-But it works, and it is fun.  Hence v1.
+But it does work, and it is fun.
 
 # Building the Windows Installer
 
@@ -121,6 +150,10 @@ That will clean-slate the venv directory and apply some path detection tweaks.  
 The way this works is a little bit awesome.  sidekick_setup.exe will install our files and a barebones python venv, then it will run win_install, which is a compiled version of win_install.ps1.  It installs (w/pip) all our dependencies.  End result?  A small (5MB) setup executable that installs all the crap we need (I'm looking at you numpy.  Try eating a salad).  Running it again?  No problem.  If you use the same destination directory it won't even need to re-download the packages.  The best part from my POV is the actual running code is sitting there for the user to poke at with no obfuscation.
 
 I'm currently pleased as punch with the installer.  Kind of hell to get it all figured out but the results are quite nice.
+
+# Preloaded Data
+
+This is a tricky one.  I've only really been gathering processed audio for a little while.  I doubt the 161 characters I have represent more than a 5% of the game dialog and I'm at 61MB.  Each phrase is cached as a 100KB-ish mp3.  You can edit/delete them however you want.  If a cachefile exists it will be played instead of generating new audio.  I do like the idea of sharing the database with all the characters audio configs, especially if users can easily choose to share what they create.  I'm just not sure how best to go about it.  TBD.  I'll at least share my database as the default setup but tweaked to use free voices when it has enough customization to be worthwhile.
 
 # Problems?
 
