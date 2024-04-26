@@ -300,12 +300,18 @@ class LogStream:
         self.hero = None
 
         print(f"Tailing {self.filename}...")
-        self.handle = open(os.path.join(logdir, self.filename))
+        self.handle = open(os.path.join(logdir, self.filename), encoding='utf-8')
 
         self.speaking_queue = speaking_queue
         self.event_queue = event_queue
 
         # skim through and see if can find the hero name
+        #   File "G:\CoH\COH Sidekick\src\coh_npc_voices\npc_chatter.py", line 309, in __init__
+        #     for line in self.handle.readlines():
+        #                 ^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "C:\Users\jason\AppData\Local\Programs\Python\Python312\Lib\encodings\cp1252.py", line 23, in decode
+        #   return codecs.charmap_decode(input,self.errors,decoding_table)[0]
+                                                        # UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d in position 4048: character maps to <undefined>
         for line in self.handle.readlines():
             try:
                 datestr, timestr, line_string = line.split(None, 2)
@@ -327,6 +333,7 @@ class LogStream:
                 if self.event_queue:
                     self.event_queue.put(("SET_CHARACTER", self.hero.name))
 
+        
         if self.hero is None:
             self.speaking_queue.put((None, "User name not detected", "system"))
             log.info("Could NOT find hero name.. good luck.")
