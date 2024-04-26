@@ -4,11 +4,23 @@ This program started as a fairly simplistic python program that watches the City
 
 It still does that, mostly.  Instead of using the same built-in voice for everything, it uses different voices now.  It supports a bunch of voice effects.  Adding new effects is pretty easy.  
 
-When Sidekick starts you get a GUI.  It shows every character you've seen and allows you to modify the voice profile for each of them.
+When Sidekick starts you get a text window and a GUI.  It takes a hot second to get going.
 
-![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/4c9f2372-ce67-43f3-b13a-c822d1b4a952)
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/cd233679-b559-4633-9fe2-785e9d640c3a)
 
-So we have audio effects.  Currently these filters:
+After you've started the game and are logged in with your character (and have followed the steps under 'Configure' to enable loggin) click "Attach to Log" and you'll see something more like this:
+
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/d749697e-05f8-41bc-8142-22576ed54d12)
+
+As you play that will expand out to graph of your experience gained over time.  Its a good way to gauge your progress in the game.
+
+You'll also start hearing things.  This time the voices in your head are real.  Whenever an NPC or a team member says something in chat, it will be converted into audio.
+
+Don't like what someone sounds like?  That is what the "Voices" tab is for:
+
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/17e2d134-a6df-49de-9c9c-b1af4544a85f)
+
+It has lots of audio effects.  Currently these filters:
     Bandpass Filter
     Bandstop Filter
     Bitcrush
@@ -22,17 +34,18 @@ So we have audio effects.  Currently these filters:
     RingMod
     Vocoder
 
-Paid text-to-speech services are supported.  Right now that includes both google text-to-speech and ElevenLabs.  For google you'll need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  I know it is a pain.  The quality and flexibility are much better than windows defaults but it takes a moment to generate.  Responses are cached to keep costs down to near zero.
+Paid text-to-speech services are supported.  Right now that includes both google text-to-speech and ElevenLabs.  For google you will need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  I know it is a pain.  The quality and flexibility are much better than windows defaults but it takes a moment to generate.  Responses are cached to keep costs down to near zero.
 
 ElevenLabs voices support is just barely getting started.  To use it you will need to place a text file named "eleven_labs.key" containing only your API key in the main sidekick directory.
 
-Voice effects can be configured and layered with some fun results.  For better or worse, the UI for manipulating this is immediate --  Whenever you change something it is automatically saved and if you are in-game you will start to hear the new voice.
+Voice effects can be configured and layered with some fun results.  For better or worse, the UI for manipulating this is immediate --  Whenever you change something it is automatically saved and if you are in-game you will start to hear the new voice for anything that isn't cached.  You can choose the bottom option in the phrases dropdown to 
+"Rebuild all phrases".  It will... rebuild all the phrases.
 
-The voices used by default are the free Windows TTS API voices.  It isn't great.  Install more windows voices first.
+The voices used by default are the free Windows TTS API voices.  It isn't great.  Install more windows voices first.  Instructions below.
 
-Players on your team get voices too.  Find them in the list to modify what they sound like.  When players talk it is NOT cached.
+Players on your team get voices too.  Find them in the list to modify what they sound like.  When players talk it is NOT cached, that tickled by privacy bone and the value of the cache is minimal.
 
-Overall I think this companion program makes City of Heroes much more immersive.  I can't wait to record a video showing it off, maybe a shorter taskforce like Yin?
+Overall I think this companion program makes City of Heroes much more immersive.
 
 # Installation
 
@@ -40,7 +53,7 @@ Go to the releases page:
 
     https://github.com/jason-kane/coh_npc_voices/releases
 
-Download sidekick_setup.exe and run it.  Windows will not want to do it since I'm not paying 300/year for an application certificate.
+Download sidekick_setup.exe and run it.  Windows will not want to do it since I'm not paying 300/year for an application certificate.  The setup program is small (5MB-ish) but this thing downloads some heavy packages like numpy.  Just a heads up in case your connection is slow or expensive.
 
 # Configuration
 
@@ -67,6 +80,9 @@ Any NPC that talks will get a voice.  If you don't like the way it sounds you ca
 
 You can choose a "Preset" for any character.  These change the initial voice settings to make it easy for all the characters in a given group (like Vahzilok) to all sound similar.  The "Random" options are nice when you don't really care that much but want some quick variety.
 
+# OSX / Linux?
+
+90% of this is totally compatible, no problem.  The other 10% is the windows sapi stuff; making it platform detect and default to the (good) osx text-to-voice or the (not as good) linux espeak will take some effort but isn't particularly difficult.
 
 # Manual Installation
 
@@ -127,7 +143,6 @@ Use "Set Log Dir" in the upper right corner to configure it for your log locatio
 
 Once you are ready You will need to click "Attach to Log" in the upper left corner after you are in-game.  The "Attach" button changes to a "Detach".  You can attach/detach whenever you want.
 
-
 # Local Development
 
 If you are curious and want to poke around at the source code it is right here.  You can download your own copy with "git".
@@ -161,8 +176,7 @@ Please leave an issue here in github.  I can't promise anything but I'm very lik
 
 # License?
 
-MIT.  I think that means you are allowed to do what you want, just don't blame me if it all goes wrong.  That said I would appreciate pull requests if you make improvements so we can share the benefits.
-
+MIT.  I think that means you are allowed to do what you want, just don't blame me if it all goes wrong.  That said I would appreciate pull requests if you make improvements so we can all share the benefits.
 
 # Dependencies
 
