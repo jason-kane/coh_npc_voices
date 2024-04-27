@@ -246,7 +246,9 @@ class EngineSelectAndConfigure(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
         engine_string = self.selected_engine.get()
         if engine_string in [None, ""]:
-            engine_string = settings.DEFAULT_ENGINE
+            engine_string = settings.get_config_key(
+                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+            )
 
         with models.Session(models.engine) as session:
             character = models.get_character(name, category, session)
@@ -279,7 +281,9 @@ class EngineSelectAndConfigure(tk.Frame):
             return None
        
         if character.engine in ["", None]:
-            self.selected_engine.set(settings.DEFAULT_ENGINE)
+            self.selected_engine.set(settings.get_config_key(
+                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+            ))
         else:
             self.selected_engine.set(character.engine)
             

@@ -141,7 +141,9 @@ class TTSEngine(tk.Frame):
                 character = models.Character(
                     name=name,
                     category=models.category_str2int(category),
-                    engine=settings.DEFAULT_ENGINE,
+                    engine=settings.get_config_key(
+                        'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+                    ),
                 )
                 session.add(character)
                 session.commit()

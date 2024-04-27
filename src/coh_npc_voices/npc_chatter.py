@@ -43,6 +43,13 @@ log = logging.getLogger("__name__")
 #       players can tell other players what they sound like, and you then hear them.
 #       speech-to-text chat input (whisper?)
 
+# so frequently enough to merit this; people will identify themselves in the CAPTION messages.
+# like:
+# 2024-04-26 18:40:13 [Caption] <scale 1.75><color white><bgcolor DarkGreen>Positron here. I'm monitoring your current progress in the sewers.
+# we want to use that voice for captions until we find out otherwise.  This way they can have their own voice.
+CAPTION_SPEAKER_INDICATORS = (
+    ('Positron here.', 'Positron'),
+)
 
 class ParallelTTS(threading.Thread):
     def __init__(self, speaking_queue, event_queue, parallelism=2):
@@ -101,7 +108,9 @@ class ParallelTTS(threading.Thread):
             with models.Session(models.engine) as session:
                 character = models.Character(
                     name=name,
-                    engine=settings.DEFAULT_ENGINE,
+                    engine=settings.get_config_key(
+                        'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+                    ),
                     category=models.category_str2int(category),
                 )
                 session.add(character)
@@ -251,7 +260,9 @@ class TightTTS(threading.Thread):
                     with models.Session(models.engine) as session:
                         character = models.Character(
                             name=name,
-                            engine=settings.DEFAULT_ENGINE,
+                            engine=settings.get_config_key(
+                                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+                            ),
                             category=models.category_str2int(category),
                         )
 
@@ -298,6 +309,8 @@ class LogStream:
         self.caption_speak = True
         self.announce_levels = True
         self.hero = None
+        # who is currently speaking as CAPTION ?
+        self.caption_speaker = None
 
         print(f"Tailing {self.filename}...")
         self.handle = open(os.path.join(logdir, self.filename))
@@ -394,24 +407,32 @@ class LogStream:
 
                 elif self.caption_speak and lstring[0] == "[Caption]":
                     # 2024-04-02 20:09:50 [Caption] <scalxe 2.75><color red><bgcolor White>My Shadow Simulacrum will destroy Task Force White Sands!
-                    name = None
+        
                     dialog = " ".join(lstring[1:])
+                    # make an effort to identify the speaker
+                    for indicator, speaker in CAPTION_SPEAKER_INDICATORS:
+                        if indicator in dialog:
+                            self.caption_speaker = speaker
+
                     log.debug(f"Adding Caption {dialog} to reading queue")
                     dialog = re.sub(r"<scale [0-9\.]+>", "", dialog).strip()
                     dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
                     dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
-                    self.speaking_queue.put((name, dialog, "player"))
+                    self.speaking_queue.put((self.caption_speaker, dialog, "player"))
 
                 elif self.announce_badges and lstring[0] == "Congratulations!":
                     self.speaking_queue.put((None, (" ".join(lstring[4:])), "system"))
 
                 elif lstring[0] == "You":
+                    # 2024-04-26 19:13:31 You have quit your team
+                    # 2024-04-26 19:13:31 Pew Pew Die Die Die has quit the league.
+                    # 2024-04-26 19:13:31 You are now fighting at level 9.                    
                     if lstring[1] == "are":
                         if (
                             self.announce_levels and lstring[2:3] == ["now", "fighting"]
                         ) and (
-                            " ".join(previous[-4:])
-                            not in ["have quit your team", "has joined the team"]
+                            " ".join(previous[-4:]).strip(".")
+                            not in ["have quit your team", "has joined the team",  "has joined the league", "has quit the league"]
                         ):
                             level = lstring[-1].strip(".")
                             self.speaking_queue.put(
@@ -473,6 +494,11 @@ class LogStream:
 
                     # we want to notify upstream UI about this.
                     self.event_queue.put(("SET_CHARACTER", self.hero.name))
+
+                elif lstring[-2:] == ["the", "team"]:
+                    name = lstring[0:-4]
+                    action = lstring[-3]  # joined or quit
+                    self.speaking_queue.put((None, f"Player {name} has {action} the team", "system"))
 
                 # else:
                 #    log.warning(f'tag {lstring[0]} not classified.')

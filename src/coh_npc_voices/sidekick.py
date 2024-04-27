@@ -1,6 +1,7 @@
 """
 There is more awesome to be had.
 """
+import json
 import logging
 import multiprocessing
 from datetime import datetime, timedelta
@@ -14,6 +15,7 @@ import voice_editor
 import npc_chatter
 import numpy as np
 import settings
+import engines
 
 from matplotlib.figure import Figure 
 from matplotlib.backends.backend_tkagg import (
@@ -208,6 +210,73 @@ class CharacterTab(tk.Frame):
 
     # character.name.trace_add('write', set_hero)
   
+class ConfigurationTab(tk.Frame):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        elevenlabs = tk.Frame(
+            self, 
+            borderwidth=1, 
+            highlightbackground="black", 
+            relief="groove"
+        )
+        tk.Label(
+            elevenlabs,
+            text="ElevenLabs API Token",
+            anchor="e",
+        ).pack(side="left", fill="x", expand=True)
+        
+        self.elevenlabs_key = tk.StringVar(value=self.get_elevenlabs_key())
+        self.elevenlabs_key.trace_add('write', self.change_elevenlabs_key)
+        tk.Entry(
+            elevenlabs,
+            textvariable=self.elevenlabs_key,
+            show="*"
+        ).pack(side="left", fill="x", expand=True)
+        elevenlabs.pack(side="top", fill="x")
+        ##############
+        ##############
+        ##############
+        default_npc_engine = tk.Frame(
+            self, 
+            borderwidth=1, 
+            highlightbackground="black", 
+            relief="groove"
+        )
+        tk.Label(
+            default_npc_engine,
+            text="Default NPC Engine",
+            anchor="e",
+        ).pack(side="left", fill="x", expand=True)
+        
+        self.default_engine = tk.StringVar(
+            value=settings.get_config_key('DEFAULT_ENGINE', "Windows TTS")
+        )
+        self.default_engine.trace_add('write', self.change_default_engine)
+
+        default_engine_combo = ttk.Combobox(default_npc_engine, textvariable=self.default_engine)
+        default_engine_combo["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
+        default_engine_combo["state"] = "readonly"
+        default_engine_combo.pack(side="left", fill="x", expand=True)
+        default_npc_engine.pack(side="top", fill="x")
+        
+    def change_elevenlabs_key(self, a, b, c):
+        with open("eleven_labs.key", 'w') as h:
+            h.write(self.elevenlabs_key.get())
+
+    def get_elevenlabs_key(self):
+        with open('eleven_labs.key', 'r') as h:
+            value = h.read()
+        return value
+
+    def change_default_engine(self, a, b, c):
+        settings.set_config_key(
+            'DEFAULT_ENGINE',
+            self.default_engine.get()
+        )
+
+
+
 EXIT = False
 
 def main():
@@ -236,6 +305,10 @@ def main():
     voices = tk.Frame(notebook)
     voices.pack(side="top", fill="both", expand=True)
     notebook.add(voices, text='Voices')
+
+    configuration = ConfigurationTab(notebook)
+    configuration.pack(side="top", fill="both", expand=True)
+    notebook.add(configuration, text="Configuration")
 
     with models.Session(models.engine) as session:
         first_character = session.query(models.Character).order_by(models.Character.name).first()

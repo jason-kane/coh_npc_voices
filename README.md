@@ -27,7 +27,7 @@ Adding more voices is an easy way to increase the variety and flavor of sounds y
 
 ### Local Windows TTS Voices
 
-### Windows 10
+#### Windows 10
 
 1. Open Settings, choose Time & Language
 2. Choose Speech on the left side
@@ -37,14 +37,13 @@ By itselt that will probably only give you one or two more voices, even if you i
 
 You probably have to logout/login before the extra voices are available.
 
-## Google Text-to-Speech
+### Google Text-to-Speech
 
 Paid text-to-speech services are supported.  Right now that includes both google text-to-speech and ElevenLabs.  For google you will need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  I know it is a pain.  The quality and flexibility are much better than windows defaults but it takes a moment to generate.  Responses are cached to keep costs down to near zero.
 
-## ElevenLabs
+### ElevenLabs
 
 ElevenLabs voices support is just barely getting started.  To use it you will need to place a text file named "eleven_labs.key" containing only your API key in the main sidekick directory.
-
 
 # Voice Effects
 
@@ -68,8 +67,6 @@ Voice effects can be configured and layered with some fun results.  For better o
 The voices used by default are the free Windows TTS API voices.  It isn't great.  Install more windows voices first.  Instructions below.
 
 Players on your team get voices too.  Find them in the list to modify what they sound like.  When players talk it is NOT cached, that tickled by privacy bone and the value of the cache is minimal.
-
-Overall I think this companion program makes City of Heroes much more immersive.
 
 # Installation
 
@@ -120,6 +117,18 @@ You can choose a "Preset" for any character.  These change the initial voice set
 
     pip uninstall coh_npc_voices
 
+
+# Manual Installation
+
+    pip install git+https://github.com/jason-kane/coh_npc_voices.git
+
+# Manual Upgrade
+
+    pip install --upgrade git+https://github.com/jason-kane/coh_npc_voices.git
+
+# Manual Uninstall
+
+    pip uninstall coh_npc_voices
 
 # Running it (Manual Install)
 
