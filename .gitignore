@@ -3,6 +3,7 @@ clip_library_saved/
 raw_data/
 
 eleven_labs.key
+config.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

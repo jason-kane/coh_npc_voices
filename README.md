@@ -20,23 +20,47 @@ Don't like what someone sounds like?  That is what the "Voices" tab is for:
 
 ![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/17e2d134-a6df-49de-9c9c-b1af4544a85f)
 
-It has lots of audio effects.  Currently these filters:
-    Bandpass Filter
-    Bandstop Filter
-    Bitcrush
-    Chorus
-    Clipping
-    Compressor
-    Glitch
-    Highpass Filter
-    Lowpass Filter
-    Normalize
-    RingMod
-    Vocoder
+
+## More/Better Voices (Highly Recommended)
+
+Adding more voices is an easy way to increase the variety and flavor of sounds you hear in the city.
+
+### Local Windows TTS Voices
+
+### Windows 10
+
+1. Open Settings, choose Time & Language
+2. Choose Speech on the left side
+3. Choose "Add voices" under Manage voices
+
+By itselt that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.
+
+You probably have to logout/login before the extra voices are available.
+
+## Google Text-to-Speech
 
 Paid text-to-speech services are supported.  Right now that includes both google text-to-speech and ElevenLabs.  For google you will need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  I know it is a pain.  The quality and flexibility are much better than windows defaults but it takes a moment to generate.  Responses are cached to keep costs down to near zero.
 
+## ElevenLabs
+
 ElevenLabs voices support is just barely getting started.  To use it you will need to place a text file named "eleven_labs.key" containing only your API key in the main sidekick directory.
+
+
+# Voice Effects
+
+We have a lot of audio effects.  Currently:
+* Bandpass Filter
+* Bandstop Filter
+* Bitcrush
+* Chorus
+* Clipping
+* Compressor
+* Glitch
+* Highpass Filter
+* Lowpass Filter
+* Normalize
+* RingMod
+* Vocoder
 
 Voice effects can be configured and layered with some fun results.  For better or worse, the UI for manipulating this is immediate --  Whenever you change something it is automatically saved and if you are in-game you will start to hear the new voice for anything that isn't cached.  You can choose the bottom option in the phrases dropdown to 
 "Rebuild all phrases".  It will... rebuild all the phrases.
@@ -96,19 +120,6 @@ You can choose a "Preset" for any character.  These change the initial voice set
 
     pip uninstall coh_npc_voices
 
-# Adding Voices (Highly Recommended)
-
-Making new free voices available is an easy way to increase the variety and flavor of voices you hear in the city.
-
-## Windows 10
-
-Open Settings, choose Time & Language
-Choose Speech on the left side
-Choose "Add voices" under Manage voices
-
-By itselt that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.
-
-You probably have to logout/login before the extra voices are available.
 
 # Running it (Manual Install)
 
@@ -166,9 +177,8 @@ The way this works is a little bit awesome.  sidekick_setup.exe will install our
 
 I'm currently pleased as punch with the installer.  Kind of hell to get it all figured out but the results are quite nice.
 
-# Preloaded Data
-
-This is a tricky one.  I've only really been gathering processed audio for a little while.  I doubt the 161 characters I have represent more than a 5% of the game dialog and I'm at 61MB.  Each phrase is cached as a 100KB-ish mp3.  You can edit/delete them however you want.  If a cachefile exists it will be played instead of generating new audio.  I do like the idea of sharing the database with all the characters audio configs, especially if users can easily choose to share what they create.  I'm just not sure how best to go about it.  TBD.  I'll at least share my database as the default setup but tweaked to use free voices when it has enough customization to be worthwhile.
+To restore the dev environment after cutting a release, run
+    dirty.bat
 
 # Problems?
 
