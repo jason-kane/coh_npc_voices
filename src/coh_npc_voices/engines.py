@@ -72,7 +72,8 @@ class TTSEngine(tk.Frame):
 
     def say(self, message, effects, sink=None, *args, **kwargs):
         tts = self.get_tts()
-        log.info('tts: %s', tts)
+        log.info(f'{self}.say({message=}, {effects=}, {sink=}, {args=}, {kwargs=}')
+        log.info(f'Invoking voicebox.SimpleVoicebox({tts=}, {effects=}, {sink=})')
         vb = voicebox.SimpleVoicebox(
             tts=tts,
             effects=effects, 
@@ -414,6 +415,7 @@ class GoogleCloud(TTSEngine):
 
     @staticmethod
     def get_voice_names(language_code="en-US", gender=None):
+        log.info(f'get_voice_names({language_code=}, {gender=})')
         with models.Session(models.engine) as session:
             all_voices = list(
                 session.execute(
@@ -426,6 +428,14 @@ class GoogleCloud(TTSEngine):
             if all_voices:
                 log.info(f"{len(all_voices)} voices found in database")
                 if gender:
+                    out = []
+                    for result in all_voices:
+                        if result.ssml_gender.upper() == gender.upper():
+                            out.append(result.name)
+                        else:
+                            log.info(f'{gender} != {result.ssml_gender}')
+                    return out
+                
                     return [
                         voice.name
                         for voice in all_voices
@@ -469,14 +479,14 @@ class GoogleCloud(TTSEngine):
         kwargs = {
             "language_code": self.language_code.get(),
             "name": self.voice_name.get(),
-            "ssml_gender": self.ssml_gender.get(),
+            # "ssml_gender": self.ssml_gender.get(),
         }
 
         audio_config = texttospeech.AudioConfig(
             speaking_rate=float(self.rate.get()), pitch=float(self.pitch.get())
         )
 
-        log.debug("texttospeech.VoiceSelectionParams(%s)" % kwargs)
+        log.info("texttospeech.VoiceSelectionParams(%s)" % kwargs)
         voice_params = texttospeech.VoiceSelectionParams(
             **kwargs
             # texttospeech.SsmlVoiceGender.NEUTRAL

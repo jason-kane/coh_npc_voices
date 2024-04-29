@@ -7,7 +7,6 @@ import numpy as np
 import pedalboard
 import voicebox
 from sqlalchemy import select
-import settings
 
 log = logging.getLogger('__name__')
 

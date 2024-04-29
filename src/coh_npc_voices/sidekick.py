@@ -1,7 +1,6 @@
 """
 There is more awesome to be had.
 """
-import json
 import logging
 import multiprocessing
 from datetime import datetime, timedelta
@@ -62,7 +61,7 @@ class ChartFrame(tk.Frame):
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%H-%M'))
         
             self.category = "xp"
-            log.info(f'Retrieving {self.category} data')
+            log.debug(f'Retrieving {self.category} data')
             try:
                 with models.Session(models.engine) as session:
                     latest_event = session.scalars(
@@ -86,7 +85,7 @@ class ChartFrame(tk.Frame):
                 end_time = datetime.now()
 
             start_time = end_time - timedelta(minutes=120)
-            log.info(f'Graphing {self.category} gain between {start_time} and {end_time}')
+            log.debug(f'Graphing {self.category} gain between {start_time} and {end_time}')
 
             with models.Session(models.engine) as session:
                 try:
@@ -111,7 +110,7 @@ class ChartFrame(tk.Frame):
                     log.error(err)
                     raise
             
-            log.info(f'Found {len(samples)} samples')
+            log.debug(f'Found {len(samples)} samples')
 
             data_x = []
             data_y = []
@@ -121,7 +120,7 @@ class ChartFrame(tk.Frame):
             last_event = None
 
             for row in samples:
-                log.info(f'row: {row}')
+                # log.info(f'row: {row}')
                 datestring, xp_gain, inf_gain = row
                 event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
                 while last_event and (event_time - last_event) > timedelta(minutes=1, seconds=30):
@@ -156,7 +155,7 @@ class ChartFrame(tk.Frame):
                     data_y.append(inf_gain)
                     .00
 
-            log.info(f'Plotting {data_x}:{data_y}/{rolling_data_y}')
+            # log.info(f'Plotting {data_x}:{data_y}/{rolling_data_y}')
             try:
                 ax.plot(data_x, data_y, drawstyle="steps", label=f"{self.category}")
                 ax.plot(data_x, rolling_data_y, 'o--')
@@ -172,7 +171,7 @@ class ChartFrame(tk.Frame):
             )   
             canvas.draw()         
             canvas.get_tk_widget().pack(fill="both", expand=True)
-            log.info('graph constructed')      
+            log.debug('graph constructed')      
 
 class CharacterTab(tk.Frame):
     def __init__(self, parent, event_queue, *args, **kwargs):
@@ -237,29 +236,78 @@ class ConfigurationTab(tk.Frame):
         ##############
         ##############
         ##############
-        default_npc_engine = tk.Frame(
+        self.default_engine = tk.StringVar(
+            value=settings.get_config_key('DEFAULT_ENGINE', "Windows TTS")
+        )
+        self.default_engine.trace_add('write', self.change_default_engine)
+
+        self.default_engine_normalize = tk.BooleanVar(
+            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE_NORMALIZE', False)
+        )
+        self.default_engine_normalize.trace_add(
+            'write', self.change_default_engine_normalize
+        )
+
+        default_npc_engine = self.choose_engine(
+            "Default NPC Engine",
+            self.default_engine,
+            self.default_engine_normalize,
+        )
+        
+        default_npc_engine.pack(side="top", fill="x")
+        ####
+        ####
+        self.default_player_engine = tk.StringVar(
+            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE', "Windows TTS")
+        )
+        self.default_player_engine.trace_add('write', self.change_default_player_engine)
+
+        self.default_player_engine_normalize = tk.BooleanVar(
+            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE_NORMALIZE', False)
+        )
+        self.default_player_engine_normalize.trace_add(
+            'write', self.change_default_player_engine_normalize
+        )         
+
+        default_player_engine = self.choose_engine(
+            "Default Player Engine",
+            self.default_player_engine,
+            self.default_player_engine_normalize,
+        )
+        
+        default_player_engine.pack(side="top", fill="x")
+        
+    def choose_engine(self, prompt, engine_var, normalize_var):
+        frame = tk.Frame(
             self, 
             borderwidth=1, 
             highlightbackground="black", 
             relief="groove"
         )
         tk.Label(
-            default_npc_engine,
-            text="Default NPC Engine",
+            frame,
+            text=prompt,
             anchor="e",
-        ).pack(side="left", fill="x", expand=True)
-        
-        self.default_engine = tk.StringVar(
-            value=settings.get_config_key('DEFAULT_ENGINE', "Windows TTS")
-        )
-        self.default_engine.trace_add('write', self.change_default_engine)
+        ).grid(column=0, row=0)
 
-        default_engine_combo = ttk.Combobox(default_npc_engine, textvariable=self.default_engine)
+        default_engine_combo = ttk.Combobox(frame, textvariable=engine_var)
         default_engine_combo["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
         default_engine_combo["state"] = "readonly"
-        default_engine_combo.pack(side="left", fill="x", expand=True)
-        default_npc_engine.pack(side="top", fill="x")
-        
+        default_engine_combo.grid(column=1, row=0)
+
+        tk.Label(
+            frame,
+            text=f"Normalize {prompt}",
+            anchor="e",
+        ).grid(column=0, row=1)
+
+        tk.Checkbutton(
+            frame,
+            variable=normalize_var
+        ).grid(column=1, row=1)
+
+        return frame
+
     def change_elevenlabs_key(self, a, b, c):
         with open("eleven_labs.key", 'w') as h:
             h.write(self.elevenlabs_key.get())
@@ -275,6 +323,23 @@ class ConfigurationTab(tk.Frame):
             self.default_engine.get()
         )
 
+    def change_default_engine_normalize(self, a, b, c):
+        settings.set_config_key(
+            'DEFAULT_ENGINE_NORMALIZE',
+            self.default_engine_normalize.get()
+        )
+
+    def change_default_player_engine(self, a, b, c):
+        settings.set_config_key(
+            'DEFAULT_PLAYER_ENGINE',
+            self.default_player_engine.get()
+        )        
+
+    def change_default_player_engine_normalize(self, a, b, c):
+        settings.set_config_key(
+            'DEFAULT_PLAYER_ENGINE_NORMALIZE',
+            self.default_player_engine_normalize.get()
+        )
 
 
 EXIT = False
@@ -310,13 +375,13 @@ def main():
     configuration.pack(side="top", fill="both", expand=True)
     notebook.add(configuration, text="Configuration")
 
-    with models.Session(models.engine) as session:
-        first_character = session.query(models.Character).order_by(models.Character.name).first()
+    # with models.Session(models.engine) as session:
+    #     first_character = session.query(models.Character).order_by(models.Character.name).first()
 
-    if first_character:
-        selected_character = tk.StringVar(value=f"{first_character.cat_str()} {first_character.name}")
-    else:
-        selected_character = tk.StringVar()
+    #if first_character:
+    #    selected_character = tk.StringVar(value=f"{first_character.cat_str()} {first_character.name}")
+    #else:
+    selected_character = tk.StringVar()
 
     detailside = voice_editor.DetailSide(voices, selected_character)
     listside = voice_editor.ListSide(voices, detailside)

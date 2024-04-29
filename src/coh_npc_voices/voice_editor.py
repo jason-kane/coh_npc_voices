@@ -246,9 +246,14 @@ class EngineSelectAndConfigure(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
         engine_string = self.selected_engine.get()
         if engine_string in [None, ""]:
-            engine_string = settings.get_config_key(
-                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
-            )
+            if category == "player":
+                engine_string = settings.get_config_key(
+                    'DEFAULT_ENGINE', settings.DEFAULT_PLAYER_ENGINE
+                )
+            else:
+                engine_string = settings.get_config_key(
+                    'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+                )
 
         with models.Session(models.engine) as session:
             character = models.get_character(name, category, session)
@@ -281,9 +286,14 @@ class EngineSelectAndConfigure(tk.Frame):
             return None
        
         if character.engine in ["", None]:
-            self.selected_engine.set(settings.get_config_key(
-                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
-            ))
+            if category == "player":
+                self.selected_engine.set(settings.get_config_key(
+                    'DEFAULT_PLAYER_ENGINE', settings.DEFAULT_ENGINE
+                ))
+            else:
+                self.selected_engine.set(settings.get_config_key(
+                    'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+                ))
         else:
             self.selected_engine.set(character.engine)
             
@@ -609,6 +619,10 @@ class DetailSide(tk.Frame):
         # add each effect
         # set parameters for each effect
         log.info(f'DetailSide.load_character({raw_name})')
+        
+        # only .set() on selected_character when
+        # the value changes so we don't trigger
+        # the write callback more often than necessary
         raw_was = self.selected_character.get()
         if raw_was != raw_name:
             self.selected_character.set(raw_name)
@@ -769,7 +783,11 @@ class ListSide(tk.Frame):
 
         with models.Session(models.engine) as session:
             all_characters = session.scalars(
-                select(models.Character).order_by(models.Character.last_spoke)
+                select(
+                    models.Character
+                ).order_by(
+                    models.Character.last_spoke.desc()
+                )
             ).all()
 
         if all_characters:
@@ -946,41 +964,43 @@ class Chatter(tk.Frame):
             log.info('Attached')
 
 
-def main():
-    root = tk.Tk()
-    # root.iconbitmap("myIcon.ico")
-    root.geometry("640x480+200+200")
-    root.resizable(True, True)
-    root.title("Character Voice Editor")
+# def main():
+#     root = tk.Tk()
+#     # root.iconbitmap("myIcon.ico")
+#     root.geometry("640x480+200+200")
+#     root.resizable(True, True)
+#     root.title("Character Voice Editor")
 
-    chatter = Chatter(root, None)
-    chatter.pack(side="top", fill="x")
+#     chatter = Chatter(root, None)
+#     chatter.pack(side="top", fill="x")
 
-    editor = tk.Frame(root)
-    editor.pack(side="top", fill="both", expand=True)
+#     editor = tk.Frame(root)
+#     editor.pack(side="top", fill="both", expand=True)
 
-    cursor = db.get_cursor()
-    first_character = cursor.execute("select id, name, category from character order by name").fetchone()
-    cursor.close()
+#     cursor = db.get_cursor()
+    
+#     first_character = cursor.execute("select id, name, category from character order by name").fetchone()
+    
+#     cursor.close()
 
-    if first_character:
-        selected_character = tk.StringVar(value=f"{first_character[2]} {first_character[1]}")
-    else:
-        selected_character = tk.StringVar()
+#     if first_character:
+#         selected_character = tk.StringVar(value=f"{first_character[2]} {first_character[1]}")
+#     else:
+#         selected_character = tk.StringVar()
 
-    detailside = DetailSide(editor, selected_character)
-    listside = ListSide(editor, detailside)
+#     detailside = DetailSide(editor, selected_character)
+#     listside = ListSide(editor, detailside)
 
-    listside.pack(side="left", fill="x", expand=True)
-    detailside.pack(side="left", fill="x", expand=True)
+#     listside.pack(side="left", fill="x", expand=True)
+#     detailside.pack(side="left", fill="x", expand=True)
 
-    root.mainloop()
+#     root.mainloop()
 
 
-if __name__ == '__main__':
-    if sys.platform.startswith('win'):
-        multiprocessing.freeze_support()
-    main()
+# if __name__ == '__main__':
+#     if sys.platform.startswith('win'):
+#         multiprocessing.freeze_support()
+#     main()
 
 # TODO (eta: weeks)
 # ----
