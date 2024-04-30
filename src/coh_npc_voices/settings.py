@@ -58,3 +58,11 @@ def save_config(config):
 def get_config_key(key, default=None):
     config = get_config()
     return config.get(key, default)
+
+ALL_NPC = {}
+def get_npc_data(character_name):
+    global ALL_NPC
+    if not ALL_NPC:
+        with open("all_npcs.json", "r") as h:
+            ALL_NPC = json.loads(h.read())
+    return ALL_NPC.get(character_name)
