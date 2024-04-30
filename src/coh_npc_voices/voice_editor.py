@@ -786,7 +786,8 @@ class ListSide(tk.Frame):
                 select(
                     models.Character
                 ).order_by(
-                    models.Character.last_spoke.desc()
+                    models.Character.category,
+                    models.Character.last_spoke
                 )
             ).all()
 
