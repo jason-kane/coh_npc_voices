@@ -529,7 +529,6 @@ class AddEffect(tk.Frame):
         self.selected_effect.set(self.add_an_effect)
 
 
-
 class DetailSide(tk.Frame):
     """
     Primary frame for the "detail" side of the application.
@@ -748,6 +747,11 @@ class ListSide(tk.Frame):
         #wait, what?
         self.detailside.listside = self
 
+        self.list_filter = tk.StringVar(value="")
+        listfilter = tk.Entry(self, width=40, textvariable=self.list_filter)
+        listfilter.pack(side="top", fill=tk.X)
+        self.list_filter.trace_add('write', self.apply_list_filter)
+
         self.list_items = tk.Variable(value=[])
         self.refresh_character_list()
 
@@ -767,6 +771,9 @@ class ListSide(tk.Frame):
         self.listbox.select_set(0)
         self.listbox.bind("<<ListboxSelect>>", self.character_selected)
 
+    def apply_list_filter(self, a, b, c):
+        self.refresh_character_list()
+
     def character_selected(self, event=None):
         if len(self.listbox.curselection()) == 0:
             # we de-selected everything
@@ -779,7 +786,9 @@ class ListSide(tk.Frame):
         self.detailside.load_character(value)
 
     def refresh_character_list(self):
-        log.info('Refreshing Character list from the database...')
+        log.debug('Refreshing Character list from the database...')
+
+        filter_string = self.list_filter.get()
 
         with models.Session(models.engine) as session:
             all_characters = session.scalars(
@@ -790,6 +799,13 @@ class ListSide(tk.Frame):
                     models.Character.last_spoke
                 )
             ).all()
+
+            # yes, this could/should be baked into the query and that would be 
+            # more efficient
+            if filter_string not in [None, ""]:
+                all_characters = [
+                    character for character in all_characters if filter_string.upper() in character.name.upper()
+                ]
 
         if all_characters:
             self.list_items.set(
