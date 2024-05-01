@@ -1,7 +1,6 @@
-import enum
 from datetime import datetime
 import json
-from sqlalchemy import Enum, DateTime, ForeignKey, Integer, String, create_engine, orm, select, TIMESTAMP
+from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine, orm, select
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import Session
@@ -9,7 +8,6 @@ import logging
 import sys
 from typing import Optional
 from sqlalchemy.orm import Mapped
-from typing_extensions import Annotated
 import settings
 
 logging.basicConfig(
@@ -58,7 +56,7 @@ def category_str2int(instr):
         return -1
 
 def get_character(name, category, session=None):
-    log.info(f'get_character({name=}, {category=}, {session=})')
+    log.info(f'/-- models.get_character({name=}, {category=}, {session=})')
     try:
         category=int(category)
     except ValueError:
@@ -75,7 +73,7 @@ def get_character(name, category, session=None):
                 )
             )
     else:
-        log.debug('Using existing session')
+        log.debug('|- Using existing session')
         value = session.scalar(
             select(Character).where(
                 Character.name==name,
@@ -83,8 +81,46 @@ def get_character(name, category, session=None):
             )
         )
 
-    log.info(f'get_character() returning {value}')
+    if value is None:
+        log.info('|- Creating new character in database...')
+        # this is the first time we've gotten a message from this
+        # NPC, so they don't have a voice yet.  We will default to
+        # the windows voice because it is free and no voice effects.
+        with Session(engine) as session:
+            value = Character(
+                name=name,
+                engine=settings.get_config_key(
+                    'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+                ),
+                category=category,
+            )
+            session.add(value)
+            session.commit()
+            session.refresh(value)
+
+    log.info(f'\\-- get_character() returning {value}')
     return value
+
+
+def update_character_last_spoke(character, session=None):
+    if session:
+        character = session.execute(
+            select(Character).where(
+                Character.id == character.id
+            )
+        ).first()
+        character.last_up = datetime.datetime.now()
+        session.commit()
+    else:
+        with Session(engine) as session:
+            character = session.execute(
+                select(Character).where(
+                    Character.id == character.id
+                )
+            ).first()
+            character.last_up = datetime.datetime.now()
+            session.commit()
+        
 
 class Character(Base):
     __tablename__ = "character"

@@ -1,14 +1,13 @@
 import logging
 import os
 import re
-import datetime
 import effects
 import random
 import models
 import engines
 from pedalboard.io import AudioFile
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 from npc import PRESETS, GROUP_ALIASES, add_group_alias_stub
 import settings
 
@@ -27,6 +26,15 @@ class tkvar_ish:
 def apply_preset(character_name, character_category, preset_name, gender=None):
     preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
     
+    if gender is None:
+        # get gender for preset in most circumstances
+        npc_data = settings.get_npc_data(character_name)
+        if npc_data:
+            if npc_data["gender"] == "GENDER_MALE":
+                gender = "male"
+            elif npc_data["gender"] == "GENDER_FEMALE":
+                gender = "female"            
+
     if preset is None:
         log.info(f'No preset is available for {preset_name}')
         add_group_alias_stub(preset_name)
@@ -39,7 +47,17 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
             character_category,
             session=session
         )
-        character.engine = preset['engine']
+       
+        if character_category == 2:
+            default = settings.get_config_key('DEFAULT_PLAYER_ENGINE')
+        else:
+            default = settings.get_config_key('DEFAULT_ENGINE')
+
+        if preset['engine'] == 'any':
+            character.engine = default
+        else:
+            character.engine = preset['engine']
+
         session.commit()
         
         for model in ("BaseTTSConfig", "Effects"):
@@ -74,6 +92,7 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
                 if choice == "random":
                     if gender == "any":
                         gender = None
+                    
 
                     all_available_names = engines.get_engine(
                         character.engine
@@ -144,6 +163,7 @@ def create(character, message, cachefile):
     2. Render message based on that data
     3. persist as an mp3 in cachefile
     """
+    log.info(f'voice_builder.create({character=}, {message=}, {cachefile=})')
     with models.Session(models.engine) as session:
         voice_effects = session.scalars(
             select(models.Effects).where(
@@ -205,14 +225,6 @@ def create(character, message, cachefile):
     
     selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
     engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
-
-    with models.Session(models.engine) as session:
-        session.execute(
-            update(models.Character).values(
-                last_spoke=datetime.datetime.now()
-            )
-        )
-        session.commit()
 
     if save:
         with AudioFile(cachefile + ".wav") as input:

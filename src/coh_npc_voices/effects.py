@@ -7,7 +7,6 @@ import numpy as np
 import pedalboard
 import voicebox
 from sqlalchemy import select
-import settings
 
 log = logging.getLogger('__name__')
 
@@ -954,8 +953,8 @@ class Delay(EffectParameterEditor):
             default=0.5,
             from_=-0.1,
             to=1,
-            digits=2,
-            resolution=0.1
+            digits=3,
+            resolution=0.01
         ).pack(side='top', fill='x', expand=True)
 
         LScale(

@@ -72,7 +72,8 @@ class TTSEngine(tk.Frame):
 
     def say(self, message, effects, sink=None, *args, **kwargs):
         tts = self.get_tts()
-        log.info('tts: %s', tts)
+        log.info(f'{self}.say({message=}, {effects=}, {sink=}, {args=}, {kwargs=}')
+        log.info(f'Invoking voicebox.SimpleVoicebox({tts=}, {effects=}, {sink=})')
         vb = voicebox.SimpleVoicebox(
             tts=tts,
             effects=effects, 
@@ -299,14 +300,24 @@ class GoogleCloud(TTSEngine):
 
         # with defaults
         self.language_code = tk.StringVar(value="en-US")
-        self.voice_name = tk.StringVar(value="en-US-Casual-K")
+        self.voice_name = tk.StringVar(value="")
+        # ssml_gender handling is sloppy
         self.ssml_gender = tk.StringVar(value="MALE")
         self.rate = tk.DoubleVar(value=1.0)
         self.pitch = tk.DoubleVar(value=0.0)
 
         self.parameters = set(("language_code", "voice_name", "rate", "pitch"))
 
-        self.load_character(self.selected_character.get())
+        character = self.load_character(self.selected_character.get())
+
+        # what is this characters gender (if it has one)?
+        npc_data = settings.get_npc_data(character.name)
+        gender = None
+        if npc_data:
+            if npc_data["gender"] == "GENDER_MALE":
+                gender = "male"
+            elif npc_data["gender"] == "GENDER_FEMALE":
+                gender = "female"
 
         language_frame = tk.Frame(self)
         tk.Label(language_frame, text="Language Code", anchor="e").pack(
@@ -333,11 +344,15 @@ class GoogleCloud(TTSEngine):
             voice_frame,
             textvariable=self.voice_name,
         )
-        all_voices = self.get_voice_names(language_code=self.language_code.get())
+        all_voices = self.get_voice_names(
+            language_code=self.language_code.get(),
+            gender=gender
+        )
         voice_combo["values"] = all_voices
         voice_combo["state"] = "readonly"
         voice_combo.pack(side="left", fill="x", expand=True)
         voice_frame.pack(side="top", fill="x", expand=True)
+        self.voice_name.set(value=all_voices[0])
 
         self.voice_name.trace_add("write", self.change_voice_name)
 
@@ -414,6 +429,7 @@ class GoogleCloud(TTSEngine):
 
     @staticmethod
     def get_voice_names(language_code="en-US", gender=None):
+        log.info(f'get_voice_names({language_code=}, {gender=})')
         with models.Session(models.engine) as session:
             all_voices = list(
                 session.execute(
@@ -426,6 +442,14 @@ class GoogleCloud(TTSEngine):
             if all_voices:
                 log.info(f"{len(all_voices)} voices found in database")
                 if gender:
+                    out = []
+                    for result in all_voices:
+                        if result.ssml_gender.upper() == gender.upper():
+                            out.append(result.name)
+                        else:
+                            log.info(f'{gender} != {result.ssml_gender}')
+                    return out
+                
                     return [
                         voice.name
                         for voice in all_voices
@@ -469,14 +493,14 @@ class GoogleCloud(TTSEngine):
         kwargs = {
             "language_code": self.language_code.get(),
             "name": self.voice_name.get(),
-            "ssml_gender": self.ssml_gender.get(),
+            # "ssml_gender": self.ssml_gender.get(),
         }
 
         audio_config = texttospeech.AudioConfig(
             speaking_rate=float(self.rate.get()), pitch=float(self.pitch.get())
         )
 
-        log.debug("texttospeech.VoiceSelectionParams(%s)" % kwargs)
+        log.info("texttospeech.VoiceSelectionParams(%s)" % kwargs)
         voice_params = texttospeech.VoiceSelectionParams(
             **kwargs
             # texttospeech.SsmlVoiceGender.NEUTRAL
@@ -521,7 +545,18 @@ class ElevenLabs(TTSEngine):
         self.voice_name = tk.StringVar(value="")
 
         self.parameters = ("voice_name",)
-        self.load_character(self.selected_character.get())
+        raw_name = self.selected_character.get()
+
+        character = self.load_character(raw_name)
+
+        # what is this characters gender (if it has one)?
+        npc_data = settings.get_npc_data(character.name)
+        gender = None
+        if npc_data:
+            if npc_data["gender"] == "GENDER_MALE":
+                gender = "male"
+            elif npc_data["gender"] == "GENDER_FEMALE":
+                gender = "female"
 
         voice_frame = tk.Frame(self)
         tk.Label(voice_frame, text="Voice", anchor="e").pack(
@@ -532,12 +567,13 @@ class ElevenLabs(TTSEngine):
             voice_frame,
             textvariable=self.voice_name,
         )
-        all_voices = ElevenLabs.get_voice_names()
+        all_voices = ElevenLabs.get_voice_names(gender=gender)
         log.info(f"Assinging all_voices to {all_voices}")
         voice_combo["values"] = all_voices
         voice_combo["state"] = "readonly"
         voice_combo.pack(side="left", fill="x", expand=True)
         voice_frame.pack(side="top", fill="x", expand=True)
+        self.voice_name.set(value=all_voices[0])
 
         self.voice_name.trace_add("write", self.change_voice_name)
 
@@ -578,53 +614,67 @@ class ElevenLabs(TTSEngine):
     @staticmethod
     def get_voice_names(gender=None):
         # cache these to the database, this is crude
-        return [
+        # I haven't even listened to all these, this is best guess
+        # from names.  These are the current free-tier voices:
+        FEMALE = [
             "Rachel : 21m00Tcm4TlvDq8ikWAM",
+            "Sarah : EXAVITQu4vr4xnSDxMaL",
+            "Emily : LcfcDJNUP1GQjkzn1xUU",
+            "Elli : MF3mGyEYCl7XYWbV9V6O",
+            "Dorothy : ThT5KcBeYPX3keUQqHPh",
+            "Charlotte : XB0fDUnXU5powFXDhCwa",
+            "Alice : Xb7hH8MSUJpSbSDYk0k2",
+            "Matilda : XrExE9yKIg1WjnnlVkGX",
+            "Gigi : jBpfuIE2acCO8z3wKNLl",
+            "Freya : jsCqWAovK2LkecY7zXl4",
+            "Grace : oWAxZDx7w5VEj9dCyTzz",
+            "Lily : pFZP5JQG7iQjIQuC4Bku",
+            "Serena : pMsXgVXv3BLzUgSXRplE",
+            "Nicole : piTKgcLEGmPE4e6mEKli",
+            "Glinda : z9fAnlkpzviPz146aGWa",
+            "Mimi : zrHiDhphv9ZnVXBqCLjz",
+        ]
+        MALE = [
             "Drew : 29vD33N1CtxCmqQRPOHJ",
             "Clyde : 2EiwWnXFnvU5JabPnv8n",
             "Paul : 5Q0t7uMcjvnagumLfvZi",
             "Domi : AZnzlk1XvdvUeBnXmlld",
             "Dave : CYw3kZ02Hs0563khs1Fj",
             "Fin : D38z5RcWu1voky8WS1ja",
-            "Sarah : EXAVITQu4vr4xnSDxMaL",
             "Antoni : ErXwobaYiN019PkySvjV",
             "Thomas : GBv7mTt0atIp3Br8iCZE",
             "Charlie : IKne3meq5aSn9XLyUdCD",
             "George : JBFqnCBsd6RMkjVDRZzb",
-            "Emily : LcfcDJNUP1GQjkzn1xUU",
-            "Elli : MF3mGyEYCl7XYWbV9V6O",
             "Callum : N2lVS1w4EtoT3dr4eOWO",
             "Patrick : ODq5zmih8GrVes37Dizd",
             "Harry : SOYHLrjzK2X1ezoPC6cr",
             "Liam : TX3LPaxmHKxFdv7VOQHJ",
-            "Dorothy : ThT5KcBeYPX3keUQqHPh",
             "Josh : TxGEqnHWrfWFTfGW9XjX",
             "Arnold : VR6AewLTigWG4xSOukaG",
-            "Charlotte : XB0fDUnXU5powFXDhCwa",
-            "Alice : Xb7hH8MSUJpSbSDYk0k2",
-            "Matilda : XrExE9yKIg1WjnnlVkGX",
             "James : ZQe5CZNOzWyzPSCn5a3c",
             "Joseph : Zlb1dXrM653N07WRdFW3",
             "Jeremy : bVMeCyTHy58xNoL34h3p",
             "Michael : flq6f7yk4E4fJM5XTYuZ",
             "Ethan : g5CIjZEefAph4nQFvHAz",
             "Chris : iP95p4xoKVk53GoZ742B",
-            "Gigi : jBpfuIE2acCO8z3wKNLl",
-            "Freya : jsCqWAovK2LkecY7zXl4",
             "Brian : nPczCjzI2devNBz1zQrb",
-            "Grace : oWAxZDx7w5VEj9dCyTzz",
             "Daniel : onwK4e9ZLuTAKqWW03F9",
-            "Lily : pFZP5JQG7iQjIQuC4Bku",
-            "Serena : pMsXgVXv3BLzUgSXRplE",
             "Adam : pNInz6obpgDQGcFmaJgB",
-            "Nicole : piTKgcLEGmPE4e6mEKli",
             "Bill : pqHfZKP75CvOlQylNhV4",
             "Jessie : t0jbNlBVZ17f02VDIeMI",
             "Sam : yoZ06aMxZJJ28mfd3POQ",
-            "Glinda : z9fAnlkpzviPz146aGWa",
             "Giovanni : zcAOhNBS3c14rBihAFp1",
-            "Mimi : zrHiDhphv9ZnVXBqCLjz",
-        ]
+        ] 
+        if gender is None:
+            return FEMALE + MALE
+        elif gender.upper() == "FEMALE":
+            return FEMALE
+        elif gender.upper() == "MALE":
+            return MALE
+        else:
+            return FEMALE + MALE
+                    
+        #########
         client = get_elevenlabs_client()
         all_raw_voices = client.voices.get_all()
 
@@ -639,6 +689,7 @@ class ElevenLabs(TTSEngine):
 
                 else:
                     log.info("%s?=%s" % (as_gender(voice.labels.get("gender")), gender))
+
         log.info(all_voices)
         return all_voices
 

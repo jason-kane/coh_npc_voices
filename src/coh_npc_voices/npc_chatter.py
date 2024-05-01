@@ -72,7 +72,7 @@ class ParallelTTS(threading.Thread):
             ]:
                 try:
                     os.mkdir(dir)
-                except OSError as error:
+                except OSError:
                     # the directory already exists.  This is not a problem.
                     pass
 
@@ -95,28 +95,9 @@ class ParallelTTS(threading.Thread):
 
         voicebox.sinks.SoundDevice().play(audio)
 
-    def makefile(self, cachefile, name, category, message):
+    def makefile(self, cachefile, character, message):
         log.info(f"Cache Miss -- {cachefile} not found")
         # ok, what kind of voice do we want for this NPC?
-
-        character = models.get_character(name, category)
-
-        if character is None:
-            # this is the first time we've gotten a message from this
-            # NPC, so they don't have a voice yet.  We will default to
-            # the windows voice because it is free and no voice effects.
-            with models.Session(models.engine) as session:
-                character = models.Character(
-                    name=name,
-                    engine=settings.get_config_key(
-                        'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
-                    ),
-                    category=models.category_str2int(category),
-                )
-                session.add(character)
-                session.commit()
-                session.refresh(character)
-
         voice_builder.create(character, message, cachefile)
 
     def pluck_and_speak(self, name, message, category):
@@ -135,14 +116,18 @@ class ParallelTTS(threading.Thread):
 
         try:
             os.mkdir(os.path.join("clip_library", category, clean_name))
-        except OSError as error:
+        except OSError:
             # the directory already exists.  This is not a problem.
             pass
+
+        character = models.get_character(name, category)
 
         if os.path.exists(cachefile):
             self.playfile(cachefile)
         else:
-            self.makefile(cachefile, name, category, message)
+            self.makefile(cachefile, character, message)
+
+        models.update_character_last_spoke(character)
 
         self.speaking_queue.task_done()
 
@@ -180,7 +165,7 @@ class TightTTS(threading.Thread):
             ]:
                 try:
                     os.mkdir(dir)
-                except OSError as error:
+                except OSError:
                     # the directory already exists.  This is not a problem.
                     pass
 
@@ -222,7 +207,7 @@ class TightTTS(threading.Thread):
 
             try:
                 os.mkdir(os.path.join("clip_library", category, clean_name))
-            except OSError as error:
+            except OSError:
                 # the directory already exists.  This is not a problem.
                 pass
 
@@ -256,19 +241,59 @@ class TightTTS(threading.Thread):
                             self.all_npcs = json.loads(h.read())
 
                     found = self.all_npcs.get(name)
-
+                    normalize = False
                     with models.Session(models.engine) as session:
+                        if category == "player":
+                            default = settings.get_config_key(
+                                'DEFAULT_PLAYER_ENGINE', settings.DEFAULT_ENGINE
+                            )
+                            normalize = settings.get_config_key(
+                                'DEFAULT_PLAYER_ENGINE_NORMALIZE', settings.DEFAULT_ENGINE
+                            )
+                        else:
+                            default = settings.get_config_key(
+                                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+                            )
+                            normalize = settings.get_config_key(
+                                'DEFAULT_ENGINE_NORMALIZE', settings.DEFAULT_ENGINE
+                            )
+
                         character = models.Character(
                             name=name,
-                            engine=settings.get_config_key(
-                                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
-                            ),
+                            engine=default,
                             category=models.category_str2int(category),
                         )
 
                         session.add(character)
                         session.commit()
                         session.refresh(character)
+
+                        if normalize:
+                            # we want to automatically apply
+                            # the "normalize" effect to 
+                            # give us a stable baseline volume for
+                            # voices.
+                            effect = models.Effects(
+                                character_id=character.id,
+                                effect_name="Normalize"
+                            )
+                            session.add(effect)
+                            session.commit()
+                            session.refresh(effect)
+
+                            setting = models.EffectSetting(
+                                effect_id=effect.id,
+                                key='max_amplitude',
+                                value='1.0'
+                            )
+                            session.add(setting)
+
+                            setting = models.EffectSetting(
+                                effect_id=effect.id,
+                                key='remove_dc_offset',
+                                value='True'
+                            )
+                            session.add(setting)
 
                     if found:
                         # make a better voice default based on the
@@ -313,7 +338,10 @@ class LogStream:
         self.caption_speaker = None
 
         print(f"Tailing {self.filename}...")
-        self.handle = open(os.path.join(logdir, self.filename))
+        self.handle = open(
+            os.path.join(logdir, self.filename),
+            encoding="utf-8"
+        )
 
         self.speaking_queue = speaking_queue
         self.event_queue = event_queue
@@ -467,13 +495,13 @@ class LogStream:
                         except ValueError:
                             xp_gain = None
 
-                        try:
-                            did_i_defeat_it = previous.index("defeated")
-                            foe = " ".join(previous[did_i_defeat_it:])
-                        except ValueError:
-                            # no, someone else did.  you just got some
-                            # points for it.  Lazybones.
-                            foe = None
+                        # try:
+                        #     did_i_defeat_it = previous.index("defeated")
+                        #     foe = " ".join(previous[did_i_defeat_it:])
+                        # except ValueError:
+                        #     # no, someone else did.  you just got some
+                        #     # points for it.  Lazybones.
+                        #     foe = None
 
                         log.info(f"Awarding xp: {xp_gain} and inf: {inf_gain}")
                         with models.Session(models.engine) as session:
@@ -496,7 +524,7 @@ class LogStream:
                     self.event_queue.put(("SET_CHARACTER", self.hero.name))
 
                 elif lstring[-2:] == ["the", "team"]:
-                    name = lstring[0:-4]
+                    name = " ".join(lstring[0:-4])
                     action = lstring[-3]  # joined or quit
                     self.speaking_queue.put((None, f"Player {name} has {action} the team", "system"))
 

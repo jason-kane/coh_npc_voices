@@ -1,6 +1,6 @@
 {
     "Random Any": {
-        "engine": "Windows TTS",
+        "engine": "any",
         "BaseTTSConfig": {
             "voice_name": [
                 "random",
@@ -10,7 +10,7 @@
         }
     },
     "Random Female": {
-        "engine": "Windows TTS",
+        "engine": "any",
         "BaseTTSConfig": {
             "voice_name": [
                 "random",
@@ -20,7 +20,7 @@
         }
     },
     "Random Male": {
-        "engine": "Windows TTS",
+        "engine": "any",
         "BaseTTSConfig": {
             "voice_name": [
                 "random",
@@ -30,7 +30,7 @@
         }
     },
     "Clockwork": {
-        "engine": "Windows TTS",
+        "engine": "any",
         "BaseTTSConfig": {
             "voice_name": [
                 "random",
@@ -59,7 +59,7 @@
         }
     },
     "Vahzilok": {
-        "engine": "Windows TTS",
+        "engine": "any",
         "BaseTTSConfig": {
             "voice_name": [
                 "random",
@@ -77,7 +77,7 @@
         }
     },
     "Circle of Thorns": {
-        "engine": "Windows TTS",
+        "engine": "any",
         "BaseTTSConfig": {
             "voice_name": [
                 "random",
