@@ -28,6 +28,25 @@ logging.basicConfig(
 
 log = logging.getLogger("__name__")
 
+if settings.get_config_key('ENABLE_COQUI', False):
+    import torch
+    from TTS.api import TTS
+
+    @dataclass
+    class Coqui(voicebox.tts.tts.TTS):
+        model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"
+
+        def get_speech(self, text: StrOrSSML) -> Audio:
+            log.info(f"Saying {text!r}")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            tts = TTS(model_name=self.model_name).to(device)
+            
+            with tempfile.NamedTemporaryFile() as tmp:
+                # just need the safe filename
+                tmp.close()
+                tts.tts_to_file(text=text, file_path=tmp.name)
+                audio = voicebox.tts.utils.get_audio_from_wav_file(tmp.name)
+            return audio
 
 @dataclass
 class WindowsSapi(voicebox.tts.tts.TTS):
@@ -181,6 +200,50 @@ class TTSEngine(tk.Frame):
                     session.add(new_config_setting)
 
             session.commit()
+
+
+class CoquiTTS(TTSEngine):
+    cosmetic = "Coqui TTS"
+
+    def __init__(self, parent, selected_character, *args, **kwargs):
+        super().__init__(parent, selected_character, *args, **kwargs)
+        self.selected_character = selected_character
+        self.model_name = tk.StringVar()
+        
+        self.parameters = set(("model_name", ))
+        self.load_character(self.selected_character.get())
+
+        voice_frame = tk.Frame(self)
+        tk.Label(voice_frame, text="Model name", anchor="e").pack(
+            side="left", fill="x", expand=True
+        )
+
+        voice_combo = ttk.Combobox(
+            voice_frame,
+            textvariable=self.model_name,
+        )
+        all_models = self.get_model_names()
+        voice_combo["values"] = all_models
+        voice_combo["state"] = "readonly"
+        voice_combo.pack(side="left", fill="x", expand=True)
+
+        self.model_name.trace_add("write", self.change_model_name)
+        voice_frame.pack(side="top", fill="x", expand=True)
+
+    def change_model_name(self, a, b, c):
+        # pull the chosen voice name out of variable linked to the widget
+        model_name = self.model_name.get()
+
+        if getattr(self, "model_name", "") != model_name:
+            log.warning(f"saving change of model_name to {model_name}")
+            self.save_character(self.selected_character.get())
+
+    def get_tts(self):
+        return Coqui(model_name=self.model_name.get()) 
+
+    @staticmethod
+    def get_model_names():
+        return TTS().list_models()
 
 
 class WindowsTTS(TTSEngine):
@@ -820,5 +883,7 @@ def get_engine(engine_name):
             print(f"found {engine_cls.cosmetic}")
             return engine_cls
 
-
-ENGINE_LIST = [WindowsTTS, GoogleCloud, ElevenLabs]  # AmazonPolly ]
+if settings.get_config_key('ENABLE_COQUI', False):
+    ENGINE_LIST = [WindowsTTS, GoogleCloud, ElevenLabs, Coqui]  # AmazonPolly ]
+else:
+    ENGINE_LIST = [WindowsTTS, GoogleCloud, ElevenLabs]

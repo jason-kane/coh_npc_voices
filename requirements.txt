@@ -99,3 +99,5 @@ voicebox-tts==0.0.7
 wcwidth==0.2.13
 websockets==12.0
 zipp==3.18.1
+coqui-tts
+torch
