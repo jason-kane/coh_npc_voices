@@ -210,13 +210,12 @@ class CharacterTab(tk.Frame):
     # character.name.trace_add('write', set_hero)
   
 class ConfigurationTab(tk.Frame):
-    def __init__(self, parent, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
+    tkdict = {}
 
+    def elevenlabs_token_frame(self):
         elevenlabs = tk.Frame(
             self, 
             borderwidth=1, 
-            highlightbackground="black", 
             relief="groove"
         )
         tk.Label(
@@ -232,57 +231,131 @@ class ConfigurationTab(tk.Frame):
             textvariable=self.elevenlabs_key,
             show="*"
         ).pack(side="left", fill="x", expand=True)
-        elevenlabs.pack(side="top", fill="x")
-        ##############
-        ##############
-        ##############
-        self.default_engine = tk.StringVar(
-            value=settings.get_config_key('DEFAULT_ENGINE', "Windows TTS")
-        )
-        self.default_engine.trace_add('write', self.change_default_engine)
+        return elevenlabs
 
-        self.default_engine_normalize = tk.BooleanVar(
-            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE_NORMALIZE', False)
-        )
-        self.default_engine_normalize.trace_add(
-            'write', self.change_default_engine_normalize
-        )
+    def polymorph(self, a, b, c):
+        """
+        Given a config change through the UI, persist it.  Easy.
+        """
+        log.warning('Polymorph is a dangerous and powerful thing')
+        for key in self.tkdict:
+            value = self.tkdict[key].get()
+            # settings is smart enough to only write to disk when there is
+            # a change so this is much better than worst case.
+            settings.set_config_key(key, value)
+        return
 
-        default_npc_engine = self.choose_engine(
-            "Default NPC Engine",
-            self.default_engine,
-            self.default_engine_normalize,
-        )
-        
-        default_npc_engine.pack(side="top", fill="x")
-        ####
-        ####
-        self.default_player_engine = tk.StringVar(
-            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE', "Windows TTS")
-        )
-        self.default_player_engine.trace_add('write', self.change_default_player_engine)
+    def get_tkvar(self, tkvarClass, category, system, tag):
+        """
+        There is a tkvarClass instance located at category/system/tag.
+        Instantiate it, give it the right value, hand it back.
+        """
+        key = f'{category}_{system}_{tag}'
+        tkvar = self.tkdict.get(key)
+        if tkvar is None:
+            tkvar = tkvarClass(
+                value=settings.get_config_key(key, False)
+            )
+            tkvar.trace_add(
+                'write', self.polymorph
+            )
+            self.tkdict[key] = tkvar
 
-        self.default_player_engine_normalize = tk.BooleanVar(
-            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE_NORMALIZE', False)
-        )
-        self.default_player_engine_normalize.trace_add(
-            'write', self.change_default_player_engine_normalize
-        )         
+        return tkvar
 
-        default_player_engine = self.choose_engine(
-            "Default Player Engine",
-            self.default_player_engine,
-            self.default_player_engine_normalize,
-        )
-        
-        default_player_engine.pack(side="top", fill="x")
-        
-    def choose_engine(self, prompt, engine_var, normalize_var):
-        frame = tk.Frame(
-            self, 
+    def normalize_prompt_frame(self, parent, category):
+        """
+        frame with ui for the normalize checkbox
+        """
+        frame = ttk.Frame(parent)
+        tk.Label(
+            frame,
+            text="Normalize all voices",
+            anchor="e",
+        ).grid(column=0, row=1)
+
+        tk.Checkbutton(
+            frame,
+            variable=self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
+        ).grid(column=1, row=1)
+        return frame
+              
+    def engine_priorities_frame(self, category):
+        """
+        the whole config frame for a particular category of entity within the game.
+        npc/player/system
+        """
+        frame = ttk.Frame(
+            self,
             borderwidth=1, 
-            highlightbackground="black", 
             relief="groove"
+        )
+
+        tk.Label(
+            frame,
+            text=f"{category}",
+            anchor="e",
+        ).pack(side="top")
+
+        primary_engine = self.choose_engine(
+            frame,
+            "Primary Engine",
+            self.get_tkvar(tk.StringVar, category, 'engine', 'primary')
+        )
+        primary_engine.pack(side="top")
+
+        secondary_engine = self.choose_engine(
+            frame,
+            "Secondary Engine",
+            self.get_tkvar(tk.StringVar, category, 'engine', 'secondary')
+        )
+        secondary_engine.pack(side="top")
+
+        # tkvar = self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
+        self.normalize_prompt_frame(frame, category).pack(side="top")
+
+        return frame
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self.elevenlabs_token_frame().pack(side="top", fill="x")
+       
+        self.engine_priorities_frame("npc").pack(side="top", fill="x")
+        self.engine_priorities_frame("player").pack(side="top", fill="x")
+        self.engine_priorities_frame("system").pack(side="top", fill="x")
+
+        # self.default_engine = tk.StringVar(
+        #     value=settings.get_config_key('DEFAULT_ENGINE', "Windows TTS")
+        # )
+        # self.default_engine.trace_add('write', self.change_default_engine)
+
+        # self.default_engine_normalize = tk.BooleanVar(
+        #     value=settings.get_config_key('DEFAULT_PLAYER_ENGINE_NORMALIZE', False)
+        # )
+        # self.default_engine_normalize.trace_add(
+        #     'write', self.change_default_engine_normalize
+        # )
+
+        # ####
+        # ####
+        # self.default_player_engine = tk.StringVar(
+        #     value=settings.get_config_key('DEFAULT_PLAYER_ENGINE', "Windows TTS")
+        # )
+        # self.default_player_engine.trace_add('write', self.change_default_player_engine)
+
+
+        # default_player_engine = self.choose_engine(
+        #     "Default Player Engine",
+        #     self.default_player_engine,
+        #     self.default_player_engine_normalize,
+        # )
+        
+        # default_player_engine.pack(side="top", fill="x")
+        
+    def choose_engine(self, parent, prompt, engine_var):
+        frame = tk.Frame(
+            parent, 
         )
         tk.Label(
             frame,
@@ -295,16 +368,16 @@ class ConfigurationTab(tk.Frame):
         default_engine_combo["state"] = "readonly"
         default_engine_combo.grid(column=1, row=0)
 
-        tk.Label(
-            frame,
-            text=f"Normalize {prompt}",
-            anchor="e",
-        ).grid(column=0, row=1)
+        # tk.Label(
+        #     frame,
+        #     text=f"Normalize {prompt}",
+        #     anchor="e",
+        # ).grid(column=0, row=1)
 
-        tk.Checkbutton(
-            frame,
-            variable=normalize_var
-        ).grid(column=1, row=1)
+        # tk.Checkbutton(
+        #     frame,
+        #     variable=normalize_var
+        # ).grid(column=1, row=1)
 
         return frame
 

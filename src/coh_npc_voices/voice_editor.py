@@ -4,22 +4,27 @@ import logging
 import multiprocessing
 import os
 import queue
+from scipy import signal
 import sys
 import tkinter as tk
+from scipy.io import wavfile
 from tkinter import font, ttk
 
 import db
 import effects
 import engines
+import matplotlib.pyplot as plt
 import models
-
-import voice_builder
 import npc_chatter
+import numpy as np
+import settings
+import voice_builder
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 from npc import PRESETS
 from pedalboard.io import AudioFile
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, desc, select, update
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
-import settings
 
 logging.basicConfig(
     level=settings.LOGLEVEL,
@@ -34,6 +39,8 @@ class ChoosePhrase(tk.Frame):
     ALL_PHRASES = "< Rebuild all phrases >"
     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+        topline = tk.Frame(self)
+        
         self.selected_character = selected_character
         self.detailside = detailside
 
@@ -41,7 +48,7 @@ class ChoosePhrase(tk.Frame):
             value="<Choose or type a phrase>"
         )
         self.options = ttk.Combobox(
-            self, 
+            topline, 
             textvariable=self.chosen_phrase
         )
         self.options["values"] = []
@@ -49,8 +56,11 @@ class ChoosePhrase(tk.Frame):
         self.populate_phrases()
         self.options.pack(side="left", fill="x", expand=True)
 
-        play_btn = tk.Button(self, text="Play", command=self.say_it)
+        play_btn = tk.Button(topline, text="Play", command=self.say_it)
         play_btn.pack(side="left")
+        topline.pack(side="top", expand=True, fill="x")
+
+        self.visualize_wav = None
 
     def populate_phrases(self):
         raw_name = self.selected_character.get()
@@ -85,11 +95,95 @@ class ChoosePhrase(tk.Frame):
         else:
             self.chosen_phrase.set(
                 f'I have no record of what {raw_name} says.')
+            
         self.options["values"] = [
             p.text for p in character_phrases
         ] + [ self.ALL_PHRASES ]
 
+        if self.visualize_wav:
+            self.fig.clear()
+            self.canvas._tkcanvas.pack_forget()
+            self.visualize_wav = None
+
+    def show_wave(self, cachefile):
+        """
+        Visualize a wav file
+
+        # I know, not very efficient to just jam this in here
+        # https://learnpython.com/blog/plot-waveform-in-python/
+        # https://matplotlib.org/3.1.0/gallery/user_interfaces/embedding_in_tk_sgskip.html        
+        """
+        sampling_rate, data = wavfile.read(cachefile)
+        # frequencies, times, spectrogram = signal.spectrogram(data, sampling_rate)
+
+            # sample_freq = wav_obj.getframerate()
+            # n_samples = wav_obj.getnframes()
+            # duration = n_samples/sample_freq
+            # channels = wav_obj.getnchannels()
+
+            # signal_wave = wav_obj.readframes(n_samples)
+            # signal_array = np.frombuffer(signal_wave, dtype=np.int16)
+            
+            # if channels == 2:
+            #     l_channel = signal_array[0::2]
+            #     r_channel = signal_array[1::2]         
+
+            # times = np.linspace(0, duration, num=n_samples)
+
+        if self.visualize_wav is None:
+            # our widget hasn't been rendered.  Do be a sweetie and take
+            # care of that for me.
+            self.visualize_wav = ttk.Frame(self, padding = 8)
+
+            self.fig = Figure(
+                figsize=(3, 2), # (width, height) figsize in inches (not kidding)
+                dpi=100, # but we get dpi too so... sane?
+                layout='constrained'
+            )  
+            #self.fig.subplots_adjust(bottom=0, right=0, left=0, top=0, wspace=0.10)
+            self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
+            # self.plt.tick_params('both', direction='in')
+
+            self.spec = self.fig.add_subplot(212)
+            self.canvas = FigureCanvasTkAgg(self.fig, self.visualize_wav)
+            self.canvas._tkcanvas.pack(fill=tk.BOTH, expand=1)
+        else:
+            # clears the entire current figure with all its axes
+            self.fig.clear()
+
+            self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
+            self.spec = self.fig.add_subplot(212)
+            # canvas = FigureCanvasTkAgg(self.fig, self.visualize_wav)
+            # canvas._tkcanvas.pack(fill=tk.BOTH, expand=1)
+
+        # if channels == 1:
+        self.plt.plot(data)
+        # self.spec.plot(np.log(spectrogram), aspect="auto", cmap="rainbox", origin="lower")
+        self.spec.specgram(data, Fs=sampling_rate)
+        self.canvas.draw_idle()
+
+        # elif channels == 2:
+        #     self.plt.plot(times, l_channel, label="Left Channel")
+        #     self.plt.plot(times, r_channel, label="Right Channel")
+
+        # self.plt.set_xlim(0, duration)
+        self.visualize_wav.pack(side='top', fill=tk.BOTH, expand=1)
+
+            # plt.figure(figsize=(15, 5))
+            # plt.specgram(l_channel, Fs=sample_freq, vmin=-20, vmax=50)
+            
+            # plt.title('Left Channel')
+            # plt.ylabel('Frequency (Hz)')
+            # plt.xlabel('Time (s)')
+            # plt.xlim(0, duration)
+            # plt.colorbar()
+            # plt.show()               
+
     def say_it(self):
+        """
+        Speak aloud whatever is in the chosen_phrase tk.Variable, using whatever
+        TTS engine is selected.
+        """
         message = self.chosen_phrase.get()
 
         log.debug(f"Speak: {message}")
@@ -102,6 +196,7 @@ class ChoosePhrase(tk.Frame):
             e.get_effect() for e in self.detailside.effect_list.effects
         ]
 
+        # the currently selected character entry on the listside.
         raw_name = self.selected_character.get()
         if not raw_name:
             log.warning('Name is required')
@@ -110,8 +205,11 @@ class ChoosePhrase(tk.Frame):
         category, name = raw_name.split(maxsplit=1)
 
         with models.Session(models.engine) as session:
+            # it should be get_or_create_character()
             character = models.get_character(name, category, session)
 
+            # every phrase this character has ever said previously.  These make it
+            # easy to tune the voice with the same dialog.
             all_phrases = [ 
                 n.text for n in session.scalars(
                     select(models.Phrases).where(
@@ -121,11 +219,14 @@ class ChoosePhrase(tk.Frame):
             ]
 
         if message == self.ALL_PHRASES:
+            # we want to re-speak _every_ phrase, one at a time to populate the 
+            # entire disk cache with the current voice..
             message = self.options["values"]
         else:
             message = [ message ]
 
         for msg in message:
+            # skip the all_phrases placeholder if we see it.
             if msg == self.ALL_PHRASES:
                 continue
 
@@ -150,7 +251,20 @@ class ChoosePhrase(tk.Frame):
                 log.info(f'effect_list: {effect_list}')
                 log.info(f"Creating ttsengine for {self.selected_character.get()}")
                 # None because we aren't attaching any widgets
-                ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+                try:
+                    ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+                except engines.elevenlabs.core.api_error.ApiError as err:
+                    if err.body.get("detail", {}).get('status', "") == "quota_exceeded":
+                        # TODO:
+                        # this is an elevenlabs ttsengine and we've exceeeded our monthly quota
+                        # until (subscription.next_character_count_reset_unix) we want to map
+                        # every call to elevenlabs to elevenlabs_fallback.  Don't just keep failing
+                        # against elevenlabs, that is rude.  At most once per session.
+                        
+                        ttsengine = engines.get_engine('Windows TTS')
+                        ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+
+                self.show_wave(cachefile + ".wav")
 
                 log.info('Converting to mp3...')
                 with AudioFile(cachefile + ".wav") as input:
@@ -795,8 +909,9 @@ class ListSide(tk.Frame):
                 select(
                     models.Character
                 ).order_by(
+                    desc(models.Character.last_spoke),
+                ).order_by(
                     models.Character.category,
-                    models.Character.last_spoke
                 )
             ).all()
 

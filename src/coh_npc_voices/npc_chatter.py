@@ -243,24 +243,16 @@ class TightTTS(threading.Thread):
                     found = self.all_npcs.get(name)
                     normalize = False
                     with models.Session(models.engine) as session:
-                        if category == "player":
-                            default = settings.get_config_key(
-                                'DEFAULT_PLAYER_ENGINE', settings.DEFAULT_ENGINE
-                            )
-                            normalize = settings.get_config_key(
-                                'DEFAULT_PLAYER_ENGINE_NORMALIZE', settings.DEFAULT_ENGINE
-                            )
-                        else:
-                            default = settings.get_config_key(
-                                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
-                            )
-                            normalize = settings.get_config_key(
-                                'DEFAULT_ENGINE_NORMALIZE', settings.DEFAULT_ENGINE
-                            )
+                        primary = settings.get_config_key(
+                            f'{category}_engine_primary', settings.DEFAULT_ENGINE
+                        )
+                        normalize = settings.get_config_key(
+                            f'{category}_engine_normalize', settings.DEFAULT_NORMALIZE
+                        )
 
                         character = models.Character(
                             name=name,
-                            engine=default,
+                            engine=primary,
                             category=models.category_str2int(category),
                         )
 
@@ -304,11 +296,18 @@ class TightTTS(threading.Thread):
                             found["group_name"],
                             gender=found["gender"],
                         )
-
+                
+                models.update_character_last_spoke(character)
                 voice_builder.create(character, message, cachefile)
 
             self.speaking_queue.task_done()
 
+
+def plainstring(dialog):
+    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
+    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
+    dialog = re.sub(r"<bordercolor [#a-zA-Z0-9]+>", "", dialog).strip()
+    return dialog
 
 class LogStream:
     def __init__(
@@ -397,10 +396,8 @@ class LogStream:
                 lstring = line_string.replace(".", "").strip().split()
                 if self.npc_speak and lstring[0] == "[NPC]":
                     name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+                    dialog = plainstring(dialog)
                     log.debug(f"Adding {name}/{dialog} to reading queue")
-                    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
-                    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
-                    dialog = re.sub(r"<bordercolor [#a-zA-Z0-9]+>", "", dialog).strip()
 
                     self.speaking_queue.put((name, dialog, "npc"))
 
@@ -527,6 +524,11 @@ class LogStream:
                     name = " ".join(lstring[0:-4])
                     action = lstring[-3]  # joined or quit
                     self.speaking_queue.put((None, f"Player {name} has {action} the team", "system"))
+
+                elif lstring[-2:] == ["The", "name"]:
+                    # 2024-05-03 19:46:15 The name <color red>Toothbreaker Jones</color> keeps popping up, and these Skulls were nice enough to tell you where to find him. Time to pay him a visit.
+                    dialog = plainstring(" ".join(lstring))
+                    self.speaking_queue.put((None, dialog, "system"))
 
                 # else:
                 #    log.warning(f'tag {lstring[0]} not classified.')

@@ -84,13 +84,13 @@ def get_character(name, category, session=None):
     if value is None:
         log.info('|- Creating new character in database...')
         # this is the first time we've gotten a message from this
-        # NPC, so they don't have a voice yet.  We will default to
-        # the windows voice because it is free and no voice effects.
+        # NPC, so they don't have a voice yet.  
         with Session(engine) as session:
+            # default to the primary voice engine for this category of character
             value = Character(
                 name=name,
                 engine=settings.get_config_key(
-                    'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
+                    f'{category}_engine_primary', settings.DEFAULT_ENGINE
                 ),
                 category=category,
             )
@@ -104,21 +104,22 @@ def get_character(name, category, session=None):
 
 def update_character_last_spoke(character, session=None):
     if session:
-        character = session.execute(
+        character = session.scalars(
             select(Character).where(
                 Character.id == character.id
             )
         ).first()
-        character.last_up = datetime.datetime.now()
+
+        character.last_spoke = datetime.now()
         session.commit()
     else:
         with Session(engine) as session:
-            character = session.execute(
+            character = session.scalars(
                 select(Character).where(
                     Character.id == character.id
                 )
             ).first()
-            character.last_up = datetime.datetime.now()
+            character.last_spoke = datetime.now()
             session.commit()
         
 

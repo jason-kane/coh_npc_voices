@@ -7,6 +7,7 @@ import os
 LOGLEVEL=logging.INFO 
 # this is the ultimate fallback engine if there is nothing configured
 DEFAULT_ENGINE="Windows TTS"
+DEFAULT_NORMALIZE=False
 
 PRESETS = "presets.json"
 ALIASES = "aliases.json"

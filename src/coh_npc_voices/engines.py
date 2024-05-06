@@ -4,11 +4,13 @@ import sys
 import tempfile
 import time
 import tkinter as tk
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from tkinter import ttk
+from typing import Union
 
 import elevenlabs
 import models
+import settings
 import tts.sapi
 import voicebox
 from elevenlabs.client import ElevenLabs as ELABS
@@ -17,7 +19,6 @@ from pedalboard.io import AudioFile
 from sqlalchemy import select
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
-import settings
 
 logging.basicConfig(
     level=settings.LOGLEVEL,
@@ -35,7 +36,7 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 
     def get_speech(self, text: StrOrSSML) -> Audio:
         voice = tts.sapi.Sapi()
-        log.debug(f"Saying {text!r} as {self.voice} at rate {self.rate}")
+        log.info(f"Saying {text!r} as {self.voice} at rate {self.rate}")
         voice.set_rate(self.rate)
         voice.set_voice(self.voice)
 
@@ -139,6 +140,7 @@ class TTSEngine(tk.Frame):
 
             if character is None:
                 # new character?  This is not typical.
+                log.info(f'Creating new character {name}`')
                 character = models.Character(
                     name=name,
                     category=models.category_str2int(category),
@@ -439,30 +441,31 @@ class GoogleCloud(TTSEngine):
                 ).scalars()
             )
 
-            if all_voices:
-                log.info(f"{len(all_voices)} voices found in database")
-                if gender:
-                    out = []
-                    for result in all_voices:
-                        if result.ssml_gender.upper() == gender.upper():
-                            out.append(result.name)
-                        else:
-                            log.info(f'{gender} != {result.ssml_gender}')
-                    return out
-                
-                    return [
-                        voice.name
-                        for voice in all_voices
-                        if voice.ssml_gender == gender
-                    ]
-                else:
-                    return [voice.name for voice in all_voices]
+        if all_voices:
+            log.info(f"{len(all_voices)} voices found in database")
+            if gender:
+                out = []
+                for result in all_voices:
+                    if result.ssml_gender.upper() == gender.upper():
+                        out.append(result.name)
+                    else:
+                        log.info(f'{gender} != {result.ssml_gender}')
+                return out
+            
+                return [
+                    voice.name
+                    for voice in all_voices
+                    if voice.ssml_gender == gender
+                ]
             else:
-                log.info("Voices are not in the database")
-                client = texttospeech.TextToSpeechClient()
-                req = texttospeech.ListVoicesRequest(language_code=language_code)
-                resp = client.list_voices(req)
+                return [voice.name for voice in all_voices]
+        else:
+            log.info("Voices are not in the database")
+            client = texttospeech.TextToSpeechClient()
+            req = texttospeech.ListVoicesRequest(language_code=language_code)
+            resp = client.list_voices(req)
 
+            with models.Session(models.engine) as session:
                 for voice in resp.voices:
                     new_voice = models.GoogleVoices(
                         name=voice.name,
@@ -474,7 +477,7 @@ class GoogleCloud(TTSEngine):
                     session.add(new_voice)
                 session.commit()
 
-                return sorted([n.name for n in resp.voices])
+            return sorted([n.name for n in resp.voices])
 
     @staticmethod
     def get_voice_gender(voice_name):
@@ -576,6 +579,12 @@ class ElevenLabs(TTSEngine):
         self.voice_name.set(value=all_voices[0])
 
         self.voice_name.trace_add("write", self.change_voice_name)
+
+        # doing these all long-hand will be tedious
+        self.stability = tk.DoubleVar(value=0.71)
+        self.similarity_boost = tk.DoubleVar(value=0.5)
+        self.style = tk.DoubleVar(value=0.0)
+        self.use_speaker_boost = tk.BooleanVar(value=True)
 
     def change_voice_name(self, a, b, c):
         raw_voice_name = self.voice_name.get()
@@ -698,17 +707,31 @@ class ElevenLabs(TTSEngine):
         # so we add a choice field the __init__
         # model : :class:`elevenlabs.Model` instance, or a string representing the model ID.
         voice = self.voice_name.get()
+        # model = elevenlabs.Model()
         model = None
         
         log.info(f'Creating ttsElevenLab(<api_key>, voice={voice}, model={model})')
         return ttsElevenLabs(
             api_key=self.api_key, 
-            voice=voice, 
+            stability=self.stability.get(),
+            similarity_boost=self.similarity_boost.get(),
+            style=self.style.get(),
+            use_speaker_boost=self.use_speaker_boost.get(),
+            voice=voice,
             model=model
         )
 
+@dataclass
+class ttsElevenLabs(voicebox.tts.TTS):
 
-class ttsElevenLabs(voicebox.tts.ElevenLabs):
+    api_key: str = None
+    voice: Union[str, elevenlabs.Voice] = field(default_factory=lambda: elevenlabs.DEFAULT_VOICE)
+    model: Union[str, elevenlabs.Model] = 'eleven_monolingual_v1'
+    stability: float = 0.71
+    similarity_boost: float = 0.5
+    style: float = 0.0
+    use_speaker_boost : bool = True
+
     def get_speech(self, text: StrOrSSML) -> Audio:
         client = get_elevenlabs_client()
         # https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/client.py#L118
@@ -723,10 +746,15 @@ class ttsElevenLabs(voicebox.tts.ElevenLabs):
 
         audio_data = client.generate(
             text=text, 
-            voice=voice_id, 
-            # model=voice_model, 
-            #output_format="pcm_22050"
-            # output_format="pcm_16000"
+            voice=elevenlabs.Voice(
+                voice_id=voice_id,
+                settings=elevenlabs.VoiceSettings(
+                    stability=self.stability,
+                    similarity_boost=self.similarity_boost,
+                    style=self.style,
+                    use_speaker_boost=self.use_speaker_boost
+                )
+            )
         )
 
         with tempfile.NamedTemporaryFile() as tmp:

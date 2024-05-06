@@ -149,6 +149,11 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
 
         session.commit()
 
+# I'm actually a little curious to see exactly how this will behave.  From npcChatter this is being called in
+# a subprocess, but when the editor triggers it we are in a thread.  The thread dies, the new thread doesn't know
+# ENGINE_OVERRIDE has been triggered and we keep smacking elevenlabs even though we've run out of credits.
+
+ENGINE_OVERRIDE = {}
 
 def create(character, message, cachefile):
     """
@@ -163,6 +168,7 @@ def create(character, message, cachefile):
     2. Render message based on that data
     3. persist as an mp3 in cachefile
     """
+    global ENGINE_OVERRIDE
     log.info(f'voice_builder.create({character=}, {message=}, {cachefile=})')
     with models.Session(models.engine) as session:
         voice_effects = session.scalars(
@@ -184,6 +190,8 @@ def create(character, message, cachefile):
 
     # have we seen this particular phrase before?
     if character.category != PLAYER_CATEGORY or settings.PERSIST_PLAYER_CHAT:
+        # we want to collect and persist these to enable the editor to
+        # rebuild them, replacing the mp3 in cache.
         with models.Session(models.engine) as session:
             phrase = session.execute(
                 select(models.Phrases).where(
@@ -224,7 +232,20 @@ def create(character, message, cachefile):
         save = False 
     
     selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
-    engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
+
+    # it is a little bit lovely.
+    character.engine = ENGINE_OVERRIDE.get(character.engine, character.engine)
+    # character.engine may already have a value.  It probably does.  We're over-writing it
+    # with anything we have in the dict ENGINE_OVERRIDE.  But if we don't have anything, you can keep
+    # your previous value and carry on.
+
+    try:
+        engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
+    except engines.DISABLE_ENGINE:
+        # our chosen engine for this character isn't working.  So we're going to switch
+        # to the secondary and use that for the rest of this session.
+        engine_name = settings.get_config_key(f"{character.category}_engine_secondary")
+        ENGINE_OVERRIDE[character.engine] = engines.get_engine(engine_name)
 
     if save:
         with AudioFile(cachefile + ".wav") as input:
