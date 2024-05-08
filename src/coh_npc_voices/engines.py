@@ -1,8 +1,10 @@
+import hashlib
 import logging
 import os
 import sys
 import tempfile
 import time
+import random
 import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import ttk
@@ -69,7 +71,8 @@ class TTSEngine(tk.Frame):
         super().__init__(parent, *args, **kwargs)
         self.parent = parent
         self.selected_character = selected_character
-        self.parameters = set()
+        self.override = {}
+        self.parameters = set('voice_name')
 
     def say(self, message, effects, sink=None, *args, **kwargs):
         tts = self.get_tts()
@@ -112,19 +115,61 @@ class TTSEngine(tk.Frame):
             log.info("No engine configuration available in the database")
             return
 
-        with models.Session(models.engine) as session:
-            tts_config = session.scalars(
-                select(models.BaseTTSConfig).where(
-                    models.BaseTTSConfig.character_id == character.id
-                )
-            ).all()
+        if character.engine == self.cosmetic:
+            with models.Session(models.engine) as session:
+                tts_config = session.scalars(
+                    select(models.BaseTTSConfig).where(
+                        models.BaseTTSConfig.character_id == character.id
+                    )
+                ).all()
 
-            for config in tts_config:
-                log.info(f'Setting config {config.key} to {config.value}')
-                log.info(f'{self} supports parameters {self.parameters}')
-                if config.key in self.parameters:
-                    getattr(self, config.key).set(config.value)
-                    setattr(self, config.key + "_base", config.value)
+                for config in tts_config:
+                    log.info(f'Setting config {config.key} to {config.value}')
+                    log.info(f'{self} supports parameters {self.parameters}')
+                    if config.key in self.parameters:
+                        getattr(self, config.key).set(config.value)
+                        setattr(self, config.key + "_base", config.value)
+        else:
+            # Unusual situation.  We are trying to use the "wrong" tts engine
+            # for this character. That means we also have the wrong
+            # BaseTTSConfig and .. we don't want to mess with the existing
+            # configuration.  Oh, and it should still mostly work and be
+            # consistent. Use case for this nonesense?
+            #
+            # You're rolling with Elevenlabs and you run out of free voice
+            # credits.  We want to smoothly transition to Google voices.  When
+            # Elevenlabs starts working again, we don't want the voice configs
+            # to be messed up.
+            #
+            # we keep effects, that part is easy.
+            
+            gender = settings.get_npc_gender(character.name)
+            
+            # we can't do random, because we want a _consistent_ voice.  No
+            # problem. gendered_voices should be identical from one "run" to the
+            # next.
+            gendered_voices = sorted(self.get_voice_names(gender))
+            
+            # when is random not random?  We don't even need to hash it,
+            # random.seed now takes an int (obv) _or_ a str/bytes/bytearray.  
+            random.seed(a=character.name, version=2)
+            
+            # easy as that.  gendered voice name chosen with a good spread of
+            # all available voice names, and the same character speaking twice
+            # gets the same voice.  Even across sessions.  Even across upgrades.
+            voice_name = random.choice(gendered_voices)
+
+            # if we self.voice_name.set(voice_name) the way that feels natural
+            # we're going to reconfigure the character in exactly the way we
+            # don't want. Jumbo-dict of reasonable choices for all engines. this
+            # is clearly unsustainable.  I'm thinking each character and preset
+            # gets a full primary and secondary voice config.
+            self.override['voice_name'] = voice_name
+            self.override['rate'] = 1
+            self.override['stabiity'] = 0.71
+            self.override['similarity_boost'] = 0.5
+            self.override['style'] = 0.0
+            self.override['use_speaker_boost'] = True
 
         log.info("TTSEngine.load_character complete")
         return character
@@ -245,7 +290,9 @@ class WindowsTTS(TTSEngine):
     def get_tts(self):
         # So.  What happens when the chosen voice isn't actually
         # installed?
-        return WindowsSapi(rate=self.rate.get(), voice=self.voice_name.get())
+        rate = self.override.get('rate', self.rate.get())
+        voice_name = self.override.get('voice_name', self.voice_name.get())
+        return WindowsSapi(rate=rate, voice=voice_name)
 
     @staticmethod
     def get_voice_names(language_code=None, gender=None):
@@ -262,7 +309,7 @@ class WindowsTTS(TTSEngine):
 
             if gender == "female":
                 # filter to only include female voices.  No doubt
-                # this list is ridiculously incomplete.
+                # these lists are ridiculously incomplete.
                 if name not in [
                     "Catherine",
                     "Hazel",
@@ -311,15 +358,7 @@ class GoogleCloud(TTSEngine):
         self.parameters = set(("language_code", "voice_name", "rate", "pitch"))
 
         character = self.load_character(self.selected_character.get())
-
-        # what is this characters gender (if it has one)?
-        npc_data = settings.get_npc_data(character.name)
-        gender = None
-        if npc_data:
-            if npc_data["gender"] == "GENDER_MALE":
-                gender = "male"
-            elif npc_data["gender"] == "GENDER_FEMALE":
-                gender = "female"
+        gender = settings.get_npc_gender(character.name)
 
         language_frame = tk.Frame(self)
         tk.Label(language_frame, text="Language Code", anchor="e").pack(
@@ -490,12 +529,13 @@ class GoogleCloud(TTSEngine):
         return ssml_gender
 
     def get_tts(self):
-        # self.rate?
-        # self.pitch?
+        language_code = self.override.get('language_code', self.language_code.get())
+        voice_name = self.override.get('voice_name', self.voice_name.get())
+
         client = texttospeech.TextToSpeechClient()
         kwargs = {
-            "language_code": self.language_code.get(),
-            "name": self.voice_name.get(),
+            "language_code": language_code,
+            "name": voice_name,
             # "ssml_gender": self.ssml_gender.get(),
         }
 
@@ -551,15 +591,7 @@ class ElevenLabs(TTSEngine):
         raw_name = self.selected_character.get()
 
         character = self.load_character(raw_name)
-
-        # what is this characters gender (if it has one)?
-        npc_data = settings.get_npc_data(character.name)
-        gender = None
-        if npc_data:
-            if npc_data["gender"] == "GENDER_MALE":
-                gender = "male"
-            elif npc_data["gender"] == "GENDER_FEMALE":
-                gender = "female"
+        gender = settings.get_npc_gender(character.name)
 
         voice_frame = tk.Frame(self)
         tk.Label(voice_frame, text="Voice", anchor="e").pack(
@@ -706,18 +738,23 @@ class ElevenLabs(TTSEngine):
         # voice is an elevenlabs.Voice instance,  We need input from the user
         # so we add a choice field the __init__
         # model : :class:`elevenlabs.Model` instance, or a string representing the model ID.
-        voice = self.voice_name.get()
+        voice_name = self.override.get('voice_name', self.voice_name.get())
+        stability = self.override.get('stability', self.stability.get())
+        similarity_boost = self.override.get('similarity_boost', self.similarity_boost.get())
+        style = self.override.get('style', self.style.get())
+        use_speaker_boost = self.override.get('use_speaker_boost', self.use_speaker_boost.get())
+
         # model = elevenlabs.Model()
         model = None
         
-        log.info(f'Creating ttsElevenLab(<api_key>, voice={voice}, model={model})')
+        log.info(f'Creating ttsElevenLab(<api_key>, voice={voice_name}, model={model})')
         return ttsElevenLabs(
             api_key=self.api_key, 
-            stability=self.stability.get(),
-            similarity_boost=self.similarity_boost.get(),
-            style=self.style.get(),
-            use_speaker_boost=self.use_speaker_boost.get(),
-            voice=voice,
+            stability=stability,
+            similarity_boost=similarity_boost,
+            style=style,
+            use_speaker_boost=use_speaker_boost,
+            voice=voice_name,
             model=model
         )
 
