@@ -67,3 +67,14 @@ def get_npc_data(character_name):
         with open("all_npcs.json", "r") as h:
             ALL_NPC = json.loads(h.read())
     return ALL_NPC.get(character_name)
+
+def get_npc_gender(character_name):
+    # what is this characters gender (if it has one)?
+    npc_data = get_npc_data(character_name)
+    gender = None
+    if npc_data:
+        if npc_data["gender"] == "GENDER_MALE":
+            gender = "male"
+        elif npc_data["gender"] == "GENDER_FEMALE":
+            gender = "female"    
+    return gender

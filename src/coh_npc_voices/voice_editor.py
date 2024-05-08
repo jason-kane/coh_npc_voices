@@ -56,6 +56,13 @@ class ChoosePhrase(tk.Frame):
         self.populate_phrases()
         self.options.pack(side="left", fill="x", expand=True)
 
+        # TODO:  there should be two buttons, one to regenerate
+        # the file and another to play the file.  The play button
+        # is greyed out unless the file exists.  Big UI change: you
+        # can regenerate everything for someone that talks a lot
+        # without having to wait and listen to them all.  You can
+        # also listen to everything a character says, back to back
+        # without spending any TTS credits (presuming cached).
         play_btn = tk.Button(topline, text="Play", command=self.say_it)
         play_btn.pack(side="left")
         topline.pack(side="top", expand=True, fill="x")

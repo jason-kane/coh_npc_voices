@@ -27,13 +27,7 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
     preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
     
     if gender is None:
-        # get gender for preset in most circumstances
-        npc_data = settings.get_npc_data(character_name)
-        if npc_data:
-            if npc_data["gender"] == "GENDER_MALE":
-                gender = "male"
-            elif npc_data["gender"] == "GENDER_FEMALE":
-                gender = "female"            
+        gender = settings.get_npc_gender(character_name)
 
     if preset is None:
         log.info(f'No preset is available for {preset_name}')
