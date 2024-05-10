@@ -33,7 +33,7 @@ logging.basicConfig(
 )
 
 log = logging.getLogger("__name__")
-
+ENGINE_OVERRIDE = {}
 
 class ChoosePhrase(tk.Frame):
     ALL_PHRASES = "< Rebuild all phrases >"
@@ -191,11 +191,13 @@ class ChoosePhrase(tk.Frame):
         Speak aloud whatever is in the chosen_phrase tk.Variable, using whatever
         TTS engine is selected.
         """
+        global ENGINE_OVERRIDE
         message = self.chosen_phrase.get()
 
         log.debug(f"Speak: {message}")
         # parent is the frame inside DetailSide
         engine_name = self.detailside.engineSelect.selected_engine.get()
+        
         ttsengine = engines.get_engine(engine_name)
         log.info(f"Engine: {ttsengine}")
 
@@ -257,20 +259,33 @@ class ChoosePhrase(tk.Frame):
 
                 log.info(f'effect_list: {effect_list}')
                 log.info(f"Creating ttsengine for {self.selected_character.get()}")
+
                 # None because we aren't attaching any widgets
                 try:
                     ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
                 except engines.elevenlabs.core.api_error.ApiError as err:
                     if err.body.get("detail", {}).get('status', "") == "quota_exceeded":
                         # TODO:
-                        # this is an elevenlabs ttsengine and we've exceeeded our monthly quota
-                        # until (subscription.next_character_count_reset_unix) we want to map
-                        # every call to elevenlabs to elevenlabs_fallback.  Don't just keep failing
-                        # against elevenlabs, that is rude.  At most once per session.
-                        
-                        ttsengine = engines.get_engine('Windows TTS')
-                        ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+                        # this is an elevenlabs ttsengine and we've exceeeded
+                        # our monthly quota until
+                        # (subscription.next_character_count_reset_unix) we want
+                        # to map every call to elevenlabs to the secondary
+                        # engine for this character category.  Don't just keep
+                        # failing against elevenlabs, that is rude.  At most
+                        # once per session.
+                        secondary_engine = settings.get_config_key(f'{character.category}_engine_secondary')
+                        if secondary_engine == character.engine:
+                            # our secondary engine is the same as our current engine
+                            # so we will force-fallback to local.
+                            secondary_engine = 'Windows TTS'
 
+                        # we made it sorta work, but don't try this engine again
+                        # for this session.
+                        ENGINE_OVERRIDE[character.engine] = secondary_engine
+
+                        ttsengine = engines.get_engine(secondary_engine)
+                        ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+                        
                 self.show_wave(cachefile + ".wav")
 
                 log.info('Converting to mp3...')

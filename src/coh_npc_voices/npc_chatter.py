@@ -29,20 +29,6 @@ logging.basicConfig(
 
 log = logging.getLogger("__name__")
 
-
-# TODO:
-#   goals:
-#       consistent, unique(-ish) voice for every character in the game that speaks.
-#       free option, best possible quality
-#       cheap option, multiple options (paying TTS providers, responses cached)
-#           how much are we talking?
-#
-#   Fun:
-#       gui voice creator
-#       exports to a stringified voice profile
-#       players can tell other players what they sound like, and you then hear them.
-#       speech-to-text chat input (whisper?)
-
 # so frequently enough to merit this; people will identify themselves in the CAPTION messages.
 # like:
 # 2024-04-26 18:40:13 [Caption] <scale 1.75><color white><bgcolor DarkGreen>Positron here. I'm monitoring your current progress in the sewers.
