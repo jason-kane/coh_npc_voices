@@ -562,7 +562,7 @@ class Glitch(EffectParameterEditor):
         effect = voicebox.effects.Glitch(
             chunk_time=self.chunk_time.get(),
             p_repeat=self.p_repeat.get(),
-            max_repeats=self.max_repeats.get()
+            max_repeats=int(self.max_repeats.get())
         )
         return effect
 

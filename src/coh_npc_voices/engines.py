@@ -1,4 +1,4 @@
-import hashlib
+import json
 import logging
 import os
 import sys
@@ -30,6 +30,11 @@ logging.basicConfig(
 
 log = logging.getLogger("__name__")
 
+
+class DISABLE_ENGINES(Exception):
+    """
+    signal to disable this engine for this session
+    """
 
 @dataclass
 class WindowsSapi(voicebox.tts.tts.TTS):
@@ -91,6 +96,10 @@ class TTSEngine(tk.Frame):
             except Exception as err:
                 log.error('vb: %s', vb)
                 log.error("Error in TTSEngine.say(): %s", err)
+                if err.status_code == 401:
+                    error_response = json.loads(err.body)
+                    if error_response.get('detail', {}).get('status') == "quota_exceeded":
+                        raise DISABLE_ENGINES
                 raise
 
     def get_tts(self):
@@ -148,7 +157,7 @@ class TTSEngine(tk.Frame):
             # we can't do random, because we want a _consistent_ voice.  No
             # problem. gendered_voices should be identical from one "run" to the
             # next.
-            gendered_voices = sorted(self.get_voice_names(gender))
+            gendered_voices = sorted(self.get_voice_names(gender=gender))
             
             # when is random not random?  We don't even need to hash it,
             # random.seed now takes an int (obv) _or_ a str/bytes/bytearray.  
@@ -470,6 +479,9 @@ class GoogleCloud(TTSEngine):
 
     @staticmethod
     def get_voice_names(language_code="en-US", gender=None):
+        if language_code is None:
+            language_code = settings.get_config_key('default_google_language_code', 'en-US')
+
         log.info(f'get_voice_names({language_code=}, {gender=})')
         with models.Session(models.engine) as session:
             all_voices = list(

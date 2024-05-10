@@ -694,6 +694,24 @@ class DetailSide(tk.Frame):
 
         name_frame.pack(side="top", fill="x", expand=True)
 
+        self.group_name = tk.StringVar()
+        ttk.Label(
+            self.frame,
+            textvariable=self.group_name,
+            wraplength=220,
+            anchor="n",
+            justify="center"
+        ).pack(side="top", fill="x")
+
+        self.character_description = tk.StringVar()
+        ttk.Label(
+            self.frame,
+            textvariable=self.character_description,
+            wraplength=220,
+            anchor="nw",
+            justify="left"
+        ).pack(side="top", fill="x")
+
         self.phrase_selector = ChoosePhrase(
             self.frame, self, selected_character
         )
@@ -749,6 +767,19 @@ class DetailSide(tk.Frame):
 
         category, name = raw_name.split(maxsplit=1)
         
+        if category == "npc":
+            npc_data = settings.get_npc_data(name)
+            description = ""
+            group_name = ""
+            if npc_data:
+                description = npc_data["description"]
+                group_name = npc_data["group_name"]
+            self.character_description.set(description)    
+            self.group_name.set(group_name)
+        else:
+            self.character_description.set("")
+            self.group_name.set("")
+
         # load the character 
         character = models.get_character(name, category)
 

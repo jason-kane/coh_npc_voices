@@ -44,7 +44,7 @@ class ChartFrame(tk.Frame):
         if not hero:
             return
         else:
-            log.info(f'Drawing graph for {hero}')
+            log.debug(f'Drawing graph for {hero}')
             self.hero = hero
             # draw graph for $category progress, total per/minute
             # binned to the minute for the last hour.
@@ -76,7 +76,7 @@ class ChartFrame(tk.Frame):
                 log.error(err)
                 raise
             
-            log.info(f'latest_event: {latest_event}')
+            log.debug(f'latest_event: {latest_event}')
 
             if latest_event:
                 end_time = latest_event.event_time
