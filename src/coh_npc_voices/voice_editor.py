@@ -261,16 +261,11 @@ class ChoosePhrase(ttk.Frame):
                     ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
                 except engines.elevenlabs.core.api_error.ApiError as err:
                     if err.body.get("detail", {}).get('status', "") == "quota_exceeded":
-                        # TODO:
-                        # this is an elevenlabs ttsengine and we've exceeeded
-                        # our monthly quota until
-                        # (subscription.next_character_count_reset_unix) we want
-                        # to map every call to elevenlabs to the secondary
-                        # engine for this character category.  Don't just keep
-                        # failing against elevenlabs, that is rude.  At most
-                        # once per session.
+                        # We're over quote, switch to the secondary engine for this category
+                        # of voice origin.
                         secondary_engine = settings.get_config_key(f'{character.category}_engine_secondary')
                         if secondary_engine == character.engine:
+                            # (this should be rare)
                             # our secondary engine is the same as our current engine
                             # so we will force-fallback to local.
                             secondary_engine = 'Windows TTS'
