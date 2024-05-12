@@ -253,7 +253,7 @@ class ChoosePhrase(ttk.Frame):
                     WaveFile(cachefile + '.wav')
                 ])
 
-                log.info(f'effect_list: {effect_list}')
+                log.debug(f'effect_list: {effect_list}')
                 log.info(f"Creating ttsengine for {self.selected_character.get()}")
 
                 # None because we aren't attaching any widgets

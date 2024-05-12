@@ -235,7 +235,7 @@ def create(character, message, cachefile):
 
     try:
         engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
-    except engines.DISABLE_ENGINE:
+    except engines.DISABLE_ENGINES:
         # our chosen engine for this character isn't working.  So we're going to switch
         # to the secondary and use that for the rest of this session.
         engine_name = settings.get_config_key(f"{character.category}_engine_secondary")

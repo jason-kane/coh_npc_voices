@@ -28,11 +28,16 @@ import ctypes
 myappid = u'fun.side.projects.sidekick.1.0'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-
+# log info to stdout
 logging.basicConfig(
     level=settings.LOGLEVEL,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
+)
+logging.basicConfig(
+    filename="sidekick.log",
+    level=logging.ERROR,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 
 log = logging.getLogger("__name__")
