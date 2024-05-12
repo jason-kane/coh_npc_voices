@@ -35,11 +35,11 @@ logging.basicConfig(
 log = logging.getLogger("__name__")
 ENGINE_OVERRIDE = {}
 
-class ChoosePhrase(tk.Frame):
+class ChoosePhrase(ttk.Frame):
     ALL_PHRASES = "< Rebuild all phrases >"
     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        topline = tk.Frame(self)
+        topline = ttk.Frame(self)
         
         self.selected_character = selected_character
         self.detailside = detailside
@@ -47,6 +47,7 @@ class ChoosePhrase(tk.Frame):
         self.chosen_phrase = tk.StringVar(
             value="<Choose or type a phrase>"
         )
+        self.chosen_phrase.trace_add('write', self.chose_phrase)
         self.options = ttk.Combobox(
             topline, 
             textvariable=self.chosen_phrase
@@ -63,32 +64,59 @@ class ChoosePhrase(tk.Frame):
         # without having to wait and listen to them all.  You can
         # also listen to everything a character says, back to back
         # without spending any TTS credits (presuming cached).
-        play_btn = tk.Button(topline, text="Play", command=self.say_it)
+        play_btn = ttk.Button(topline, text="Play", command=self.say_it)
         play_btn.pack(side="left")
         topline.pack(side="top", expand=True, fill="x")
 
         self.visualize_wav = None
 
-    def populate_phrases(self):
+    def chose_phrase(self, *args, **kwargs):
+        # a phrase was chosen.
         raw_name = self.selected_character.get()
-        try:
-            category, name = raw_name.split(maxsplit=1)
-        except ValueError:
-            log.error('Invalid character raw_name: %s', raw_name)
-            return
+        character = models.get_character_from_rawname(raw_name)
 
+        phrase = self.chosen_phrase.get()
+
+        _, clean_name = db.clean_customer_name(character.name)
+        filename = db.cache_filename(character.name, phrase)
+
+        cachefile = os.path.abspath(
+            os.path.join(
+                "clip_library",
+                character.cat_str(),
+                clean_name,
+                filename
+            )
+        )
+
+        if os.path.exists(cachefile):
+            # convert mp3 to wav file
+            with AudioFile(cachefile) as input:
+                with AudioFile(
+                    filename=cachefile + ".wav",
+                    samplerate=input.samplerate,
+                    num_channels=input.num_channels,
+                ) as output:
+                    while input.tell() < input.frames:
+                        output.write(input.read(1024))
+
+            # and display it
+            self.show_wave(cachefile + ".wav")
+        else:
+            log.info(f'Cached mp3 {cachefile} does not exist.')
+            self.clear_wave()
+        return
+
+    def populate_phrases(self):
+        log.info('** populate_phrases() called **')
+        raw_name = self.selected_character.get()
+
+        # pull phrases for this character from the database
         with models.Session(models.engine) as session:            
-
-            try:
-                category = models.category_str2int(category)
-            except ValueError:
-                log.error('Invalid Character Category: %s', category)
-                return
-
-            character = models.get_character(name, category, session)
+            character = models.get_character_from_rawname(raw_name, session)
 
             if character is None:
-                log.error(f'62 Character {category}|{name} does not exist!')
+                log.error(f'62 Character {raw_name} does not exist!')
                 return
 
             character_phrases = session.scalars(
@@ -98,6 +126,7 @@ class ChoosePhrase(tk.Frame):
             ).all()
        
         if character_phrases:
+            # default to the first phrase
             self.chosen_phrase.set(character_phrases[0].text)
         else:
             self.chosen_phrase.set(
@@ -107,10 +136,13 @@ class ChoosePhrase(tk.Frame):
             p.text for p in character_phrases
         ] + [ self.ALL_PHRASES ]
 
-        if self.visualize_wav:
-            self.fig.clear()
-            self.canvas._tkcanvas.pack_forget()
-            self.visualize_wav = None
+    def clear_wave(self):
+        if hasattr(self, 'canvas'):
+            log.info('*** clear_wave() called ***')
+            self.plt.clear()
+            self.spec.clear()
+            self.canvas.draw_idle()
+
 
     def show_wave(self, cachefile):
         """
@@ -121,51 +153,25 @@ class ChoosePhrase(tk.Frame):
         # https://matplotlib.org/3.1.0/gallery/user_interfaces/embedding_in_tk_sgskip.html        
         """
         sampling_rate, data = wavfile.read(cachefile)
-        # frequencies, times, spectrogram = signal.spectrogram(data, sampling_rate)
-
-            # sample_freq = wav_obj.getframerate()
-            # n_samples = wav_obj.getnframes()
-            # duration = n_samples/sample_freq
-            # channels = wav_obj.getnchannels()
-
-            # signal_wave = wav_obj.readframes(n_samples)
-            # signal_array = np.frombuffer(signal_wave, dtype=np.int16)
-            
-            # if channels == 2:
-            #     l_channel = signal_array[0::2]
-            #     r_channel = signal_array[1::2]         
-
-            # times = np.linspace(0, duration, num=n_samples)
-
         if self.visualize_wav is None:
             # our widget hasn't been rendered.  Do be a sweetie and take
             # care of that for me.
             self.visualize_wav = ttk.Frame(self, padding = 8)
-
             self.fig = Figure(
                 figsize=(3, 2), # (width, height) figsize in inches (not kidding)
                 dpi=100, # but we get dpi too so... sane?
                 layout='constrained'
             )  
-            #self.fig.subplots_adjust(bottom=0, right=0, left=0, top=0, wspace=0.10)
-            self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
-            # self.plt.tick_params('both', direction='in')
 
+            self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
             self.spec = self.fig.add_subplot(212)
             self.canvas = FigureCanvasTkAgg(self.fig, self.visualize_wav)
-            self.canvas._tkcanvas.pack(fill=tk.BOTH, expand=1)
+            self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=1)
         else:
-            # clears the entire current figure with all its axes
-            self.fig.clear()
-
-            self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
-            self.spec = self.fig.add_subplot(212)
-            # canvas = FigureCanvasTkAgg(self.fig, self.visualize_wav)
-            # canvas._tkcanvas.pack(fill=tk.BOTH, expand=1)
+            self.clear_wave()
 
         # if channels == 1:
         self.plt.plot(data)
-        # self.spec.plot(np.log(spectrogram), aspect="auto", cmap="rainbox", origin="lower")
         self.spec.specgram(data, Fs=sampling_rate)
         self.canvas.draw_idle()
 
@@ -175,16 +181,6 @@ class ChoosePhrase(tk.Frame):
 
         # self.plt.set_xlim(0, duration)
         self.visualize_wav.pack(side='top', fill=tk.BOTH, expand=1)
-
-            # plt.figure(figsize=(15, 5))
-            # plt.specgram(l_channel, Fs=sample_freq, vmin=-20, vmax=50)
-            
-            # plt.title('Left Channel')
-            # plt.ylabel('Frequency (Hz)')
-            # plt.xlabel('Time (s)')
-            # plt.xlim(0, duration)
-            # plt.colorbar()
-            # plt.show()               
 
     def say_it(self):
         """
@@ -197,7 +193,7 @@ class ChoosePhrase(tk.Frame):
         log.debug(f"Speak: {message}")
         # parent is the frame inside DetailSide
         engine_name = self.detailside.engineSelect.selected_engine.get()
-        
+
         ttsengine = engines.get_engine(engine_name)
         log.info(f"Engine: {ttsengine}")
 
@@ -298,13 +294,14 @@ class ChoosePhrase(tk.Frame):
                         while input.tell() < input.frames:
                             output.write(input.read(1024))
                         log.info(f'Wrote {cachefile}')
+                # unlink the wav file?
             else:
                 # No Cache
                 log.info(f'Bypassing filesystem caching ({msg})')
                 ttsengine(None, self.selected_character).say(msg, effect_list)
 
 
-class EngineSelection(tk.Frame):
+class EngineSelection(ttk.Frame):
     """
     Frame for just the Text to speech labal and
     a combobox to choose a different engine.  We are
@@ -314,7 +311,7 @@ class EngineSelection(tk.Frame):
     def __init__(self, parent, selected_engine, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.selected_engine = selected_engine
-        tk.Label(self, text="Text to Speech Engine", anchor="e").pack(
+        ttk.Label(self, text="Text to Speech Engine", anchor="e").pack(
             side="left", fill="x", expand=True
         )
 
@@ -324,7 +321,7 @@ class EngineSelection(tk.Frame):
         base_tts.pack(side="left", fill="x", expand=True)
 
 
-class EngineSelectAndConfigure(tk.Frame):
+class EngineSelectAndConfigure(ttk.Frame):
     """
     two element stack, the first has the engine selection,
     the second has all the parameters supported by the seleted engine
@@ -436,7 +433,7 @@ class EngineSelectAndConfigure(tk.Frame):
         return character
 
 
-class EffectList(tk.Frame):
+class EffectList(ttk.Frame):
     """
 
     """
@@ -487,12 +484,17 @@ class EffectList(tk.Frame):
                 log.info(f'Adding effect {effect} found in the database')
                 effect_class = effects.EFFECTS[effect.effect_name]
 
+                ttk.Style().configure(
+                    "Effect.TFrame",
+                    highlightbackground="black", 
+                )
+
                 # not very DRY
                 effect_config_frame = effect_class(
                     self, 
-                    borderwidth=1, 
-                    highlightbackground="black", 
-                    relief="groove"
+                    borderwidth=1,                     
+                    relief="groove",
+                    style="Effect.TFrame"
                 )
                 effect_config_frame.pack(side="top", fill="x", expand=True)
                 effect_config_frame.effect_id.set(effect.id)
@@ -502,7 +504,7 @@ class EffectList(tk.Frame):
                         
             #self.parent.pack(side="top", fill="x", expand=True)
             if not has_effects:
-                self.buffer = tk.Frame(self, width=1, height=1).pack(side="top")
+                self.buffer = ttk.Frame(self, width=1, height=1).pack(side="top")
             else:
                 if self.buffer:
                     self.buffer.pack_forget()
@@ -539,10 +541,10 @@ class EffectList(tk.Frame):
             #
             # effect_config_frame is an instance of one of the
             # EffectParameterEditor objects in effects.py.  They inherit
-            # from tk.Frame. 
+            # from ttk.Frame. 
             #
             # Instantiating these objects creates any tk objects they need to
-            # configure themselves and the tk.Frame returned can then be
+            # configure themselves and the ttk.Frame returned can then be
             # pack/grid whatever to arrange the screen.
             # 
             # When we go to render we expect each effect to provide a
@@ -551,11 +553,15 @@ class EffectList(tk.Frame):
             # with an apply(Audio) that returns an Audio; An "Audio" is a pretty
             # simple object wrapping a np.ndarray of [-1 to 1] samples.
             #
-            effect_config_frame = effect(
-                self, 
-                borderwidth=1, 
+            ttk.Style().configure(
+                "EffectConfig.TFrame",
                 highlightbackground="black", 
                 relief="groove"
+            )
+            effect_config_frame = effect(
+                self, 
+                style="EffectConfig.TFrame",
+                borderwidth=1
             )
             effect_config_frame.pack(side="top", fill="x", expand=True)
             self.effects.append(effect_config_frame)
@@ -619,7 +625,7 @@ class EffectList(tk.Frame):
         self.pack()
 
 
-class AddEffect(tk.Frame):
+class AddEffect(ttk.Frame):
     # where is this 70 coming from?  you got it from where?  what the
     # hell buddy.  This is the shit that causing errors when people
     # use an app at different resolutions.  This will center at one spot
@@ -650,7 +656,7 @@ class AddEffect(tk.Frame):
         effect_combobox.pack(side="left", fill="x", expand=True)
 
         #  [XXX]->
-        # tk.Button(self, text="Add Effect", command=self.add_effect).pack(side="right")
+        # ttk.Button(self, text="Add Effect", command=self.add_effect).pack(side="right")
 
     def add_effect(self, varname, lindex, operation):
         # Retrieve the currently selected effect from the
@@ -665,7 +671,7 @@ class AddEffect(tk.Frame):
         self.selected_effect.set(self.add_an_effect)
 
 
-class DetailSide(tk.Frame):
+class DetailSide(ttk.Frame):
     """
     Primary frame for the "detail" side of the application.
     """
@@ -676,7 +682,7 @@ class DetailSide(tk.Frame):
         self.listside = None
 
         self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
-        self.frame = tk.Frame(self.canvas, background="#ffffff")
+        self.frame = ttk.Frame(self.canvas)
         self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.vsb.set)
 
@@ -689,21 +695,25 @@ class DetailSide(tk.Frame):
         self.frame.bind("<Configure>", self.onFrameConfigure)
         # self.frame.pack(side='top', fill='x')
 
-        name_frame = tk.Frame(self.frame)
+        name_frame = ttk.Frame(self.frame)
 
-        self.character_name = tk.Label(
+        self.character_name = ttk.Label(
             name_frame,
             textvariable=selected_character,
             anchor="center",
             font=font.Font(weight="bold"),
         ).pack(side="left", fill="x", expand=True)
 
-        tk.Button(
+        style = ttk.Style()
+        style.configure(
+            "RemoveCharacter.TButton",
+            width=1
+        )
+
+        ttk.Button(
             name_frame,
             text="X",
-            anchor="center",
-            width=1,
-            height=1,
+            style="RemoveCharacter.TButton",
             command=self.remove_character
         ).pack(side="right")
 
@@ -722,7 +732,7 @@ class DetailSide(tk.Frame):
         ttk.Label(
             self.frame,
             textvariable=self.character_description,
-            wraplength=220,
+            wraplength=300,
             anchor="nw",
             justify="left"
         ).pack(side="top", fill="x")
@@ -819,7 +829,7 @@ class DetailSide(tk.Frame):
         self.canvas.yview_moveto(0)
 
 
-class PresetSelector(tk.Frame):
+class PresetSelector(ttk.Frame):
     choose_a_preset = f"{'< Use a Preset >': ^70}"
 
     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
@@ -907,7 +917,7 @@ class Character:
         cursor.close()
         return phrases
 
-class ListSide(tk.Frame):
+class ListSide(ttk.Frame):
     def __init__(self, parent, detailside, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.detailside = detailside
@@ -915,7 +925,7 @@ class ListSide(tk.Frame):
         self.detailside.listside = self
 
         self.list_filter = tk.StringVar(value="")
-        listfilter = tk.Entry(self, width=40, textvariable=self.list_filter)
+        listfilter = ttk.Entry(self, width=40, textvariable=self.list_filter)
         listfilter.pack(side="top", fill=tk.X)
         self.list_filter.trace_add('write', self.apply_list_filter)
 
@@ -925,8 +935,8 @@ class ListSide(tk.Frame):
         self.listbox = tk.Listbox(self, height=10, listvariable=self.list_items)
         self.listbox.pack(side="top", expand=True, fill=tk.BOTH)
 
-        action_frame = tk.Frame(self)
-        tk.Button(
+        action_frame = ttk.Frame(self)
+        ttk.Button(
             action_frame,
             text="Refresh",
             command=self.refresh_character_list
@@ -1074,7 +1084,7 @@ class ChatterService:
             ls.tail()
 
 
-class Chatter(tk.Frame):
+class Chatter(ttk.Frame):
     attach_label = 'Attach to Log'
     detach_label = "Detach from Log"
 
@@ -1090,7 +1100,7 @@ class Chatter(tk.Frame):
         self.logdir = tk.StringVar(value=settings.logdir)
         self.logdir.trace_add('write', self.save_logdir)
 
-        tk.Button(
+        ttk.Button(
             self, 
             textvariable=self.button_text, 
             command=self.attach_chatter
@@ -1106,7 +1116,7 @@ class Chatter(tk.Frame):
             expand=True
         )
          
-        tk.Button(
+        ttk.Button(
             self,
             text="Set Log Dir",
             command=self.ask_directory
@@ -1159,7 +1169,7 @@ class Chatter(tk.Frame):
 #     chatter = Chatter(root, None)
 #     chatter.pack(side="top", fill="x")
 
-#     editor = tk.Frame(root)
+#     editor = ttk.Frame(root)
 #     editor.pack(side="top", fill="both", expand=True)
 
 #     cursor = db.get_cursor()

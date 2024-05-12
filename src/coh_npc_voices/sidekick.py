@@ -37,7 +37,7 @@ logging.basicConfig(
 
 log = logging.getLogger("__name__")
 
-class ChartFrame(tk.Frame):
+class ChartFrame(ttk.Frame):
     def __init__(self, parent, hero, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
@@ -173,7 +173,7 @@ class ChartFrame(tk.Frame):
             canvas.get_tk_widget().pack(fill="both", expand=True)
             log.debug('graph constructed')      
 
-class CharacterTab(tk.Frame):
+class CharacterTab(ttk.Frame):
     def __init__(self, parent, event_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
@@ -209,16 +209,16 @@ class CharacterTab(tk.Frame):
 
     # character.name.trace_add('write', set_hero)
   
-class ConfigurationTab(tk.Frame):
+class ConfigurationTab(ttk.Frame):
     tkdict = {}
 
     def elevenlabs_token_frame(self):
-        elevenlabs = tk.Frame(
+        elevenlabs = ttk.Frame(
             self, 
             borderwidth=1, 
             relief="groove"
         )
-        tk.Label(
+        ttk.Label(
             elevenlabs,
             text="ElevenLabs API Token",
             anchor="e",
@@ -226,7 +226,7 @@ class ConfigurationTab(tk.Frame):
         
         self.elevenlabs_key = tk.StringVar(value=self.get_elevenlabs_key())
         self.elevenlabs_key.trace_add('write', self.change_elevenlabs_key)
-        tk.Entry(
+        ttk.Entry(
             elevenlabs,
             textvariable=self.elevenlabs_key,
             show="*"
@@ -254,7 +254,7 @@ class ConfigurationTab(tk.Frame):
         tkvar = self.tkdict.get(key)
         if tkvar is None:
             tkvar = tkvarClass(
-                value=settings.get_config_key(key, False)
+                value=settings.get_config_key(key, False)  # False is sus.
             )
             tkvar.trace_add(
                 'write', self.polymorph
@@ -268,7 +268,7 @@ class ConfigurationTab(tk.Frame):
         frame with ui for the normalize checkbox
         """
         frame = ttk.Frame(parent)
-        tk.Label(
+        ttk.Label(
             frame,
             text="Normalize all voices",
             anchor="e",
@@ -291,7 +291,7 @@ class ConfigurationTab(tk.Frame):
             relief="groove"
         )
 
-        tk.Label(
+        ttk.Label(
             frame,
             text=f"{category}",
             anchor="e",
@@ -354,10 +354,10 @@ class ConfigurationTab(tk.Frame):
         # default_player_engine.pack(side="top", fill="x")
         
     def choose_engine(self, parent, prompt, engine_var):
-        frame = tk.Frame(
+        frame = ttk.Frame(
             parent, 
         )
-        tk.Label(
+        ttk.Label(
             frame,
             text=prompt,
             anchor="e",
@@ -368,7 +368,7 @@ class ConfigurationTab(tk.Frame):
         default_engine_combo["state"] = "readonly"
         default_engine_combo.grid(column=1, row=0)
 
-        # tk.Label(
+        # ttk.Label(
         #     frame,
         #     text=f"Normalize {prompt}",
         #     anchor="e",
@@ -440,7 +440,7 @@ def main():
     character.pack(side="top", fill="both", expand=True)
     notebook.add(character, text='Character')  
 
-    voices = tk.Frame(notebook)
+    voices = ttk.Frame(notebook)
     voices.pack(side="top", fill="both", expand=True)
     notebook.add(voices, text='Voices')
 

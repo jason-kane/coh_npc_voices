@@ -12,7 +12,7 @@ log = logging.getLogger('__name__')
 
 WRAPLENGTH=250
 
-class LScale(tk.Frame):
+class LScale(ttk.Frame):
     def __init__(
         self,
         parent,
@@ -23,7 +23,7 @@ class LScale(tk.Frame):
         from_,
         to,
         _type=float,
-        *args, digits=None, resolution=None, **kwargs
+        *args, digits=None, resolution=0, **kwargs
     ):
         super().__init__(parent, *args, **kwargs)
         if _type == int:
@@ -37,7 +37,7 @@ class LScale(tk.Frame):
                 value=default
             )
 
-        tk.Label(
+        ttk.Label(
             self,
             text=label,
             anchor="e",
@@ -61,7 +61,7 @@ class LScale(tk.Frame):
         parent.parameters.append(pname)
 
 
-class LCombo(tk.Frame):
+class LCombo(ttk.Frame):
 
     def __init__(self,
         parent,
@@ -76,7 +76,7 @@ class LCombo(tk.Frame):
 
         variable = tk.StringVar(value=default)
 
-        tk.Label(
+        ttk.Label(
             self,
             text=label,
             anchor="e",
@@ -97,7 +97,7 @@ class LCombo(tk.Frame):
         parent.parameters.append(pname)        
 
 
-class LBoolean(tk.Frame):
+class LBoolean(ttk.Frame):
     def __init__(
         self,
         parent,
@@ -114,7 +114,7 @@ class LBoolean(tk.Frame):
             value=default
         )
 
-        tk.Label(
+        ttk.Label(
             self,
             text=label,
             anchor="e",
@@ -134,7 +134,7 @@ class LBoolean(tk.Frame):
         parent.parameters.append(pname)  
 
 
-class EffectParameterEditor(tk.Frame):
+class EffectParameterEditor(ttk.Frame):
     label = "Label"
     desc = "Description of effect"
 
@@ -145,8 +145,8 @@ class EffectParameterEditor(tk.Frame):
         self.parameters = []
         self.traces = []
 
-        topbar = tk.Frame(self)
-        tk.Label(
+        topbar = ttk.Frame(self)
+        ttk.Label(
             topbar,
             text=self.label,
             anchor="n",
@@ -155,17 +155,22 @@ class EffectParameterEditor(tk.Frame):
             justify='left'
         ).pack(side='left', fill='x', expand=True)
     
-        tk.Button(
-            topbar,
-            text="X",
+        ttk.Style().configure(
+            "CloseFrame.TButton",
             anchor="center",
             width=1,
-            height=1,
+            height=1
+        )
+
+        ttk.Button(
+            topbar,
+            text="X",
+            style="CloseFrame.TButton",
             command=self.remove_effect
         ).pack(side="right")
         topbar.pack(side="top", fill='x', expand=True)
 
-        tk.Label(
+        ttk.Label(
             self,
             text=self.desc,
             anchor="n",

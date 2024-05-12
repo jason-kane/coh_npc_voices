@@ -71,7 +71,7 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 
 
 # Base Class for engines
-class TTSEngine(tk.Frame):
+class TTSEngine(ttk.Frame):
     def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.parent = parent
@@ -249,8 +249,8 @@ class WindowsTTS(TTSEngine):
         self.parameters = set(("voice_name", "rate"))
         self.load_character(self.selected_character.get())
 
-        voice_frame = tk.Frame(self)
-        tk.Label(voice_frame, text="Voice Name", anchor="e").pack(
+        voice_frame = ttk.Frame(self)
+        ttk.Label(voice_frame, text="Voice Name", anchor="e").pack(
             side="left", fill="x", expand=True
         )
 
@@ -266,8 +266,8 @@ class WindowsTTS(TTSEngine):
         self.voice_name.trace_add("write", self.change_voice_name)
         voice_frame.pack(side="top", fill="x", expand=True)
 
-        rate_frame = tk.Frame(self)
-        tk.Label(rate_frame, text="Speaking Rate", anchor="e").pack(
+        rate_frame = ttk.Frame(self)
+        ttk.Label(rate_frame, text="Speaking Rate", anchor="e").pack(
             side="left", fill="x", expand=True
         )
 
@@ -369,8 +369,8 @@ class GoogleCloud(TTSEngine):
         character = self.load_character(self.selected_character.get())
         gender = settings.get_npc_gender(character.name)
 
-        language_frame = tk.Frame(self)
-        tk.Label(language_frame, text="Language Code", anchor="e").pack(
+        language_frame = ttk.Frame(self)
+        ttk.Label(language_frame, text="Language Code", anchor="e").pack(
             side="left", fill="x", expand=True
         )
 
@@ -385,8 +385,8 @@ class GoogleCloud(TTSEngine):
         language_combo.pack(side="left")
         language_frame.pack(side="top", fill="x", expand=True)
 
-        voice_frame = tk.Frame(self)
-        tk.Label(voice_frame, text="Voice Name", anchor="e").pack(
+        voice_frame = ttk.Frame(self)
+        ttk.Label(voice_frame, text="Voice Name", anchor="e").pack(
             side="left", fill="x", expand=True
         )
 
@@ -408,12 +408,12 @@ class GoogleCloud(TTSEngine):
 
         # when voice_combo changes re-set this
         # gender label.
-        tk.Label(self, textvariable=self.ssml_gender, anchor="e").pack(
+        ttk.Label(self, textvariable=self.ssml_gender, anchor="e").pack(
             side="top", fill="x", expand=True
         )
 
-        rate_frame = tk.Frame(self)
-        tk.Label(rate_frame, text="Speaking Rate", anchor="e").pack(
+        rate_frame = ttk.Frame(self)
+        ttk.Label(rate_frame, text="Speaking Rate", anchor="e").pack(
             side="left", fill="x", expand=True
         )
 
@@ -433,8 +433,8 @@ class GoogleCloud(TTSEngine):
         self.rate.trace_add("write", self.change_voice_rate)
         rate_frame.pack(side="top", fill="x", expand=True)
 
-        pitch_frame = tk.Frame(self)
-        tk.Label(pitch_frame, text="Vocal Pitch", anchor="e").pack(
+        pitch_frame = ttk.Frame(self)
+        ttk.Label(pitch_frame, text="Vocal Pitch", anchor="e").pack(
             side="left", fill="x", expand=True
         )
 
@@ -605,8 +605,8 @@ class ElevenLabs(TTSEngine):
         character = self.load_character(raw_name)
         gender = settings.get_npc_gender(character.name)
 
-        voice_frame = tk.Frame(self)
-        tk.Label(voice_frame, text="Voice", anchor="e").pack(
+        voice_frame = ttk.Frame(self)
+        ttk.Label(voice_frame, text="Voice", anchor="e").pack(
             side="left", fill="x", expand=True
         )
 

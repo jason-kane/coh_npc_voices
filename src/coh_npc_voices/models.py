@@ -102,6 +102,17 @@ def get_character(name, category, session=None):
     return value
 
 
+def get_character_from_rawname(raw_name, session=None):
+    try:
+        category, name = raw_name.split(maxsplit=1)
+    except ValueError:
+        log.error('Invalid character raw_name: %s', raw_name)
+        return None
+
+    return get_character(name, category, session=session)
+
+
+
 def update_character_last_spoke(character, session=None):
     if session:
         character = session.scalars(
