@@ -2,6 +2,7 @@
 There is more awesome to be had.
 """
 import logging
+from logging.config import dictConfig
 import multiprocessing
 from datetime import datetime, timedelta
 import sys
@@ -28,17 +29,54 @@ import ctypes
 myappid = u'fun.side.projects.sidekick.1.0'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-# log info to stdout
-logging.basicConfig(
-    level=settings.LOGLEVEL,
-    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logging.basicConfig(
-    filename="sidekick.log",
-    level=logging.ERROR,
-    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-)
+LOGGING_CONFIG = { 
+    'version': 1,
+    'disable_existing_loggers': True,
+    'formatters': { 
+        'standard': { 
+            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        },
+    },
+    'handlers': { 
+        'default': { 
+            'level': 'INFO',
+            'formatter': 'standard',
+            'class': 'logging.StreamHandler'
+        },
+        'error_file': { 
+            'level': 'ERROR',
+            'formatter': 'standard',
+            'class': 'logging.FileHandler',
+            'filename': 'error.log',
+            'mode': 'a'
+        },
+    },
+    'loggers': { 
+        '': {  # root logger
+            'handlers': ['default', 'error_file'],
+            'level': 'DEBUG',
+            'propagate': False
+        },
+        # 'coh_npc_voices': {
+        #     'handlers': ['default', 'error_file'],
+        #     'level': 'DEBUG',
+        #     'propagate': True
+        # },
+    } 
+}
+
+dictConfig(LOGGING_CONFIG)
+# # log info to stdout
+# logging.basicConfig(
+#     level=settings.LOGLEVEL,
+#     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+#     handlers=[logging.StreamHandler(sys.stdout)],
+# )
+# logging.basicConfig(
+#     filename="sidekick.log",
+#     level=logging.ERROR,
+#     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+# )
 
 log = logging.getLogger("__name__")
 

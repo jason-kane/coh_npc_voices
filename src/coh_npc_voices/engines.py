@@ -1,15 +1,19 @@
 import json
 import logging
 import os
+import random
 import sys
 import tempfile
 import time
-import random
 import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import ttk
 from typing import Union
+import boto3
 
+from voicebox.tts.amazonpolly import AmazonPolly as AmazonPollyTTS
+
+import audio
 import elevenlabs
 import models
 import settings
@@ -17,7 +21,6 @@ import tts.sapi
 import voicebox
 from elevenlabs.client import ElevenLabs as ELABS
 from google.cloud import texttospeech
-from pedalboard.io import AudioFile
 from sqlalchemy import select
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
@@ -785,12 +788,16 @@ class ttsElevenLabs(voicebox.tts.TTS):
         client = get_elevenlabs_client()
         # https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/client.py#L118
         # default response is an iterator providing an mp3_44100_128.
-        # but if we ask for a PCM response, we don't need to decompress an mp3
-        log.info(f"self.voice: {self.voice}")
+        #
+        # I tried asking 11labs for a PCM response (wav),so we don't need to decompress an mp3
+        # but the PCM wav format returned by 11labs isn't direcly compatible with the 
+        # wav format that the wave library known how to open.
+        log.debug(f"self.voice: {self.voice}")
         voice_name, voice_id = self.voice.split(':')
         voice_name = voice_name.strip()
         voice_id = voice_id.strip()
 
+        # I'm not actually clear on what exactly 'model' does.
         # voice_model = None
 
         audio_data = client.generate(
@@ -808,66 +815,211 @@ class ttsElevenLabs(voicebox.tts.TTS):
 
         with tempfile.NamedTemporaryFile() as tmp:
             tmp.close()
-            elevenlabs.save(audio_data, tmp.name + ".mp3")
+            # start with an mp3 file
+            mp3filename = tmp.name + ".mp3"
+            elevenlabs.save(audio_data, mp3filename)
 
-            log.info('Converting from mp3 to wav...')
-            with AudioFile(tmp.name + ".mp3") as input:
-                with AudioFile(
-                    filename=tmp.name + ".wav", 
-                    samplerate=input.samplerate,
-                    num_channels=input.num_channels
-                ) as output:
-                    while input.tell() < input.frames:
-                        output.write(input.read(1024))
-                    log.info(f'Wrote {tmp.name}.wav')
-
-        # audio_data is a generator returning
-        # bytes.  We want an Audio(), which is 
-        # a class with signal and sample_rate attributes.
-        #
-        #with BytesIO(b"".join(audio_data)) as wav_file:
-            return voicebox.tts.utils.get_audio_from_wav_file(
-                tmp.name + ".wav"
-            )
-        
-        
-            tmp.close()
-
-            elevenlabs.save(audio_data, tmp.name)
-        
-            audio = voicebox.tts.utils.get_audio_from_wav_file(tmp.name)
-        
-        return audio
-
-        # asBytes = bytes(audio_data)
-        # wavfile = BytesIO(asBytes)
-        # as_wave = wave.open(wavfile)
-
-        # bytes_per_sample = as_wave.getsampwidth()
-        # sample_bytes = as_wave.readframes(-1)
-        # sample_rate = as_wave.getframerate()
-
-        # dtype = voicebox.tts.utils.sample_width_to_dtype[bytes_per_sample]
-        # samples = numpy.frombuffer(sample_bytes, dtype=dtype)
-
-        # return voicebox.tts.utils.get_audio_from_samples(samples, sample_rate)
+            return audio.mp3file_to_Audio(mp3filename)
 
 
 class AmazonPolly(TTSEngine):
+    """
+    Pricing:
+    https://aws.amazon.com/polly/pricing/?p=pm&c=ml&pd=polly&z=4
+    I think this could be a really great fit for this
+    project with its free million characters of tts per 
+    month, and (2024) each addition million at highest 
+    quality for $16.  If the API can make it clear when
+    you cross from free to paid and quality is anywhere
+    near elevenlabs.. lets see what we can get.
+    """
     cosmetic = "Amazon Polly"
 
     def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, selected_character, *args, **kwargs)
+        # tk.variable holding the currently selected characters
+        # raw_name.  It will be part of the database persistence
+        # for this specific instance of AmazonPolly which will only
+        # exist for as long as it takes to make one utterance
+        # in the voice of one specific character.  We already know
+        # it is an AmazonPolly voice because we wouldn't be the one
+        # talking otherwise.  Duhh.
+
+        self.paramters = set(("voice_name",))
+
+        self.selected_character = selected_character
+        character = self.load_character(self.selected_character.get())
+        gender = settings.get_npc_gender(character.name)
+
+        # what variables does Polly allow/require?
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/polly.html
+        
+        # what widgets do we need to configure those variables?
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/polly/client/synthesize_speech.html
+        language_code_frame = ttk.Frame(self)
+        self.language_code = tk.StringVar()
+        self.engine = tk.StringVar(value="standard")
+        self.voice_name = tk.StringVar(value="standard")
+        self.sample_rate = tk.StringVar(value="16000")
+
+        ttk.Label(language_code_frame, text="Language Code", anchor="e").pack(
+            side="left", fill="x", expand=True
+        )
+
+        language_code_combo = ttk.Combobox(
+            language_code_frame,
+            textvariable=self.language_code,
+        )
+        all_language_codes = self.get_language_codes()
+        language_code_combo["values"] = all_language_codes
+        language_code_combo["state"] = "readonly"
+        language_code_combo.pack(side="left", fill="x", expand=True)
+        language_code_combo.pack(side="top", fill="x", expand=True)
+        self.language_code.set(value=all_language_codes[0])
+
+        self.language_code.trace_add("write", self.change_language_code)
+        language_code_frame.pack(side="top", fill="x")
+        # finished language code frame
+
+        voice_frame = ttk.Frame(self)
+        ttk.Label(voice_frame, text="Voice Name", anchor="e").pack(
+            side="left", fill="x", expand=True
+        )
+
+        voice_combo = ttk.Combobox(
+            voice_frame,
+            textvariable=self.voice_name,
+        )
+        all_voices = self.get_voice_names(
+            gender=gender
+        )
+        voice_combo["values"] = all_voices
+        voice_combo["state"] = "readonly"
+        voice_combo.pack(side="left", fill="x", expand=True)
+        voice_frame.pack(side="top", fill="x", expand=True)
+        self.voice_name.set(value=all_voices[0])
+
+        self.voice_name.trace_add("write", self.change_voice_name)
+        # end of voice frame
+
+        self.session = boto3.Session()
+        self.client = self.session.client('polly')
+
+    def change_language_code(self, *args, **kwargs):
+        """
+        the language_code tkvar has been .set()
+        """
+        return
+    
+    def change_voice_name(self, *args, **kwargs):
+        """
+        the voice_name tkvar has been .set()
+        """
+        return
+
+    def get_tts(self):
+        """
+        Returns a voicebox TTS object initialized for a specific
+        character
+        """
+        
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/index.html
+        #
+        # ~/.aws/credentials
+        # C:\Users\<UserName>\.aws\credentials
+        #
+        # [default]
+        # aws_access_key_id = YOUR_ACCESS_KEY
+        # aws_secret_access_key = YOUR_SECRET_KEY
+        #
+        # ~/.aws/config:
+        # [default]
+        # region=us-west-1
+        #
+        # https://us-east-2.console.aws.amazon.com/polly/home/SynthesizeSpeech
+        
+        raw_voice_name = self.override.get('voice_name', self.voice_name.get())
+        voice_name, voice_id = raw_voice_name.split('-')
+
+        # Engine (string) – Specifies the engine ( standard, neural, long-form or generative) used by Amazon Polly when processing input text for speech synthesis.
+        engine = self.engine.get()
+        
+        # LanguageCode (string) – The language identification tag (ISO 639 code for the language name-ISO 3166 country code) for filtering the list of voices returned. If you don’t specify this optional parameter, all available voices are returned.
+        language_code=self.override.get('language_code', self.language_code.get())
+        lexicon_names=[]
+        sample_rate = self.override.get('sample_rate', self.sample_rate.get())
+        
+        return AmazonPollyTTS(
+            client=self.client,
+            voice_id=voice_id.strip(),
+            engine=engine,
+            language_code=language_code,
+            lexicon_names=lexicon_names,
+            sample_rate=int(sample_rate)
+        )
+
+    @staticmethod
+    def get_voice_names(language_code="en-US", gender=None):
+        voice_names = []
+
+        session = boto3.Session()
+        client = session.client('polly')
+        if language_code is None:
+            language_code = 'en-US'
+
+        for voice in client.describe_voices(
+            LanguageCode=language_code,
+            IncludeAdditionalLanguageCodes=True
+        )['Voices']:
+            print(f'{voice=}')
+            # if we've specified the gender, filter out
+            # voices from other genders.
+            if gender and gender.upper() != gender.upper():
+                continue
+            voice_names.append(f'{voice["Name"]} - {voice["Id"]}')
+            
+        return voice_names       
+
+    def get_language_codes(self):
+        # Language code of the voice.
+        # you know, we aren't really interested in listing
+        # _every_ language code.  We only want the ones
+        # that have at least one Amazon Polly voice.
+        cache_fn = 'amazon_polly_language_codes.json'
+        if os.path.exists(cache_fn):
+            with open(cache_fn, 'r') as h:
+                all_language_codes = json.loads(h.read())
+        else:
+            session = boto3.Session()
+            client = session.client('polly')
+
+            all_language_codes = set()
+            for voice in client.describe_voices()['Voices']:
+                all_language_codes.add(voice['LanguageCode'])
+                for code in voice.get('AdditionalLanguageCodes', []):
+                    all_language_codes.add(code)
+            
+            with open(cache_fn, 'w') as h:
+                h.write(
+                    json.dumps(
+                        sorted(list(all_language_codes)),
+                        indent=2
+                    )
+                )
+
+        return sorted(list(all_language_codes))
 
 
 # https://github.com/coqui-ai/tts
-
+# I tried this.  Doesn't work yet in Windown w/Py 3.12 due to the 
+# absense of compiled pytorch binaries.  I'm more than a little worried
+# the resources requirment and speed will make it impractical.
 
 def get_engine(engine_name):
     for engine_cls in ENGINE_LIST:
         if engine_name == engine_cls.cosmetic:
-            print(f"found {engine_cls.cosmetic}")
+            log.debug(f"found {engine_cls.cosmetic}")
             return engine_cls
 
 
-ENGINE_LIST = [WindowsTTS, GoogleCloud, ElevenLabs]  # AmazonPolly ]
+ENGINE_LIST = [WindowsTTS, GoogleCloud, ElevenLabs, AmazonPolly ]
