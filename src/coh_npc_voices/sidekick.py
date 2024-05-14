@@ -31,7 +31,7 @@ ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 LOGGING_CONFIG = { 
     'version': 1,
-    'disable_existing_loggers': True,
+    'disable_existing_loggers': False,
     'formatters': { 
         'standard': { 
             'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -55,7 +55,7 @@ LOGGING_CONFIG = {
         '': {  # root logger
             'handlers': ['default', 'error_file'],
             'level': 'DEBUG',
-            'propagate': False
+            'propagate': True
         },
         # 'coh_npc_voices': {
         #     'handlers': ['default', 'error_file'],

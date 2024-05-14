@@ -1,8 +1,9 @@
 from datetime import datetime
 import json
-from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine, orm, select
+from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine, orm, select, delete
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import mapped_column
+import os
 from sqlalchemy.orm import Session
 import logging
 import sys
@@ -112,7 +113,6 @@ def get_character_from_rawname(raw_name, session=None):
     return get_character(name, category, session=session)
 
 
-
 def update_character_last_spoke(character, session=None):
     if session:
         character = session.scalars(
@@ -150,6 +150,94 @@ class Character(Base):
     
     def __repr__(self):
         return f"<Character category={self.category!r} id={self.id!r} name={self.name!r} engine={self.engine!r}/>"
+
+
+CACHE_DIR = 'cache'
+def diskcache(key, value=None):
+    """
+    key must be valid as a base filename
+    value must be None or a json-able object
+    """
+    filename = os.path.join(CACHE_DIR, key + ".json")
+    if value is None:
+        if os.path.exists(filename):
+            with open(filename, 'rb') as h:
+                content =json.loads(h.read())
+            return content
+    else:
+        if not os.path.exists(CACHE_DIR):
+            os.mkdir(CACHE_DIR)
+
+        with open(filename, 'w') as h:
+            h.write(json.dumps(value, indent=2))
+        
+        return value
+
+
+def get_engine_config(character_id):
+    out = {}
+    with Session(engine) as session:
+        items = session.scalars(
+            select(BaseTTSConfig).where(
+                character_id == character_id
+            )
+        ).all()
+
+        for row in items:
+            out[row.key] = row.value
+
+    return out
+
+def set_engine_config(character_id, new_config):
+    """
+    Generally speaking -- only one thing is actually changing, because this is called in the listeners on the config widgets.
+    that is what makes returning 'change' not stupid.  The most common multi-config setting change happens when the user switches
+    to a different TTS enigne.  That part isn't our concern.   
+    """
+    change = None
+    old_config = get_engine_config(character_id)
+    log.info(f"{character_id=} {old_config=} {new_config=}")
+    with Session(engine) as session:
+        for key in new_config:   
+            if key in old_config:
+                if old_config[key] != new_config[key]:
+                    log.info(f'change in {key}: {old_config[key]} != {new_config[key]}')
+                    # this value has changed
+                    row = session.scalars(
+                        select(BaseTTSConfig).where(
+                            character_id == character_id,
+                            key == key
+                        )
+                    ).first()
+                    row.value = new_config[key]
+                    change = key
+                    session.commit()
+            else:
+                # we have a new key/value, this will only 
+                # happen when upgrading/downgrading.
+                log.info(f'new key: {key} = {new_config[key]}')
+                row = BaseTTSConfig(
+                    character_id=character_id,
+                    key=key,
+                    value=new_config[key]
+                )
+                change = key
+                session.add(row)
+
+        for key in old_config:
+            if key not in new_config:
+                # this key is no longer part of the config, this
+                # will also only happen when upgrading/downgrading.
+                row = session.scalars(
+                    delete(BaseTTSConfig).where(
+                        character_id == character_id,
+                        key == key
+                    )
+                )
+
+        session.commit()
+        return change
+
 
 class BaseTTSConfig(Base):
     __tablename__ = "base_tts_config"
