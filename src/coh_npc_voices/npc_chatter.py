@@ -66,7 +66,6 @@ class ParallelTTS(threading.Thread):
 
     def playfile(self, cachefile):
         log.info(f"Cache Hit: {cachefile}")
-        # requires pydub
         with AudioFile(cachefile) as input:
             with AudioFile(
                 filename=cachefile + ".wav",

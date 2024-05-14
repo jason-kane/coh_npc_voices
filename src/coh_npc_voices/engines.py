@@ -111,24 +111,27 @@ class TTSEngine(ttk.Frame):
     def load_character(self, raw_name):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
+        self.loading = True
         log.info(f"TTSEngine.load_character({raw_name})")
        
         character = models.get_character_from_rawname(raw_name)
         self.gender = settings.get_npc_gender(character.name)
 
         if character.engine == self.cosmetic:
+            log.info(f'Engine {character.engine} found.')
             with models.Session(models.engine) as session:
                 tts_config = session.scalars(
                     select(models.BaseTTSConfig).where(
                         models.BaseTTSConfig.character_id == character.id
                     )
                 ).all()
+                log.info(f"{tts_config=}")
 
                 for config in tts_config:
                     log.info(f'Setting config {config.key} to {config.value}')
                     log.info(f'{self} supports parameters {self.parameters}')
                     if config.key in self.parameters:
-                        log.info(f"{dir(self)}")
+                        # log.info(f"{dir(self)}")
                         if hasattr(self, 'config_vars'):
                             # the polly way
                             log.info(f'PolyConfig[{config.key}] = {config.value}')
@@ -150,14 +153,13 @@ class TTSEngine(ttk.Frame):
             # Elevenlabs starts working again, we don't want the voice configs
             # to be messed up.
             #
-            # we keep effects, that part is easy.
-            
-            gender = settings.get_npc_gender(character.name)
+            # we keep effects, that part is easy.           
+            self.gender = settings.get_npc_gender(character.name)
             
             # we can't do simple random, we want a _consistent_ voice.  No
             # problem. gendered_voices should be identical from one "run" to the
             # next.
-            gendered_voices = sorted(self.get_voice_names(gender=gender))
+            gendered_voices = sorted(self.get_voice_names(gender=self.gender))
             
             # when is random not random?  We don't even need to hash it,
             # random.seed now takes an int (obv) _or_ a str/bytes/bytearray.  
@@ -181,6 +183,7 @@ class TTSEngine(ttk.Frame):
             self.override['use_speaker_boost'] = True
 
         log.info("TTSEngine.load_character complete")
+        self.loading = False
         return character
 
     def save_character(self, raw_name):
@@ -853,7 +856,7 @@ class AmazonPolly(TTSEngine):
         self.CONFIG_TUPLE = (
             ('Language Code', 'language_code', 'en-US', self.get_language_codes),
             ('Engine', 'engine', 'standard', self.get_engine_names),
-            ('Voice Name', 'voice_name', None, self.get_voice_names),
+            ('Voice Name', 'voice_name', "<unconfigured>", self.get_voice_names),
             ('Sample Rate', 'sample_rate', '16000', self.get_sample_rates)
         )
 
@@ -872,56 +875,21 @@ class AmazonPolly(TTSEngine):
                 textvariable=self.config_vars[key],
             )
 
-            all_values = fn()
-            self.widget[key]["values"] = all_values
+            # all_values = fn()
+            # self.widget[key]["values"] = all_values
             self.widget[key]["state"] = "readonly"
             self.widget[key].pack(side="left", fill="x", expand=True)
 
-            if default is None:
-                default = all_values[0]
+            #if default is None:
+            #    default = all_values[0]
 
-            self.config_vars[key].set(value=default)
+            # self.config_vars[key].set(value=default)
             self.config_vars[key].trace_add("write", self.reconfig)
             frame.pack(side="top", fill="x", expand=True)
 
         self.selected_character = selected_character
-        self.gender = None
-        character = self.load_character(self.selected_character.get())
-        
-
-        # all_language_codes = self.get_language_codes()
-        # language_code_combo["values"] = all_language_codes
-        # language_code_combo["state"] = "readonly"
-        # #language_code_combo.pack(side="left", fill="x", expand=True)
-        # language_code_combo.pack(side="top", fill="x", expand=True)
-        # self.language_code.set(value=all_language_codes[0])
-
-        # self.language_code.trace_add("write", self.change_language_code)
-        # language_code_frame.pack(side="top", fill="x")
-        # # finished language code frame
-
-        # voice_frame = ttk.Frame(self)
-        # ttk.Label(voice_frame, text="Voice Name", anchor="e").pack(
-        #     side="left", fill="x", expand=True
-        # )
-
-        # voice_combo = ttk.Combobox(
-        #     voice_frame,
-        #     textvariable=self.voice_name,
-        # )
-        
-        # all_voices = self.get_voice_names(
-        #     language_code=self.language_code.get(),
-        #     gender=gender
-        # )
-        # voice_combo["values"] = all_voices
-        # voice_combo["state"] = "readonly"
-        # voice_combo.pack(side="left", fill="x", expand=True)
-        # voice_frame.pack(side="top", fill="x", expand=True)
-        # self.voice_name.set(value=all_voices[0])
-
-        # self.voice_name.trace_add("write", self.change_voice_name)
-        # # end of voice frame
+        self.load_character(self.selected_character.get())
+        self.repopulate_options()
 
         self.session = boto3.Session()
         self.client = self.session.client('polly')
@@ -930,25 +898,31 @@ class AmazonPolly(TTSEngine):
         """
         An engine config value has changed
         """
+        if self.loading:
+            return
+        
+        log.info(f'reconfig({args=}, {kwargs=})')
         character = models.get_character_from_rawname(self.selected_character.get())
         
         config = {}
         for cosmetic, key, default, fn in self.CONFIG_TUPLE:
             config[key] = self.config_vars[key].get()
         
-        change = models.set_engine_config(character.id, config)
-        log.info(f'reconfig() {change=}')
-        if change:
-            for cosmetic, key, default, fn in self.CONFIG_TUPLE:
-                # our change filters the other widgets, very possibly
-                # rendering the previous value invalid.
-                log.info(f"{cosmetic=} {key=} {default=} {fn=}")
-                if change != key:
-                    self.widget[key]["values"] = fn(filter_by=change)
+        models.set_engine_config(character.id, config)
+        self.repopulate_options()
+
+    def repopulate_options(self):
+        for cosmetic, key, default, fn in self.CONFIG_TUPLE:
+            # our change may filter the other widgets, possibly
+            # rendering the previous value invalid.
+            log.info(f"{cosmetic=} {key=} {default=} {fn=}")
+            self.widget[key]["values"] = fn()
 
     def _gender_filter(self, voice):
         if hasattr(self, 'gender'):
+            # log.info(f"_gender_filter: {self.gender.upper()} ?= {voice['Gender'].upper()}")
             return self.gender.upper() == voice["Gender"].upper()
+        log.info('bypassing gender filter')
         return True
 
     def _engine_filter(self, filter_by, voice):
@@ -957,41 +931,25 @@ class AmazonPolly(TTSEngine):
         """
         return filter_by == "engine" and self.config_vars["engine"].get() in voice["SupportedEngines"]
 
-    def _voice_name_filter(self, filter_by, voice):
-        """
-        True if this voice passes a filter by name
-        """
-        return filter_by == "voice_name" and self.config_vars["voice_name"].get() == voice["Name"]
-
-    def _language_code_filter(self, filter_by, voice):
+    def _language_code_filter(self, voice):
         """
         True if this voice has the given language_code anywhere.
         """
         selected_language_code = self.config_vars["language_code"].get()
-        return filter_by == "language_code" and (
+        return (
             selected_language_code == voice["LanguageCode"]
         or
             selected_language_code in voice.get("AdditionalLanguageCodes", [])
         )
 
-    def get_language_codes(self, filter_by=None):
+    def get_language_codes(self):
         all_voices = self.get_voices()
         out = set()
-        # is this going to be intuitive or just weird?
+        
         for voice_id in all_voices:
-            log.debug(f"get_language_codes() {voice_id=} {filter_by=}")
-            voice = all_voices[voice_id]
-            
-            # only the "active" filter (filter_by) lets anything through.
-            if self._gender_filter(voice) and (
-                (
-                    self._engine_filter(filter_by, voice)
-                ) or (
-                    self._voice_name_filter(filter_by, voice)
-                ) or (
-                    filter_by in [None, "language_code", "sample_rate"]
-                )
-            ):
+            voice = all_voices[voice_id]           
+
+            if self._gender_filter(voice):
                 out.add(voice["LanguageCode"])
                 for code in voice.get('AdditionalLanguageCodes', []):
                     out.add(code)
@@ -1005,48 +963,27 @@ class AmazonPolly(TTSEngine):
         # is this going to be intuitive or just weird?
         for voice_id in all_voices:
             voice = all_voices[voice_id]
-            if self._gender_filter(voice) and (
-                (
-                    self._language_code_filter(filter_by, voice)
-                ) or (
-                    self._voice_name_filter(filter_by, voice)
-                ) or (
-                    filter_by in [None, "engine", "sample_rate"]
-                )
-            ):
+            if self._language_code_filter(voice) and self._gender_filter(voice):
                 for code in voice.get('SupportedEngines', []):
                     out.add(code)
 
         return sorted(list(out))
 
-    def get_voice_names(self, filter_by=None):
+    def get_voice_names(self):
         all_voices = self.get_voices()
 
         out = set()
-        # is this going to be intuitive or just weird?
         for voice_id in all_voices:
             voice = all_voices[voice_id]
-            if self._gender_filter(voice) and (
-                (
-                    self._engine_filter(filter_by, voice)
-                ) or (
-                    self._language_code_filter(filter_by, voice)
-                ) or (
-                    filter_by in [None, "engine", "sample_rate"]
-                )
-            ):
+            if self._language_code_filter(voice) and self._gender_filter(voice):
+                log.info(f'Including voice {voice["Name"]}')
                 out.add(f'{voice["Name"]} - {voice["Id"]}')
         
         out = sorted(list(out))
         
         if out:
             if self.config_vars["voice_name"].get() not in out:
-                # So the voice that was selected is no longer an option.
-                # the resoluton path may get a bit wild.
-                # this .set() will trigger another set of get_* calls but
-                # wherever things settle it should be a valid combination
-                # and the highest priority change is the one the user just
-                # made.
+                # our currently selected voice is invalid.  Pick a new one.
                 self.config_vars["voice_name"].set(out[0])
             return out
         else:

@@ -203,12 +203,14 @@ def set_engine_config(character_id, new_config):
                 if old_config[key] != new_config[key]:
                     log.info(f'change in {key}: {old_config[key]} != {new_config[key]}')
                     # this value has changed
-                    row = session.scalars(
+                    row = session.scalar(
                         select(BaseTTSConfig).where(
-                            character_id == character_id,
-                            key == key
+                            BaseTTSConfig.character_id == character_id
+                        ).where(
+                            BaseTTSConfig.key == key
                         )
-                    ).first()
+                    )
+                    log.info(f'Changing value of {row} to {new_config[key]}')
                     row.value = new_config[key]
                     change = key
                     session.commit()
@@ -230,8 +232,8 @@ def set_engine_config(character_id, new_config):
                 # will also only happen when upgrading/downgrading.
                 row = session.scalars(
                     delete(BaseTTSConfig).where(
-                        character_id == character_id,
-                        key == key
+                        BaseTTSConfig.character_id == character_id,
+                        BaseTTSConfig.key == key
                     )
                 )
 
@@ -245,6 +247,9 @@ class BaseTTSConfig(Base):
     character_id: Mapped[int] = mapped_column(ForeignKey("character.id"))
     key: Mapped[str] = mapped_column(String(64))
     value: Mapped[str] = mapped_column(String(64))
+    
+    def __repr__(self):
+        return f"<BaseTTSConfig {self.id} {self.character_id=} {self.key=} {self.value=}/>"
 
 class GoogleVoices(Base):
     __tablename__ = "google_voices"
