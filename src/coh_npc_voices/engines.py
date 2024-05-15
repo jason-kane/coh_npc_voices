@@ -969,8 +969,11 @@ class AmazonPolly(TTSEngine):
 
         return sorted(list(out))
 
-    def get_voice_names(self):
+    def get_voice_names(self, gender=None):
         all_voices = self.get_voices()
+        
+        if gender and not hasattr(self, 'gender'):
+            self.gender = gender
 
         out = set()
         for voice_id in all_voices:
