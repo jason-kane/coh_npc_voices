@@ -40,16 +40,16 @@
         },
         "Effects": {
             "Vocoder": {
-                "carrier_freq": "160",
-                "min_freq": "80",
-                "max_freq": "8000",
+                "carrier_freq": "100",
+                "min_freq": "135",
+                "max_freq": "6100",
                 "bands": "40",
                 "bandwidth": "0.5",
                 "bandpass_filter_order": "3"
             },
             "RingMod": {
-                "carrier_freq": "160",
-                "blend": "0.5",
+                "carrier_freq": "86",
+                "blend": "0.3",
                 "carrier_wave": "sin"
             },
             "Normalize": {

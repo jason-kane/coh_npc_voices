@@ -1019,16 +1019,16 @@ class AmazonPolly(TTSEngine):
         #
         # https://us-east-2.console.aws.amazon.com/polly/home/SynthesizeSpeech
         
-        raw_voice_name = self.override.get('voice_name', self.voice_name.get())
+        raw_voice_name = self.override.get('voice_name', self.config_vars["voice_name"].get())
         voice_name, voice_id = raw_voice_name.split('-')
 
         # Engine (string) – Specifies the engine ( standard, neural, long-form or generative) used by Amazon Polly when processing input text for speech synthesis.
-        engine = self.engine.get()
+        engine = self.config_vars["engine"].get()
         
         # LanguageCode (string) – The language identification tag (ISO 639 code for the language name-ISO 3166 country code) for filtering the list of voices returned. If you don’t specify this optional parameter, all available voices are returned.
-        language_code=self.override.get('language_code', self.language_code.get())
+        language_code=self.override.get('language_code', self.config_vars["language_code"].get())
         lexicon_names=[]
-        sample_rate = self.override.get('sample_rate', self.sample_rate.get())
+        sample_rate = self.override.get('sample_rate', self.config_vars["sample_rate"].get())
         
         return AmazonPollyTTS(
             client=self.client,

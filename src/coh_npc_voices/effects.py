@@ -28,12 +28,12 @@ class LScale(ttk.Frame):
         super().__init__(parent, *args, **kwargs)
         if _type == int:
             variable = tk.IntVar(
-                name=f"{pname}",
+                name=f"{parent.label.lower()}_{pname}",
                 value=default
             )
         else:
             variable = tk.DoubleVar(
-                name=f"{pname}",
+                name=f"{parent.label.lower()}_{pname}",
                 value=default
             )
 
