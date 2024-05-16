@@ -293,7 +293,13 @@ class ChoosePhrase(ttk.Frame):
             else:
                 # No Cache
                 log.info(f'Bypassing filesystem caching ({msg})')
-                ttsengine(None, self.selected_character).say(msg, effect_list)
+                try:
+                    ttsengine(None, self.selected_character).say(msg, effect_list)
+                except engines.DISABLE_ENGINES:
+                    # I'm not even sure what we want to do.  The user clicked 'play' but
+                    # we don't have any quota left for the selected engine.
+                    # lets go dumb-simple.
+                    tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
 
 
 class EngineSelection(ttk.Frame):

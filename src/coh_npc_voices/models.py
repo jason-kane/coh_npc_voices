@@ -210,10 +210,19 @@ def set_engine_config(character_id, new_config):
                             BaseTTSConfig.key == key
                         )
                     )
-                    log.info(f'Changing value of {row} to {new_config[key]}')
-                    row.value = new_config[key]
-                    change = key
-                    session.commit()
+                    if row:
+                        log.info(f'Changing value of {row} to {new_config[key]}')
+                        row.value = new_config[key]
+                        change = key
+                        session.commit()
+                    else:
+                        log.info(f'Charactger {character_id} has no previous engine config for {key}')
+                        row = BaseTTSConfig(
+                            character_id=character_id,
+                            key=key,
+                            value=new_config[key]
+                        )
+                        session.add(row)        
             else:
                 # we have a new key/value, this will only 
                 # happen when upgrading/downgrading.
@@ -230,7 +239,7 @@ def set_engine_config(character_id, new_config):
             if key not in new_config:
                 # this key is no longer part of the config, this
                 # will also only happen when upgrading/downgrading.
-                row = session.scalars(
+                row = session.execute(
                     delete(BaseTTSConfig).where(
                         BaseTTSConfig.character_id == character_id,
                         BaseTTSConfig.key == key

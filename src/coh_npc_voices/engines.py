@@ -100,8 +100,8 @@ class TTSEngine(ttk.Frame):
                 log.error('vb: %s', vb)
                 log.error("Error in TTSEngine.say(): %s", err)
                 if err.status_code == 401:
-                    error_response = json.loads(err.body)
-                    if error_response.get('detail', {}).get('status') == "quota_exceeded":
+                    log.error(err.body)
+                    if err.body.get('detail', {}).get('status') == "quota_exceeded":
                         raise DISABLE_ENGINES
                 raise
 
@@ -599,76 +599,95 @@ class ElevenLabs(TTSEngine):
     
     def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, selected_character, *args, **kwargs)
-        
-        self.voice_name = tk.StringVar(value="")
 
-        self.parameters = ("voice_name",)
-        raw_name = self.selected_character.get()
+        self.parameters = ("voice_name", "stability", "similarity_boost", "style", "use_speaker_boost")
 
-        character = self.load_character(raw_name)
-        gender = settings.get_npc_gender(character.name)
-
-        voice_frame = ttk.Frame(self)
-        ttk.Label(voice_frame, text="Voice", anchor="e").pack(
-            side="left", fill="x", expand=True
+        self.CONFIG_TUPLE = (
+            ('Voice Name', 'voice_name', tk.StringVar, "<unconfigured>", {}, self.get_voice_names),
+            ('Stability', 'stability', tk.DoubleVar, 0.5, {'min': 0, 'max': 1, 'resolution': 0.025}, None),
+            ('Similarity Boost', 'similarity_boost', tk.DoubleVar, 0, {'min': 0, 'max': 1, 'resolution': 0.025}, None),
+            ('Style', 'style', tk.DoubleVar, 0.0, {'min': 0, 'max': 1, 'resolution': 0.025}, None),
+            ('Speaker Boost', 'use_speaker_boost', tk.BooleanVar, True, {}, None)
         )
 
-        voice_combo = ttk.Combobox(
-            voice_frame,
-            textvariable=self.voice_name,
-        )
-        all_voices = ElevenLabs.get_voice_names(gender=gender)
-        log.info(f"Assinging all_voices to {all_voices}")
-        voice_combo["values"] = all_voices
-        voice_combo["state"] = "readonly"
-        voice_combo.pack(side="left", fill="x", expand=True)
-        voice_frame.pack(side="top", fill="x", expand=True)
-        self.voice_name.set(value=all_voices[0])
+        self.config_vars = {}
+        self.widget = {}
 
-        self.voice_name.trace_add("write", self.change_voice_name)
-
-        # doing these all long-hand will be tedious
-        self.stability = tk.DoubleVar(value=0.71)
-        self.similarity_boost = tk.DoubleVar(value=0.5)
-        self.style = tk.DoubleVar(value=0.0)
-        self.use_speaker_boost = tk.BooleanVar(value=True)
-
-    def change_voice_name(self, a, b, c):
-        raw_voice_name = self.voice_name.get()
-        log.info('change_voice_name() value=%s', raw_voice_name)
-
-        voice_name, voice_id = raw_voice_name.split(":")
-        
-        voice_name = voice_name.strip()
-        voice_id = voice_id.strip()
-        with models.Session(models.engine) as session:
-            self.voice = session.execute(
-                select(models.ElevenLabsVoices).where(
-                    models.ElevenLabsVoices.voice_id == voice_id
+        for cosmetic, key, varfunc, default, cfg, fn in self.CONFIG_TUPLE:
+            frame = ttk.Frame(self)
+            ttk.Label(frame, text=cosmetic, anchor="e").pack(
+                side="left", fill="x", expand=True
+            )
+            self.config_vars[key] = varfunc(value=default)
+            
+            if varfunc == tk.StringVar:
+                # combo widget for strings
+                self.widget[key] = ttk.Combobox(
+                    frame,
+                    textvariable=self.config_vars[key],
                 )
-            ).scalar_one_or_none()
-
-            if self.voice:
-                log.info(f'Setting voice_id to {voice_id}')
-                if self.voice.voice_id != voice_id:
-                    self.voice.voice_id = voice_id
-                    session.commit()
+                self.widget[key]["state"] = "readonly"
+                self.widget[key].pack(side="left", fill="x", expand=True)
+            elif varfunc == tk.DoubleVar:
+                # doubles get a scale widget
+                self.widget[key] = tk.Scale(
+                    frame,
+                    variable=self.config_vars[key],
+                    from_=cfg.get('min', 0),
+                    to=cfg['max'],
+                    orient='horizontal',
+                    resolution=cfg.get('resolution', 1)
+                )
+                self.widget[key].pack(side="left", fill="x", expand=True)
+            elif varfunc == tk.BooleanVar:
+                self.widget[key] = ttk.Checkbutton(
+                    frame,
+                    text="",
+                    variable=self.config_vars[key],
+                    onvalue=True,
+                    offvalue=False
+                )
+                self.widget[key].pack(side="left", fill="x", expand=True)
             else:
-                log.info('The voice %s does not exist', voice_id)
-                new_voice = models.ElevenLabsVoices(
-                    voice_id=voice_id,
-                    name=voice_name
-                )
-                session.add(new_voice)
-                session.commit()
-                session.refresh(new_voice)
+                # this will fail, but at least it will fail with a log message.
+                log.error(f'No widget defined for variables like {varfunc}')
 
-                self.voice = new_voice
+            self.config_vars[key].trace_add("write", self.reconfig)
+            frame.pack(side="top", fill="x", expand=True)
 
-        self.save_character(self.selected_character.get())
+        self.selected_character = selected_character
+        self.load_character(self.selected_character.get())
+        self.repopulate_options()
 
-    @staticmethod
-    def get_voice_names(gender=None):
+    def reconfig(self, *args, **kwargs):
+        """
+        An engine config value has changed
+        """
+        if self.loading:
+            return
+        
+        log.info(f'reconfig({args=}, {kwargs=})')
+        character = models.get_character_from_rawname(self.selected_character.get())
+        
+        config = {}
+        for cosmetic, key, varfunc, default, cfg, fn in self.CONFIG_TUPLE:
+            config[key] = self.config_vars[key].get()
+        
+        models.set_engine_config(character.id, config)
+        self.repopulate_options()
+
+    def repopulate_options(self):
+        for cosmetic, key, varfunc, default, cfg, fn in self.CONFIG_TUPLE:
+            # our change may filter the other widgets, possibly
+            # rendering the previous value invalid.
+            log.info(f"{cosmetic=} {key=} {default=} {fn=}")
+            if fn:
+                self.widget[key]["values"] = fn()
+
+    def get_voice_names(self, gender=None):
+        if gender and not hasattr(self, 'gender'):
+            self.gender = gender
+
         # cache these to the database, this is crude
         # I haven't even listened to all these, this is best guess
         # from names.  These are the current free-tier voices:
@@ -721,14 +740,24 @@ class ElevenLabs(TTSEngine):
             "Sam : yoZ06aMxZJJ28mfd3POQ",
             "Giovanni : zcAOhNBS3c14rBihAFp1",
         ] 
+
+        out = []
         if gender is None:
-            return FEMALE + MALE
+            out = FEMALE + MALE
         elif gender.upper() == "FEMALE":
-            return FEMALE
+            out = FEMALE
         elif gender.upper() == "MALE":
-            return MALE
+            out = MALE
         else:
-            return FEMALE + MALE
+            out = FEMALE + MALE
+
+        if out:
+            if self.config_vars["voice_name"].get() not in out:
+                # our currently selected voice is invalid.  Pick a new one.
+                self.config_vars["voice_name"].set(out[0])
+            return out
+        else:
+            return []
                     
         #########
         client = get_elevenlabs_client()
@@ -753,11 +782,38 @@ class ElevenLabs(TTSEngine):
         # voice is an elevenlabs.Voice instance,  We need input from the user
         # so we add a choice field the __init__
         # model : :class:`elevenlabs.Model` instance, or a string representing the model ID.
-        voice_name = self.override.get('voice_name', self.voice_name.get())
-        stability = self.override.get('stability', self.stability.get())
-        similarity_boost = self.override.get('similarity_boost', self.similarity_boost.get())
-        style = self.override.get('style', self.style.get())
-        use_speaker_boost = self.override.get('use_speaker_boost', self.use_speaker_boost.get())
+
+        # settings comments from https://elevenlabs.io/docs/speech-synthesis/voice-settings
+        voice_name = self.override.get('voice_name', self.config_vars["voice_name"].get())
+        
+        # The stability slider determines how stable the voice is and the
+        # randomness between each generation. Lowering this slider introduces a
+        # broader emotional range for the voice. As mentioned before, this is
+        # also influenced heavily by the original voice. Setting the slider too
+        # low may result in odd performances that are overly random and cause
+        # the character to speak too quickly. On the other hand, setting it too
+        # high can lead to a monotonous voice with limited emotion.
+        stability = self.override.get('stability', self.config_vars["stability"].get())
+
+        # "similarity_boost" corresponds to"Clarity + Similarity Enhancement" in the web app 
+        similarity_boost = self.override.get('similarity_boost', self.config_vars["similarity_boost"].get())
+
+        # With the introduction of the newer models, we also added a style
+        # exaggeration setting. This setting attempts to amplify the style of
+        # the original speaker. It does consume additional computational
+        # resources and might increase latency if set to anything other than 0.
+        # It’s important to note that using this setting has shown to make the
+        # model slightly less stable, as it strives to emphasize and imitate the
+        # style of the original voice. In general, we recommend keeping this
+        # setting at 0 at all times.
+        style = self.override.get('style', self.config_vars["style"].get())
+
+        # This is another setting that was introduced in the new models. The
+        # setting itself is quite self-explanatory – it boosts the similarity to
+        # the original speaker. However, using this setting requires a slightly
+        # higher computational load, which in turn increases latency. The
+        # differences introduced by this setting are generally rather subtle.
+        use_speaker_boost = self.override.get('use_speaker_boost', self.config_vars["use_speaker_boost"].get())
 
         # model = elevenlabs.Model()
         model = None
@@ -775,7 +831,9 @@ class ElevenLabs(TTSEngine):
 
 @dataclass
 class ttsElevenLabs(voicebox.tts.TTS):
-
+    """
+    There was an API update in the elevenlabs client that broke the built in voicebox support.
+    """
     api_key: str = None
     voice: Union[str, elevenlabs.Voice] = field(default_factory=lambda: elevenlabs.DEFAULT_VOICE)
     model: Union[str, elevenlabs.Model] = 'eleven_monolingual_v1'
@@ -828,7 +886,7 @@ class AmazonPolly(TTSEngine):
     https://aws.amazon.com/polly/pricing/?p=pm&c=ml&pd=polly&z=4
     I think this could be a really great fit for this
     project with its free million characters of tts per 
-    month, and (2024) each addition million at highest 
+    month, and (in 2024) each addition million at highest 
     quality for $16.  If the API can make it clear when
     you cross from free to paid and quality is anywhere
     near elevenlabs.. lets see what we can get.
@@ -875,15 +933,9 @@ class AmazonPolly(TTSEngine):
                 textvariable=self.config_vars[key],
             )
 
-            # all_values = fn()
-            # self.widget[key]["values"] = all_values
             self.widget[key]["state"] = "readonly"
             self.widget[key].pack(side="left", fill="x", expand=True)
 
-            #if default is None:
-            #    default = all_values[0]
-
-            # self.config_vars[key].set(value=default)
             self.config_vars[key].trace_add("write", self.reconfig)
             frame.pack(side="top", fill="x", expand=True)
 
@@ -919,21 +971,15 @@ class AmazonPolly(TTSEngine):
             self.widget[key]["values"] = fn()
 
     def _gender_filter(self, voice):
-        if hasattr(self, 'gender'):
+        if hasattr(self, 'gender') and self.gender:
             # log.info(f"_gender_filter: {self.gender.upper()} ?= {voice['Gender'].upper()}")
             return self.gender.upper() == voice["Gender"].upper()
         log.info('bypassing gender filter')
         return True
 
-    def _engine_filter(self, filter_by, voice):
-        """
-        True if this voice passes a filter by engine
-        """
-        return filter_by == "engine" and self.config_vars["engine"].get() in voice["SupportedEngines"]
-
     def _language_code_filter(self, voice):
         """
-        True if this voice has the given language_code anywhere.
+        True if this voice is able to speak this language_code.
         """
         selected_language_code = self.config_vars["language_code"].get()
         return (
@@ -1041,28 +1087,6 @@ class AmazonPolly(TTSEngine):
             lexicon_names=lexicon_names,
             sample_rate=int(sample_rate)
         )
-
-    # @staticmethod
-    # def get_voice_names(language_code="en-US", gender=None):
-    #     voice_names = []
-
-    #     session = boto3.Session()
-    #     client = session.client('polly')
-    #     if language_code is None:
-    #         language_code = 'en-US'
-
-    #     for voice in client.describe_voices(
-    #         LanguageCode=language_code,
-    #         IncludeAdditionalLanguageCodes=True
-    #     )['Voices']:
-    #         print(f'{voice=}')
-    #         # if we've specified the gender, filter out
-    #         # voices from other genders.
-    #         if gender and gender.upper() != gender.upper():
-    #             continue
-    #         voice_names.append(f'{voice["Name"]} - {voice["Id"]}')
-            
-    #     return voice_names       
 
     def get_voices(self):
         # Language code of the voice.
