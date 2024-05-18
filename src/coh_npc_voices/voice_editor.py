@@ -35,9 +35,11 @@ logging.basicConfig(
 log = logging.getLogger("__name__")
 ENGINE_OVERRIDE = {}
 
-class ChoosePhrase(ttk.Frame):
+#class ChoosePhrase(ttk.Frame):
+class WavfileMajorFrame(ttk.LabelFrame):    
     ALL_PHRASES = "< Rebuild all phrases >"
     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
+        kwargs['text'] = 'Wavefile(s)'
         super().__init__(parent, *args, **kwargs)
         topline = ttk.Frame(self)
         
@@ -322,32 +324,36 @@ class EngineSelection(ttk.Frame):
         base_tts.pack(side="left", fill="x", expand=True)
 
 
-class EngineSelectAndConfigure(ttk.Frame):
+class EngineSelectAndConfigure(ttk.LabelFrame):
     """
     two element stack, the first has the engine selection,
     the second has all the parameters supported by the seleted engine
     """
 
-    def __init__(self, parent, selected_character, *args, **kwargs):
+    def __init__(self, rank, parent, selected_character, *args, **kwargs):
+        kwargs['text'] = 'Engine'
         super().__init__(parent, *args, **kwargs)
+        self.rank = rank
         self.selected_character = selected_character
 
         self.selected_engine = tk.StringVar()
-        self.load_character()
-
+        self.engine_parameters = None
+        
         self.selected_engine.trace_add(
             "write", 
             self.change_selected_engine
         )
+        self.load_character()
+
         es = EngineSelection(self, self.selected_engine)
         es.pack(side="top", fill="x", expand=True)
-        self.engine_parameters = None
+        # self.engine_parameters = None
         # self.change_selected_engine("", "", "")
         #log.info('EngineSelectAndConfigure.__init__() -> self.load_character()')
         #self.load_character()
 
     def set_engine(self, engine_name):
-        self.selected_engine.set(engine_name)
+        self.selected_engine.set(engine_name)       
 
     def change_selected_engine(self, a, b, c):
         """
@@ -356,12 +362,16 @@ class EngineSelectAndConfigure(ttk.Frame):
         # No problem.
         # clear the old engine configuration
         # show the selected engine configuration
-        log.info('EngineSelectAndConfigure.chage_selected_engine()')
+        log.info('EngineSelectAndConfigure.change_selected_engine()')
         if self.engine_parameters:
             self.engine_parameters.pack_forget()
 
         engine_cls = engines.get_engine(self.selected_engine.get())
         if engine_cls:
+            self.engine_parameters = engine_cls(self, self.selected_character)
+            self.engine_parameters.pack(side="top", fill="x", expand=True)
+        else:
+            engine_cls = engines.get_engine(settings.DEFAULT_ENGINE)
             self.engine_parameters = engine_cls(self, self.selected_character)
             self.engine_parameters.pack(side="top", fill="x", expand=True)
 
@@ -392,35 +402,34 @@ class EngineSelectAndConfigure(ttk.Frame):
         with models.Session(models.engine) as session:
             character = models.get_character(name, category, session)
 
-            if character.engine != engine_string:
-                log.info(
-                    'Saving changed engine_string (%s): %s -> %s', 
-                    character.name,
-                    character.engine, 
-                    engine_string
-                )
+            log.debug(
+                f'''Saving {self.rank} changed engine_string {character.name}
+                    {character.engine} {character.engine_secondary} {engine_string}
+                ''', 
+            )
+
+            if self.rank == "primary" and character.engine != engine_string:
                 character.engine = engine_string
-                session.commit()
+            elif self.rank == "secondary" and character.engine_secondary != engine_string:
+                character.engine_secondary = engine_string
+
+            session.commit()
 
     def load_character(self):
         """
         We've set the character name, we want the rest of the metadata to
         populate.  Setting the engine name will domino the rest.
         """
-        raw_name = self.selected_character.get()
-        if raw_name in [None, ""]:
-            log.error('Cannot load_character() with no character name.')
-            return
-        
-        category, name = raw_name.split(maxsplit=1)
-        character = models.get_character(name, category)
+        character = models.get_character_from_rawname(
+            self.selected_character.get()
+        )
 
         if character is None:
-            log.error(f'Character {name} does not exist.')
+            log.error('Character %s does not exist.' % self.selected_character.get())
             return None
        
         if character.engine in ["", None]:
-            if category == "player":
+            if character.category == "player":
                 self.selected_engine.set(settings.get_config_key(
                     'DEFAULT_PLAYER_ENGINE', settings.DEFAULT_ENGINE
                 ))
@@ -429,24 +438,27 @@ class EngineSelectAndConfigure(ttk.Frame):
                     'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
                 ))
         else:
-            self.selected_engine.set(character.engine)
+            log.info(f'Setting {self.rank} engine to either ({character.engine} | {character.engine_secondary})')
+            if self.rank == "primary":
+                self.selected_engine.set(character.engine)
+            elif self.rank == "secondary":
+                self.selected_engine.set(character.engine_secondary)
             
         return character
 
 
-class EffectList(ttk.Frame):
-    """
-
-    """
-    def __init__(self, parent, selected_character, *args, **kwargs):
-        real_parent = parent.frame
-        super().__init__(real_parent, *args, **kwargs)
-        self.effects = []
-        self.parent = real_parent
-        self.detailside = parent
-        self.buffer = False
+class EffectList(ttk.LabelFrame):
+    def __init__(self, parent, selected_character, *args, **kwargs):       
         self.selected_character = selected_character
+        kwargs['text'] = "Effects",
+        super().__init__(parent, *args, **kwargs)
+
+        self.effects = []
+        self.buffer = False
         self.load_effects()
+
+        self.add_effect_combo = AddEffect(self, self)
+        self.add_effect_combo.pack(side="top", fill="x", expand=True)
 
     def load_effects(self):
         log.info('EffectList.load_effects()')
@@ -510,20 +522,17 @@ class EffectList(ttk.Frame):
                 if self.buffer:
                     self.buffer.pack_forget()
 
-            if hasattr(self.detailside, "add_effect"):
-                log.info("Rebuilding add_effect")
-                self.detailside.add_effect.pack_forget()
-                # .pack(side="top", fill="x", expand=True)
-                self.detailside.add_effect = AddEffect(self.parent, self)
-                self.detailside.add_effect.pack(side="top", fill='x', expand=True)
-                # self.detailside.effect_list.pack(side="top", fill="x")
-                # self.detailside.frame.pack(side="top", fill="x", expand=True)
-                # self.detailside.canvas.pack(side="left", fill="both", expand=True)
-                # self.detailside.pack(side="left", fill="both", expand=True)
-                # self.detailside.parent.pack(side="top", fill="both", expand=True)
-            else:
-                log.info('DetailSide has no add_effect()')
-
+            log.info("Rebuilding add_effect")
+            self.add_effect_combo.pack_forget()
+            # .pack(side="top", fill="x", expand=True)
+            self.add_effect_combo = AddEffect(self, self)
+            self.add_effect_combo.pack(side="top", fill='x', expand=True)
+            # self.detailside.effect_list.pack(side="top", fill="x")
+            # self.detailside.frame.pack(side="top", fill="x", expand=True)
+            # self.detailside.canvas.pack(side="left", fill="both", expand=True)
+            # self.detailside.pack(side="left", fill="both", expand=True)
+            # self.detailside.parent.pack(side="top", fill="both", expand=True)
+            
     def add_effect(self, effect_name):
         """
         Add the chosen effect to the list of effects the user can manipulate.
@@ -738,7 +747,7 @@ class DetailSide(ttk.Frame):
             justify="left"
         ).pack(side="top", fill="x")
 
-        self.phrase_selector = ChoosePhrase(
+        self.phrase_selector = WavfileMajorFrame(
             self.frame, self, selected_character
         )
         self.phrase_selector.pack(side="top", fill="x", expand=True)
@@ -748,16 +757,26 @@ class DetailSide(ttk.Frame):
         )
         self.presetSelect.pack(side="top", fill="x", expand=True)
 
-        self.engineSelect = EngineSelectAndConfigure(
-            self.frame, self.selected_character
+        engine_notebook = ttk.Notebook(self.frame)
+        self.primary_tab = EngineSelectAndConfigure(
+            'primary', self.frame, self.selected_character
         )
-        self.engineSelect.pack(side="top", fill="x", expand=True)
+        self.secondary_tab = EngineSelectAndConfigure(
+            'secondary', self.frame, self.selected_character
+        )
+        engine_notebook.add(self.primary_tab, text='Primary')
+        engine_notebook.add(self.secondary_tab, text='Secondary')
+
+        engine_notebook.pack(side="top", fill="x", expand=True)
+
+        #self.engineSelect = EngineSelectAndConfigure(
+        #    self.frame, self.selected_character
+        #)
+        #self.engineSelect.pack(side="top", fill="x", expand=True)
 
         # list of effects already configured
-        self.effect_list = EffectList(self, selected_character)
+        self.effect_list = EffectList(self.frame, selected_character)
         self.effect_list.pack(side="top", fill="x", expand=True)
-        self.add_effect = AddEffect(self.frame, self.effect_list)
-        self.add_effect.pack(side="top", fill="x", expand=True)
 
     def remove_character(self):
         #self.parent = parent
@@ -812,12 +831,15 @@ class DetailSide(ttk.Frame):
         # update the phrase selector
         self.phrase_selector.populate_phrases()
 
-        # set the engine itself
-        log.info('b character: %s | %s', character, character.engine)
-        self.engineSelect.set_engine(character.engine)
+        # set the engines itself
+        log.info('b character: %s | %s | %s', character, character.engine, character.engine_secondary)
+        self.primary_tab.set_engine(character.engine)
+        self.secondary_tab.set_engine(character.engine_secondary)
 
         # set engine and parameters
-        self.engineSelect.engine_parameters.load_character(raw_name)
+        # log.info(f'{dir(self.primary_tab)=}')
+        self.primary_tab.engine_parameters.load_character(raw_name)
+        self.secondary_tab.engine_parameters.load_character(raw_name)
         
         # effects
         self.effect_list.load_effects()

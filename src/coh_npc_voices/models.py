@@ -139,6 +139,7 @@ class Character(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64))
     engine: Mapped[str] = mapped_column(String(64))
+    engine_secondary: Mapped[str] = mapped_column(String(64))
     category = mapped_column(Integer, index=True)
     last_spoke = mapped_column(DateTime, nullable=True)
 
