@@ -184,7 +184,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         # self.plt.set_xlim(0, duration)
         self.visualize_wav.pack(side='top', fill=tk.BOTH, expand=1)
 
-    def say_it(self):
+    def say_it(self, use_secondary=False):
         """
         Speak aloud whatever is in the chosen_phrase tk.Variable, using whatever
         TTS engine is selected.
@@ -194,7 +194,10 @@ class WavfileMajorFrame(ttk.LabelFrame):
 
         log.debug(f"Speak: {message}")
         # parent is the frame inside DetailSide
-        engine_name = self.detailside.engineSelect.selected_engine.get()
+        if use_secondary:
+            engine_name = self.detailside.secondary_tab.selected_engine.get()
+        else:
+            engine_name = self.detailside.primary_tab.selected_engine.get()
 
         ttsengine = engines.get_engine(engine_name)
         log.info(f"Engine: {ttsengine}")
@@ -260,24 +263,30 @@ class WavfileMajorFrame(ttk.LabelFrame):
 
                 # None because we aren't attaching any widgets
                 try:
-                    ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+                    rank = 'primary'
+                    if use_secondary:
+                        rank = 'secondary'
+                    
+                    ttsengine(None, rank, self.selected_character).say(msg, effect_list, sink=sink)
                 except engines.elevenlabs.core.api_error.ApiError as err:
                     if err.body.get("detail", {}).get('status', "") == "quota_exceeded":
                         # We're over quote, switch to the secondary engine for this category
                         # of voice origin.
-                        secondary_engine = settings.get_config_key(f'{character.category}_engine_secondary')
-                        if secondary_engine == character.engine:
-                            # (this should be rare)
-                            # our secondary engine is the same as our current engine
-                            # so we will force-fallback to local.
-                            secondary_engine = 'Windows TTS'
+                        return self.say_it(use_secondary=True)
 
-                        # we made it sorta work, but don't try this engine again
-                        # for this session.
-                        ENGINE_OVERRIDE[character.engine] = secondary_engine
+                        # secondary_engine = settings.get_config_key(f'{character.category}_engine_secondary')
+                        # if secondary_engine == character.engine:
+                        #     # (this should be rare)
+                        #     # our secondary engine is the same as our current engine
+                        #     # so we will force-fallback to local.
+                        #     secondary_engine = 'Windows TTS'
 
-                        ttsengine = engines.get_engine(secondary_engine)
-                        ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+                        # # we made it sorta work, but don't try this engine again
+                        # # for this session.
+                        # ENGINE_OVERRIDE[character.engine] = secondary_engine
+
+                        # ttsengine = engines.get_engine(secondary_engine)
+                        # ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
                         
                 self.show_wave(cachefile + ".wav")
 
@@ -368,11 +377,11 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
 
         engine_cls = engines.get_engine(self.selected_engine.get())
         if engine_cls:
-            self.engine_parameters = engine_cls(self, self.selected_character)
+            self.engine_parameters = engine_cls(self, self.rank, self.selected_character)
             self.engine_parameters.pack(side="top", fill="x", expand=True)
         else:
             engine_cls = engines.get_engine(settings.DEFAULT_ENGINE)
-            self.engine_parameters = engine_cls(self, self.selected_character)
+            self.engine_parameters = engine_cls(self, self.rank, self.selected_character)
             self.engine_parameters.pack(side="top", fill="x", expand=True)
 
         self.save_character()

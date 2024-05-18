@@ -75,8 +75,9 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 
 # Base Class for engines
 class TTSEngine(ttk.Frame):
-    def __init__(self, parent, selected_character, *args, **kwargs):
+    def __init__(self, parent, rank, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+        self.rank = rank
         self.parent = parent
         self.selected_character = selected_character
         self.override = {}
@@ -117,70 +118,75 @@ class TTSEngine(ttk.Frame):
         character = models.get_character_from_rawname(raw_name)
         self.gender = settings.get_npc_gender(character.name)
 
-        if character.engine == self.cosmetic:
-            log.info(f'Engine {character.engine} found.')
-            with models.Session(models.engine) as session:
-                tts_config = session.scalars(
-                    select(models.BaseTTSConfig).where(
-                        models.BaseTTSConfig.character_id == character.id
-                    )
-                ).all()
-                log.info(f"{tts_config=}")
+        # if character.engine == self.cosmetic:
+        #     self.rank = "primary"
+        # elif character.engine_secondary == self.cosmetic:
+        #     self.rank = "secondary"
 
-                for config in tts_config:
-                    log.info(f'Setting config {config.key} to {config.value}')
-                    log.info(f'{self} supports parameters {self.parameters}')
-                    if config.key in self.parameters:
-                        # log.info(f"{dir(self)}")
-                        if hasattr(self, 'config_vars'):
-                            # the polly way
-                            log.info(f'PolyConfig[{config.key}] = {config.value}')
-                            self.config_vars[config.key].set(config.value)
-                        else:
-                            log.info(f'oldstyle config[{config.key}] = {config.value}')
-                            # everything else
-                            getattr(self, config.key).set(config.value)
-                            setattr(self, config.key + "_base", config.value)
-        else:
-            # Unusual situation.  We are trying to use the "wrong" tts engine
-            # for this character. That means we also have the wrong
-            # BaseTTSConfig and .. we don't want to mess with the existing
-            # configuration.  Oh, and it should still mostly work and be
-            # consistent. Use case for this nonesense?
-            #
-            # You're rolling with Elevenlabs and you run out of free voice
-            # credits.  We want to smoothly transition to Google voices.  When
-            # Elevenlabs starts working again, we don't want the voice configs
-            # to be messed up.
-            #
-            # we keep effects, that part is easy.           
-            self.gender = settings.get_npc_gender(character.name)
-            
-            # we can't do simple random, we want a _consistent_ voice.  No
-            # problem. gendered_voices should be identical from one "run" to the
-            # next.
-            gendered_voices = sorted(self.get_voice_names(gender=self.gender))
-            
-            # when is random not random?  We don't even need to hash it,
-            # random.seed now takes an int (obv) _or_ a str/bytes/bytearray.  
-            random.seed(a=character.name, version=2)
-            
-            # easy as that.  gendered voice name chosen with a good spread of
-            # all available voice names, and the same character speaking twice
-            # gets the same voice.  Even across sessions.  Even across upgrades.
-            voice_name = random.choice(gendered_voices)
+        log.info(f'Engine {character.engine} found.')
+        with models.Session(models.engine) as session:
+            tts_config = session.scalars(
+                select(models.BaseTTSConfig).where(
+                    models.BaseTTSConfig.character_id == character.id,
+                    models.BaseTTSConfig.rank == self.rank
+                )
+            ).all()
+            log.info(f"{tts_config=}")
 
-            # if we self.voice_name.set(voice_name) the way that feels natural
-            # we're going to reconfigure the character in exactly the way we
-            # don't want. Jumbo-dict of reasonable choices for all engines. this
-            # is clearly unsustainable.  I'm thinking each character and preset
-            # gets a full primary and secondary voice config.
-            self.override['voice_name'] = voice_name
-            self.override['rate'] = 1
-            self.override['stabiity'] = 0.71
-            self.override['similarity_boost'] = 0.5
-            self.override['style'] = 0.0
-            self.override['use_speaker_boost'] = True
+            for config in tts_config:
+                log.info(f'Setting config {config.key} to {config.value}')
+                log.info(f'{self} supports parameters {self.parameters}')
+                if config.key in self.parameters:
+                    # log.info(f"{dir(self)}")
+                    if hasattr(self, 'config_vars'):
+                        # the polly way
+                        log.info(f'PolyConfig[{config.key}] = {config.value}')
+                        self.config_vars[config.key].set(config.value)
+                    else:
+                        log.info(f'oldstyle config[{config.key}] = {config.value}')
+                        # everything else
+                        getattr(self, config.key).set(config.value)
+                        setattr(self, config.key + "_base", config.value)
+        # else:
+        #     # Unusual situation.  We are trying to use the "wrong" tts engine
+        #     # for this character. That means we also have the wrong
+        #     # BaseTTSConfig and .. we don't want to mess with the existing
+        #     # configuration.  Oh, and it should still mostly work and be
+        #     # consistent. Use case for this nonesense?
+        #     #
+        #     # You're rolling with Elevenlabs and you run out of free voice
+        #     # credits.  We want to smoothly transition to Google voices.  When
+        #     # Elevenlabs starts working again, we don't want the voice configs
+        #     # to be messed up.
+        #     #
+        #     # we keep effects, that part is easy.           
+        #     self.gender = settings.get_npc_gender(character.name)
+            
+        #     # we can't do simple random, we want a _consistent_ voice.  No
+        #     # problem. gendered_voices should be identical from one "run" to the
+        #     # next.
+        #     gendered_voices = sorted(self.get_voice_names(gender=self.gender))
+            
+        #     # when is random not random?  We don't even need to hash it,
+        #     # random.seed now takes an int (obv) _or_ a str/bytes/bytearray.  
+        #     random.seed(a=character.name, version=2)
+            
+        #     # easy as that.  gendered voice name chosen with a good spread of
+        #     # all available voice names, and the same character speaking twice
+        #     # gets the same voice.  Even across sessions.  Even across upgrades.
+        #     voice_name = random.choice(gendered_voices)
+
+        #     # if we self.voice_name.set(voice_name) the way that feels natural
+        #     # we're going to reconfigure the character in exactly the way we
+        #     # don't want. Jumbo-dict of reasonable choices for all engines. this
+        #     # is clearly unsustainable.  I'm thinking each character and preset
+        #     # gets a full primary and secondary voice config.
+        #     self.override['voice_name'] = voice_name
+        #     self.override['rate'] = 1
+        #     self.override['stabiity'] = 0.71
+        #     self.override['similarity_boost'] = 0.5
+        #     self.override['style'] = 0.0
+        #     self.override['use_speaker_boost'] = True
 
         log.info("TTSEngine.load_character complete")
         self.loading = False
@@ -219,6 +225,7 @@ class TTSEngine(ttk.Frame):
                 config_setting = session.execute(
                     select(models.BaseTTSConfig).where(
                         models.BaseTTSConfig.character_id == character.id,
+                        models.BaseTTSConfig.rank == self.rank,
                         models.BaseTTSConfig.key == key,
                     )
                 ).scalar_one_or_none()
@@ -232,6 +239,7 @@ class TTSEngine(ttk.Frame):
                     log.info('Saving new BaseTTSConfig')
                     new_config_setting = models.BaseTTSConfig(
                         character_id=character.id, 
+                        rank=self.rank,
                         key=key, 
                         value=value
                     )
@@ -243,8 +251,9 @@ class TTSEngine(ttk.Frame):
 class WindowsTTS(TTSEngine):
     cosmetic = "Windows TTS"
 
-    def __init__(self, parent, selected_character, *args, **kwargs):
+    def __init__(self, parent, rank, selected_character, *args, **kwargs):
         super().__init__(parent, selected_character, *args, **kwargs)
+        self.rank = rank
         self.selected_character = selected_character
         self.voice_name = tk.StringVar()
         self.rate = tk.IntVar(value=1)
@@ -354,9 +363,9 @@ class WindowsTTS(TTSEngine):
 class GoogleCloud(TTSEngine):
     cosmetic = "Google Text-to-Speech"
 
-    def __init__(self, parent, selected_character, *args, **kwargs):
-        super().__init__(parent, selected_character, *args, **kwargs)
-
+    def __init__(self, parent, rank, selected_character, *args, **kwargs):
+        super().__init__(parent, rank, selected_character, *args, **kwargs)
+        self.rank = rank
         self.selected_character = selected_character
 
         # with defaults
@@ -673,7 +682,7 @@ class ElevenLabs(TTSEngine):
         for cosmetic, key, varfunc, default, cfg, fn in self.CONFIG_TUPLE:
             config[key] = self.config_vars[key].get()
         
-        models.set_engine_config(character.id, config)
+        models.set_engine_config(character.id, self.rank, config)
         self.repopulate_options()
 
     def repopulate_options(self):
@@ -893,8 +902,8 @@ class AmazonPolly(TTSEngine):
     """
     cosmetic = "Amazon Polly"
 
-    def __init__(self, parent, selected_character, *args, **kwargs):
-        super().__init__(parent, selected_character, *args, **kwargs)
+    def __init__(self, parent, rank, selected_character, *args, **kwargs):
+        super().__init__(parent, rank, selected_character, *args, **kwargs)
         # tk.variable holding the currently selected characters
         # raw_name.  It will be part of the database persistence
         # for this specific instance of AmazonPolly which will only
@@ -902,7 +911,7 @@ class AmazonPolly(TTSEngine):
         # in the voice of one specific character.  We already know
         # it is an AmazonPolly voice because we wouldn't be the one
         # talking otherwise.  Duhh.
-
+        self.rank = rank
         self.parameters = set(("language_code", "engine", "voice_name", "sample_rate"))
 
         # what variables does Polly allow/require?
@@ -960,7 +969,7 @@ class AmazonPolly(TTSEngine):
         for cosmetic, key, default, fn in self.CONFIG_TUPLE:
             config[key] = self.config_vars[key].get()
         
-        models.set_engine_config(character.id, config)
+        models.set_engine_config(character.id, self.rank, config)
         self.repopulate_options()
 
     def repopulate_options(self):

@@ -175,12 +175,13 @@ def diskcache(key, value=None):
         return value
 
 
-def get_engine_config(character_id):
+def get_engine_config(character_id, rank):
     out = {}
     with Session(engine) as session:
         items = session.scalars(
             select(BaseTTSConfig).where(
-                character_id == character_id
+                BaseTTSConfig.character_id == character_id,
+                BaseTTSConfig.rank == rank
             )
         ).all()
 
@@ -189,14 +190,14 @@ def get_engine_config(character_id):
 
     return out
 
-def set_engine_config(character_id, new_config):
+def set_engine_config(character_id, rank, new_config):
     """
     Generally speaking -- only one thing is actually changing, because this is called in the listeners on the config widgets.
     that is what makes returning 'change' not stupid.  The most common multi-config setting change happens when the user switches
     to a different TTS enigne.  That part isn't our concern.   
     """
     change = None
-    old_config = get_engine_config(character_id)
+    old_config = get_engine_config(character_id, rank)
     log.info(f"{character_id=} {old_config=} {new_config=}")
     with Session(engine) as session:
         for key in new_config:   
@@ -206,20 +207,20 @@ def set_engine_config(character_id, new_config):
                     # this value has changed
                     row = session.scalar(
                         select(BaseTTSConfig).where(
-                            BaseTTSConfig.character_id == character_id
-                        ).where(
+                            BaseTTSConfig.character_id == character_id,
+                            BaseTTSConfig.rank == rank,
                             BaseTTSConfig.key == key
-                        )
-                    )
+                    ))
                     if row:
                         log.info(f'Changing value of {row} to {new_config[key]}')
                         row.value = new_config[key]
                         change = key
                         session.commit()
                     else:
-                        log.info(f'Charactger {character_id} has no previous engine config for {key}')
+                        log.info(f'Charactger {character_id} has no previous engine config for {rank} {key}')
                         row = BaseTTSConfig(
                             character_id=character_id,
+                            rank=rank,
                             key=key,
                             value=new_config[key]
                         )
@@ -230,6 +231,7 @@ def set_engine_config(character_id, new_config):
                 log.info(f'new key: {key} = {new_config[key]}')
                 row = BaseTTSConfig(
                     character_id=character_id,
+                    rank=rank,
                     key=key,
                     value=new_config[key]
                 )
@@ -243,6 +245,7 @@ def set_engine_config(character_id, new_config):
                 row = session.execute(
                     delete(BaseTTSConfig).where(
                         BaseTTSConfig.character_id == character_id,
+                        BaseTTSConfig.rank == rank,
                         BaseTTSConfig.key == key
                     )
                 )
@@ -255,11 +258,12 @@ class BaseTTSConfig(Base):
     __tablename__ = "base_tts_config"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     character_id: Mapped[int] = mapped_column(ForeignKey("character.id"))
+    rank: Mapped[str] = mapped_column(String(32)) 
     key: Mapped[str] = mapped_column(String(64))
     value: Mapped[str] = mapped_column(String(64))
     
     def __repr__(self):
-        return f"<BaseTTSConfig {self.id} {self.character_id=} {self.key=} {self.value=}/>"
+        return f"<BaseTTSConfig {self.id} {self.character_id=} {self.rank=} {self.key=} {self.value=}/>"
 
 class GoogleVoices(Base):
     __tablename__ = "google_voices"
