@@ -1,15 +1,27 @@
-from datetime import datetime
 import json
-from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine, orm, select, delete
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import mapped_column
-import os
-from sqlalchemy.orm import Session
 import logging
+import os
+import random
 import sys
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Optional
-from sqlalchemy.orm import Mapped
+
 import settings
+from npc import GROUP_ALIASES, PRESETS, add_group_alias_stub
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    create_engine,
+    delete,
+    orm,
+    select,
+)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Mapped, Session, mapped_column, scoped_session, sessionmaker
 
 logging.basicConfig(
     level=settings.LOGLEVEL,
@@ -17,9 +29,27 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-log = logging.getLogger("__name__")
+log = logging.getLogger(__name__)
 
-engine = create_engine("sqlite:///voices.db", echo=False)
+engine = create_engine(
+    "sqlite:///voices.db",
+    echo=False,
+    connect_args={'timeout': 2},
+    isolation_level="AUTOCOMMIT",
+)
+
+@contextmanager
+def db():
+    #connection = engine.connect()
+    session = scoped_session(
+        sessionmaker(
+            bind=engine,
+            expire_on_commit=False
+        )
+    )
+    yield session
+    session.close()
+    #connection.close()
 
 Base = declarative_base()
 
@@ -28,6 +58,9 @@ class Settings(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     logdir: Mapped[Optional[str]] = orm.mapped_column(String(256))
 
+
+class InvalidPreset(Exception):
+    """Error in the preset"""
 
 def get_settings():
     with Session(engine) as session:
@@ -56,8 +89,16 @@ def category_str2int(instr):
     except ValueError:
         return -1
 
-def get_character(name, category, session=None):
+ENGINE_COSMETIC_TO_ID = {
+    'Google Text-to-Speech': 'googletts',
+    'Windows TTS': 'windowstts',
+    'Eleven Labs': 'elevenlabs',
+    'Amazon Polly': 'amazonpolly'
+}
+
+def get_character(name, category, session):
     log.info(f'/-- models.get_character({name=}, {category=}, {session=})')
+    str_category = category
     try:
         category=int(category)
     except ValueError:
@@ -65,74 +106,219 @@ def get_character(name, category, session=None):
 
     value = None
 
-    if session is None:
-        with Session(engine) as session:
-            value = session.scalar(
-                select(Character).where(
-                    Character.name==name, 
-                    Character.category==category
+    character = session.scalar(
+        select(Character).where(
+            Character.name==name, 
+            Character.category==category
+        )
+    )
+
+    if character is None:
+        log.info(f'|- Creating new {str_category} character {name} in database...')
+        # this is the first time we've gotten a message from this
+        # NPC, so they don't have a voice yet.
+
+        # first we need to find out if we have a preset for this category of foe.
+        gender = None
+        group_name = None
+        preset = {}
+        
+        # look up this character by name
+        if str_category == "npc":
+            npc_spec = settings.get_npc_data(name)
+            if npc_spec:
+                gender = settings.get_npc_gender(name)
+                group_name = npc_spec.get('group_name')
+            else:
+                gender = None
+                group_name = None
+            
+            if group_name and group_name in GROUP_ALIASES:
+                group_name = GROUP_ALIASES[group_name]
+            
+            preset = PRESETS.get(group_name, {})
+
+        # based on the preset, and some random choices
+        # where the preset does not specify, create a voice
+        # for this NPC.
+
+        # first we set the engine based on global defaults
+        pkey = f'{str_category}_engine_primary'
+        skey = f'{str_category}_engine_secondary'
+        primary_engine_name = settings.get_config_key(pkey)
+        secondary_engine_name = settings.get_config_key(skey)
+        log.info(f"Primary engine ({pkey}): {primary_engine_name}")
+        log.info(f"Secondary engine ({skey}): {secondary_engine_name}")
+
+        # default to the primary voice engine for this category of character
+        character = Character(
+            name=name,
+            engine=primary_engine_name,
+            engine_secondary=secondary_engine_name,
+            category=category,
+        )
+        session.add(character)
+        session.commit()
+        session.refresh(character)
+        
+        # now for the preset and/or random choices
+
+        # start with some cleanup
+        # wipe any existing effect configurations for this character
+        for effect in session.scalars(
+            select(Effects).where(
+                Effects.character_id==character.id
+            )
+        ).all():
+            session.execute(
+                delete(EffectSetting).where(
+                    EffectSetting.effect_id==effect.id
                 )
             )
-    else:
-        log.debug('|- Using existing session')
-        value = session.scalar(
-            select(Character).where(
-                Character.name==name,
-                Character.category==category
-            )
-        )
 
-    if value is None:
-        log.info('|- Creating new character in database...')
-        # this is the first time we've gotten a message from this
-        # NPC, so they don't have a voice yet.  
-        with Session(engine) as session:
-            # default to the primary voice engine for this category of character
-            value = Character(
-                name=name,
-                engine=settings.get_config_key(
-                    f'{category}_engine_primary', settings.DEFAULT_ENGINE
-                ),
-                category=category,
+        for model in (BaseTTSConfig, Effects):
+            session.execute(
+                delete(model).where(
+                    model.character_id == character.id
+                )
             )
-            session.add(value)
+
+        engine_key = ENGINE_COSMETIC_TO_ID[primary_engine_name]
+        rank = "primary"
+        
+        # if all_npc provided a gender, we will use that.
+        if gender is None:
+            # otherwise, use the gender value in preset.  If there isn't
+            # one, fall back to a random choice.
+            gender = preset.get('gender', random.choice(['Male', 'Female']))              
+
+        # all of the available _engine_ configuration values
+        engine_config_meta = session.scalars(
+            select(EngineConfigMeta).where(
+                engine_key==engine_key
+            )
+        ).all()
+
+        # None of these are in the DB yet, so this is a null-op
+        # TODO: populate this db table
+        for config_meta in engine_config_meta:
+            # we want sensible defaults with some jitter
+            # for each voice engine config setting.
+
+            # TODO:  more varfunc types, Double and Boolean
+            if config_meta.varfunc == "StringVar":
+                # we don't know what the possible values
+                # are since we can't run the function without
+                # instantiating the engine, which will drag
+                # in TK baggage.
+                # but.. we can accesss the cache?.
+
+                all_values = diskcache(f"{engine_key}_{config_meta.key}")
+                
+                if all_values is None:
+                    log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
+                    value = "<Cache Failure>"
+                else:
+                    # log.info(f"{all_values=}")
+
+                    # it's a dict, keyey on voice_name
+                    if gender and 'gender' in all_values[0].keys():
+                        def gender_filter(voice):
+                            return voice['gender'] == gender
+                        all_values = filter(gender_filter, all_values)
+
+                    # does the preset have any more guidance?
+                    # use the preset if there is one.  Otherwise
+                    # choose randomly from the available options.
+                    value = preset.get(
+                        config_meta.key, 
+                        random.choice(list(all_values))[config_meta.key]
+                    )
+
+            elif config_meta.varfunc == "DoubleVar":
+                # no cache, use the preset or a random choice in the range.
+                value = preset.get(
+                    config_meta.key,
+                    random.uniform(
+                        config_meta.cfgdict['min'], 
+                        config_meta.cfgdict['max']
+                    )
+                )
+
+                # round to nearest multiple of 'resolution'
+                resolution = config_meta.cfgdict.get('resolution', 1.0)
+                value = round(
+                    resolution * round(value / resolution)
+                )
+
+            BaseTTSConfig(
+                character_id=character.id,
+                rank=rank,
+                key=config_meta.key,
+                value=value
+            )
+
+        # add any effects
+        for effect_dict in preset.get('Effects', []):
+            # create the effect itself
+            log.info(f'Adding effect: {effect_dict}')
+            effect = Effects(
+                character_id=character.id,
+                effect_name=effect_dict['name']
+            )
+            session.add(effect)
             session.commit()
-            session.refresh(value)
+            session.refresh(effect)
 
-    log.info(f'\\-- get_character() returning {value}')
-    return value
+            # add the settings      
+            for key, value in effect_dict.items():
+                # we've already baked the name field
+                if key == "name":
+                    continue
+
+                effect_settings = EffectSetting(
+                    effect_id=effect.id,
+                    key=key,
+                    value=value
+                )
+                session.add(effect_settings)
+            session.commit()
+
+    log.info('\\-- get_character() returning')
+    return character
 
 
-def get_character_from_rawname(raw_name, session=None):
+def get_character_from_rawname(raw_name, session):
     try:
         category, name = raw_name.split(maxsplit=1)
     except ValueError:
         log.error('Invalid character raw_name: %s', raw_name)
         return None
 
-    return get_character(name, category, session=session)
+    return get_character(name, category, session)
 
 
-def update_character_last_spoke(character, session=None):
-    if session:
-        character = session.scalars(
-            select(Character).where(
-                Character.id == character.id
-            )
-        ).first()
+def update_character_last_spoke(character, session):
+    character = session.scalars(
+        select(Character).where(
+            Character.id == character.id
+        )
+    ).first()
+    character.last_spoke = datetime.now()       
 
-        character.last_spoke = datetime.now()
-        session.commit()
-    else:
-        with Session(engine) as session:
-            character = session.scalars(
-                select(Character).where(
-                    Character.id == character.id
-                )
-            ).first()
-            character.last_spoke = datetime.now()
-            session.commit()
-        
+
+class EngineConfigMeta(Base):
+    __tablename__ = "engine_config_meta"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    engine_key: Mapped[str] = mapped_column(String(64))
+    cosmetic: Mapped[str] = mapped_column(String(64))
+    key: Mapped[str] = mapped_column(String(64))
+    varfunc: Mapped[str] = mapped_column(String(64))
+    default: Mapped[str] = mapped_column(String(64))
+    cfgdict: Mapped[JSON] = mapped_column(type_=JSON, nullable=False)
+    # must be a self.gatherfunc() callable by the engine
+    gatherfunc: Mapped[Optional[str]] = mapped_column(String(64))
+
 
 class Character(Base):
     __tablename__ = "character"
@@ -140,8 +326,8 @@ class Character(Base):
     name: Mapped[str] = mapped_column(String(64))
     engine: Mapped[str] = mapped_column(String(64))
     engine_secondary: Mapped[str] = mapped_column(String(64))
-    category = mapped_column(Integer, index=True)
-    last_spoke = mapped_column(DateTime, nullable=True)
+    category: Mapped[int] = mapped_column(Integer, index=True)
+    last_spoke: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     def cat_str(self):
         return ['', 'npc', 'player', 'system'][self.category]
@@ -159,6 +345,7 @@ def diskcache(key, value=None):
     key must be valid as a base filename
     value must be None or a json-able object
     """
+    log.info(f'diskcache({key=}, {value=})')
     filename = os.path.join(CACHE_DIR, key + ".json")
     if value is None:
         if os.path.exists(filename):

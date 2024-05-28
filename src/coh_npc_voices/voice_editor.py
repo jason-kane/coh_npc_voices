@@ -1,30 +1,27 @@
 """Voice Editor component"""
-
 import logging
 import multiprocessing
 import os
 import queue
-from scipy import signal
 import sys
 import tkinter as tk
-from scipy.io import wavfile
 from tkinter import font, ttk
 
 import db
 import effects
 import engines
-import matplotlib.pyplot as plt
 import models
 import npc_chatter
-import numpy as np
 import settings
-import voice_builder
+import voicebox
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from npc import PRESETS
 from pedalboard.io import AudioFile
+from scipy.io import wavfile
 from sqlalchemy import delete, desc, select, update
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
+from voicebox.tts.utils import get_audio_from_wav_file
 
 logging.basicConfig(
     level=settings.LOGLEVEL,
@@ -32,7 +29,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-log = logging.getLogger("__name__")
+log = logging.getLogger(__name__)
 ENGINE_OVERRIDE = {}
 
 #class ChoosePhrase(ttk.Frame):
@@ -66,8 +63,11 @@ class WavfileMajorFrame(ttk.LabelFrame):
         # without having to wait and listen to them all.  You can
         # also listen to everything a character says, back to back
         # without spending any TTS credits (presuming cached).
-        play_btn = ttk.Button(topline, text="Play", command=self.say_it)
-        play_btn.pack(side="left")
+        play_btn = ttk.Button(topline, text="Play", command=self.play_cache)
+        regen_btn = ttk.Button(topline, text="Regen", command=self.say_it)
+        regen_btn.pack(side="left")
+        play_btn.pack(side="left")        
+
         topline.pack(side="top", expand=True, fill="x")
 
         self.visualize_wav = None
@@ -75,21 +75,22 @@ class WavfileMajorFrame(ttk.LabelFrame):
     def chose_phrase(self, *args, **kwargs):
         # a phrase was chosen.
         raw_name = self.selected_character.get()
-        character = models.get_character_from_rawname(raw_name)
+        with models.db() as session:
+            character = models.get_character_from_rawname(raw_name, session)
 
-        phrase = self.chosen_phrase.get()
+            phrase = self.chosen_phrase.get()
 
-        _, clean_name = db.clean_customer_name(character.name)
-        filename = db.cache_filename(character.name, phrase)
+            _, clean_name = db.clean_customer_name(character.name)
+            filename = db.cache_filename(character.name, phrase)
 
-        cachefile = os.path.abspath(
-            os.path.join(
-                "clip_library",
-                character.cat_str(),
-                clean_name,
-                filename
+            cachefile = os.path.abspath(
+                os.path.join(
+                    "clip_library",
+                    character.cat_str(),
+                    clean_name,
+                    filename
+                )
             )
-        )
 
         if os.path.exists(cachefile):
             # convert mp3 to wav file
@@ -114,9 +115,9 @@ class WavfileMajorFrame(ttk.LabelFrame):
         raw_name = self.selected_character.get()
 
         # pull phrases for this character from the database
-        with models.Session(models.engine) as session:            
+        with models.db() as session:            
             character = models.get_character_from_rawname(raw_name, session)
-
+        
             if character is None:
                 log.error(f'62 Character {raw_name} does not exist!')
                 return
@@ -144,7 +145,6 @@ class WavfileMajorFrame(ttk.LabelFrame):
             self.plt.clear()
             self.spec.clear()
             self.canvas.draw_idle()
-
 
     def show_wave(self, cachefile):
         """
@@ -184,6 +184,63 @@ class WavfileMajorFrame(ttk.LabelFrame):
         # self.plt.set_xlim(0, duration)
         self.visualize_wav.pack(side='top', fill=tk.BOTH, expand=1)
 
+    def play_cache(self):
+        """
+        Play the cachefile
+        """
+        global ENGINE_OVERRIDE
+        message = self.chosen_phrase.get()
+        log.debug(f"Speak: {message}")
+
+        # the currently selected character entry on the listside.
+        raw_name = self.selected_character.get()
+        
+        with models.db(models.engine) as session:
+            character = models.get_character_from_rawname(raw_name, session)
+       
+        if message == self.ALL_PHRASES:
+            # we want to re-speak _every_ phrase, one at a time
+            message = self.options["values"]
+        else:
+            message = [ message ]
+
+        for msg in message:
+            # skip the all_phrases placeholder if we see it.
+            if msg == self.ALL_PHRASES:
+                continue
+
+            _, clean_name = db.clean_customer_name(character.name)
+            filename = db.cache_filename(character.name, msg)
+        
+            cachefile = os.path.abspath(
+                os.path.join(
+                    "clip_library",
+                    character.cat_str(),
+                    clean_name,
+                    filename
+                )
+            )
+
+            with AudioFile(cachefile) as input:
+                # convert the mp3 to a wav
+                with AudioFile(
+                    filename=cachefile + ".wav",
+                    samplerate=input.samplerate,
+                    num_channels=input.num_channels,
+                ) as output:
+                    while input.tell() < input.frames:
+                        output.write(input.read(1024))
+
+                self.show_wave(cachefile + ".wav")
+
+                # wrap the wav as an Audio()
+                audio = get_audio_from_wav_file(cachefile + ".wav")
+                os.unlink(cachefile + ".wav")
+                
+                # play the Audio()
+                voicebox.sinks.SoundDevice().play(audio)            
+                        
+            
     def say_it(self, use_secondary=False):
         """
         Speak aloud whatever is in the chosen_phrase tk.Variable, using whatever
@@ -195,8 +252,10 @@ class WavfileMajorFrame(ttk.LabelFrame):
         log.debug(f"Speak: {message}")
         # parent is the frame inside DetailSide
         if use_secondary:
+            rank = 'secondary'
             engine_name = self.detailside.secondary_tab.selected_engine.get()
         else:
+            rank = 'primary'
             engine_name = self.detailside.primary_tab.selected_engine.get()
 
         ttsengine = engines.get_engine(engine_name)
@@ -214,7 +273,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         
         category, name = raw_name.split(maxsplit=1)
 
-        with models.Session(models.engine) as session:
+        with models.db() as session:
             # it should be get_or_create_character()
             character = models.get_character(name, category, session)
 
@@ -264,29 +323,13 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 # None because we aren't attaching any widgets
                 try:
                     rank = 'primary'
-                    if use_secondary:
+                    if use_secondary or ENGINE_OVERRIDE.get(character.engine, False):
                         rank = 'secondary'
                     
-                    ttsengine(None, rank, self.selected_character).say(msg, effect_list, sink=sink)
-                except engines.elevenlabs.core.api_error.ApiError as err:
-                    if err.body.get("detail", {}).get('status', "") == "quota_exceeded":
-                        # We're over quote, switch to the secondary engine for this category
-                        # of voice origin.
-                        return self.say_it(use_secondary=True)
-
-                        # secondary_engine = settings.get_config_key(f'{character.category}_engine_secondary')
-                        # if secondary_engine == character.engine:
-                        #     # (this should be rare)
-                        #     # our secondary engine is the same as our current engine
-                        #     # so we will force-fallback to local.
-                        #     secondary_engine = 'Windows TTS'
-
-                        # # we made it sorta work, but don't try this engine again
-                        # # for this session.
-                        # ENGINE_OVERRIDE[character.engine] = secondary_engine
-
-                        # ttsengine = engines.get_engine(secondary_engine)
-                        # ttsengine(None, self.selected_character).say(msg, effect_list, sink=sink)
+                    ttsengine(session, None, rank, self.selected_character).say(msg, effect_list, sink=sink)
+                except engines.USE_SECONDARY:
+                    ENGINE_OVERRIDE[character.engine] = True
+                    return self.say_it(use_secondary=True)
                         
                 self.show_wave(cachefile + ".wav")
 
@@ -305,7 +348,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 # No Cache
                 log.info(f'Bypassing filesystem caching ({msg})')
                 try:
-                    ttsengine(None, self.selected_character).say(msg, effect_list)
+                    ttsengine(None, rank, self.selected_character).say(msg, effect_list)
                 except engines.DISABLE_ENGINES:
                     # I'm not even sure what we want to do.  The user clicked 'play' but
                     # we don't have any quota left for the selected engine.
@@ -352,17 +395,16 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
             "write", 
             self.change_selected_engine
         )
-        self.load_character()
+        with models.Session(models.engine) as session:
+            self.load_character(session)
 
         es = EngineSelection(self, self.selected_engine)
         es.pack(side="top", fill="x", expand=True)
-        # self.engine_parameters = None
-        # self.change_selected_engine("", "", "")
-        #log.info('EngineSelectAndConfigure.__init__() -> self.load_character()')
-        #self.load_character()
 
     def set_engine(self, engine_name):
-        self.selected_engine.set(engine_name)       
+        # this set() will trip change_selected_engine
+        # which will in turn set a value for engine_parameters
+        self.selected_engine.set(engine_name)  
 
     def change_selected_engine(self, a, b, c):
         """
@@ -374,6 +416,29 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         log.info('EngineSelectAndConfigure.change_selected_engine()')
         if self.engine_parameters:
             self.engine_parameters.pack_forget()
+
+        # remove any existing engine level configuration
+        with models.db() as session:
+            raw_name = self.selected_character.get()
+            character = models.get_character_from_rawname(raw_name, session)
+
+            rows = session.scalars(
+                select(models.BaseTTSConfig).where(
+                    models.BaseTTSConfig.character_id == character.id,
+                    models.BaseTTSConfig.rank == self.rank
+                )
+            ).all()
+
+            for row in rows:
+                log.info(f'Deleting {row}...')
+                # if row.key in self.config_vars:
+                #     # remove traces
+                #     info = self.config_vars[row.key].trace_info()
+                #     for i in info:
+                #         self.config_vars[row.key].trace_remove(*i)
+                #     del self.config_vars[row.key]
+                session.delete(row)
+            session.commit()
 
         engine_cls = engines.get_engine(self.selected_engine.get())
         if engine_cls:
@@ -424,13 +489,14 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
 
             session.commit()
 
-    def load_character(self):
+    def load_character(self, session):
         """
         We've set the character name, we want the rest of the metadata to
         populate.  Setting the engine name will domino the rest.
         """
         character = models.get_character_from_rawname(
-            self.selected_character.get()
+            self.selected_character.get(),
+            session=session
         )
 
         if character is None:
@@ -524,7 +590,6 @@ class EffectList(ttk.LabelFrame):
 
                 effect_config_frame.load(session=session)
                         
-            #self.parent.pack(side="top", fill="x", expand=True)
             if not has_effects:
                 self.buffer = ttk.Frame(self, width=1, height=1).pack(side="top")
             else:
@@ -533,14 +598,8 @@ class EffectList(ttk.LabelFrame):
 
             log.info("Rebuilding add_effect")
             self.add_effect_combo.pack_forget()
-            # .pack(side="top", fill="x", expand=True)
             self.add_effect_combo = AddEffect(self, self)
             self.add_effect_combo.pack(side="top", fill='x', expand=True)
-            # self.detailside.effect_list.pack(side="top", fill="x")
-            # self.detailside.frame.pack(side="top", fill="x", expand=True)
-            # self.detailside.canvas.pack(side="left", fill="both", expand=True)
-            # self.detailside.pack(side="left", fill="both", expand=True)
-            # self.detailside.parent.pack(side="top", fill="both", expand=True)
             
     def add_effect(self, effect_name):
         """
@@ -658,8 +717,7 @@ class AddEffect(ttk.Frame):
         # we're using the textvariable as the action associated with changing
         # this combobox.  That only gives us the scope of what can see this
         # selected_effect to either read the current value or trace_add to 
-        # trigger whenever selected_effect is written to.
-        
+        # trigger whenever selected_effect is written to.       
         self.selected_effect = tk.StringVar(value=self.add_an_effect)
         self.selected_effect.trace_add("write", self.add_effect)
 
@@ -761,10 +819,10 @@ class DetailSide(ttk.Frame):
         )
         self.phrase_selector.pack(side="top", fill="x", expand=True)
 
-        self.presetSelect = PresetSelector(
-            self.frame, self, self.selected_character
-        )
-        self.presetSelect.pack(side="top", fill="x", expand=True)
+        # self.presetSelect = PresetSelector(
+        #     self.frame, self, self.selected_character
+        # )
+        # self.presetSelect.pack(side="top", fill="x", expand=True)
 
         engine_notebook = ttk.Notebook(self.frame)
         self.primary_tab = EngineSelectAndConfigure(
@@ -778,22 +836,11 @@ class DetailSide(ttk.Frame):
 
         engine_notebook.pack(side="top", fill="x", expand=True)
 
-        #self.engineSelect = EngineSelectAndConfigure(
-        #    self.frame, self.selected_character
-        #)
-        #self.engineSelect.pack(side="top", fill="x", expand=True)
-
         # list of effects already configured
         self.effect_list = EffectList(self.frame, selected_character)
         self.effect_list.pack(side="top", fill="x", expand=True)
 
     def remove_character(self):
-        #self.parent = parent
-        # parent of detailside is 'editor', a Frame of root.
-        # what we really need is listside, which is passed
-        # a detailside -- maybe we can do this backwards.
-        #
-        #self.selected_character = selected_character        
         if self.listside:
             self.listside.delete_selected_character()
 
@@ -835,7 +882,8 @@ class DetailSide(ttk.Frame):
             self.group_name.set("")
 
         # load the character 
-        character = models.get_character(name, category)
+        with models.db() as session:
+            character = models.get_character(name, category, session)
 
         # update the phrase selector
         self.phrase_selector.populate_phrases()
@@ -846,7 +894,7 @@ class DetailSide(ttk.Frame):
         self.secondary_tab.set_engine(character.engine_secondary)
 
         # set engine and parameters
-        # log.info(f'{dir(self.primary_tab)=}')
+        log.info(f'{dir(self.primary_tab)=}')
         self.primary_tab.engine_parameters.load_character(raw_name)
         self.secondary_tab.engine_parameters.load_character(raw_name)
         
@@ -854,61 +902,61 @@ class DetailSide(ttk.Frame):
         self.effect_list.load_effects()
 
         # reset the preset selector
-        self.presetSelect.reset()
+        # self.presetSelect.reset()
 
         # scroll to the top
         self.vsb.set(0, 1)
         self.canvas.yview_moveto(0)
 
 
-class PresetSelector(ttk.Frame):
-    choose_a_preset = f"{'< Use a Preset >': ^70}"
+# class PresetSelector(ttk.Frame):
+#     choose_a_preset = f"{'< Use a Preset >': ^70}"
 
-    def __init__(self, parent, detailside, selected_character, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-        self.selected_character = selected_character
-        self.detailside = detailside
+#     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
+#         super().__init__(parent, *args, **kwargs)
+#         self.selected_character = selected_character
+#         self.detailside = detailside
        
-        self.chosen_preset = tk.StringVar(value=self.choose_a_preset)
-        self.chosen_preset.trace_add("write", self.choose_preset)
+#         self.chosen_preset = tk.StringVar(value=self.choose_a_preset)
+#         self.chosen_preset.trace_add("write", self.choose_preset)
 
-        preset_combobox = ttk.Combobox(
-            self,
-            textvariable=self.chosen_preset
-        )
-        preset_combobox["values"] = list(PRESETS.keys())
-        preset_combobox["state"] = "readonly"
+#         preset_combobox = ttk.Combobox(
+#             self,
+#             textvariable=self.chosen_preset
+#         )
+#         preset_combobox["values"] = list(PRESETS.keys())
+#         preset_combobox["state"] = "readonly"
 
-        preset_combobox.pack(side="left", fill="x", expand=True)
+#         preset_combobox.pack(side="left", fill="x", expand=True)
 
-    def reset(self):
-        self.chosen_preset.set(self.choose_a_preset)
+#     def reset(self):
+#         self.chosen_preset.set(self.choose_a_preset)
 
-    def choose_preset(self, varname, lindex, operation):
-        log.info('PresetSeelctor.choose_preset()')
-        preset_name = self.chosen_preset.get()
-        if preset_name == self.choose_a_preset:
-            log.info('** No choice detected **')
-            return
+#     def choose_preset(self, varname, lindex, operation):
+#         log.info('PresetSeelctor.choose_preset()')
+#         preset_name = self.chosen_preset.get()
+#         if preset_name == self.choose_a_preset:
+#             log.info('** No choice detected **')
+#             return
 
-        raw_name = self.selected_character.get()
-        if raw_name:
-            category, name = raw_name.split(maxsplit=1)
-        else:
-            category = 'system'
-            name = None
+#         raw_name = self.selected_character.get()
+#         if raw_name:
+#             category, name = raw_name.split(maxsplit=1)
+#         else:
+#             category = 'system'
+#             name = None
 
-        # load the character from the db
-        character = models.get_character(name, category)
+#         # load the character from the db
+#         character = models.get_character(name, category)
 
-        log.info(f'Applying preset {preset_name}')
-        voice_builder.apply_preset(
-            character.name, 
-            character.category, 
-            preset_name
-        )
+#         log.info(f'Applying preset {preset_name}')
+#         voice_builder.apply_preset(
+#             character.name, 
+#             character.category, 
+#             preset_name
+#         )
 
-        self.detailside.load_character(self.selected_character.get())
+#         self.detailside.load_character(self.selected_character.get())
 
 
 class Character:
@@ -999,7 +1047,7 @@ class ListSide(ttk.Frame):
 
         filter_string = self.list_filter.get()
 
-        with models.Session(models.engine) as session:
+        with models.db() as session:
             all_characters = session.scalars(
                 select(
                     models.Character
@@ -1030,7 +1078,7 @@ class ListSide(ttk.Frame):
         category, name = raw_name.split(maxsplit=1)
         log.info(f'Name: {name!r}  Category: {category!r}')
         
-        with models.Session(models.engine) as session:
+        with models.db() as session:
             character = models.get_character(name, category, session)
 
             session.execute(
@@ -1159,7 +1207,7 @@ class Chatter(ttk.Frame):
     def save_logdir(self, *args):
         logdir = self.logdir.get()
         log.info(f'Persisting setting logdir={logdir} to the database...')
-        with models.Session(models.engine) as session:
+        with models.db() as session:
             session.execute(
                 update(models.Settings).values(
                     logdir=logdir
@@ -1229,43 +1277,3 @@ class Chatter(ttk.Frame):
 #         multiprocessing.freeze_support()
 #     main()
 
-# TODO (eta: weeks)
-# ----
-
-# Release Blockers
-#######################
-# friendly installer/uninstaller
-#     py2exe?
-#        doesn't work with 3.12
-#     pyinstaller?
-#        can't get multiprocessing to work :(  it spawns a whole
-#        new editor when you attach.
-# more effects 
-
-# Not-blocking Glitches
-#######################
-# in-app update of app software
-# in-app update of voice database
-# right side does not fill the width
-# mouse-scroll doesn't move right side scrollbar
-# cannot remove the last npc entry
-
-# DONE
-# ----
-# removing effects does not repack
-# no mechanism to remove NPCs
-# when you edit an NPC, option to rebuild everything they say with the new 
-#     settings saving the mp3 to the file system (same as cache)
-# some mechanism to update/refresh the character list when new entries are added
-# effects are not removed when you change between npc
-# persist effects to database
-# no mechanism to remove effects
-# add the things NPCs actually say to the DB, use those to populate 'Play' in the editor
-# NPC list isn't populated
-# choosing an NPC doesn't load that npc in the detail side
-# changes on the right side do not persist to sqlite
-# engine parameters are not filled in
-# Only google text-to-speech works
-# only Bandpass filter and Glitch effects work
-# npc list should be populated from ncp_voices
-# engine paramters options are not API populated

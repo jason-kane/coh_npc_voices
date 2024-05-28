@@ -1,96 +1,60 @@
 {
-    "Random Any": {
-        "engine": "any",
-        "BaseTTSConfig": {
-            "voice_name": [
-                "random",
-                "any"
-            ],
-            "rate": "1"
-        }
-    },
+    "Random Any": {},
     "Random Female": {
-        "engine": "any",
-        "BaseTTSConfig": {
-            "voice_name": [
-                "random",
-                "female"
-            ],
-            "rate": "1"
-        }
+        "gender": "Female"
     },
     "Random Male": {
-        "engine": "any",
-        "BaseTTSConfig": {
-            "voice_name": [
-                "random",
-                "male"
-            ],
-            "rate": "1"
-        }
+        "gender": "Male"
     },
     "Clockwork": {
-        "engine": "any",
-        "BaseTTSConfig": {
-            "voice_name": [
-                "random",
-                "any"
-            ],
-            "rate": "1"
-        },
-        "Effects": {
-            "Vocoder": {
+        "Effects": [
+            {
+                "name": "Vocoder",
                 "carrier_freq": "100",
                 "min_freq": "135",
                 "max_freq": "6100",
                 "bands": "40",
                 "bandwidth": "0.5",
                 "bandpass_filter_order": "3"
-            },
-            "RingMod": {
+            }, {
+                "name": "RingMod",
                 "carrier_freq": "86",
                 "blend": "0.3",
                 "carrier_wave": "sin"
-            },
-            "Normalize": {
+            }, {
+                "name": "Normalize",
                 "max_amplitude": "1.0",
                 "remove_dc_offset": true
             }
-        }
+        ]
     },
     "Vahzilok": {
-        "engine": "any",
-        "BaseTTSConfig": {
-            "voice_name": [
-                "random",
-                "any"
-            ],
-            "rate": "2"
-        },
-        "Effects": {
-            "Chorus": {
+        "Effects": [
+            {
+                "name": "Chorus",
                 "rate_hz": "10.0",
                 "mix": "0.5",
                 "depth": "0.25",
                 "feedback": "0.0"
             }
-        }
+        ]
     },
     "Circle of Thorns": {
-        "engine": "any",
-        "BaseTTSConfig": {
-            "voice_name": [
-                "random",
-                "any"
-            ],
-            "rate": "1.25"
-        },
-        "Effects": {
-            "Delay": {
+        "Effects": [
+            {
+                "name": "Delay",
                 "delay_seconds": "0.1",
                 "feedback": "0.1",
                 "mix": "0.1"
             }
-        }
+        ]
+    },
+    "Trolls": {
+        "Effects": [
+            {
+                "name": "PitchShift",
+                "semitones": "-3.0"
+            }
+        ]
     }
 }

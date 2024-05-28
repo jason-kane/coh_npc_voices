@@ -1,17 +1,18 @@
 import logging
 import os
-import re
-import effects
 import random
-import models
-import engines
-from pedalboard.io import AudioFile
-from voicebox.sinks import Distributor, SoundDevice, WaveFile
-from sqlalchemy import delete, select
-from npc import PRESETS, GROUP_ALIASES, add_group_alias_stub
-import settings
+import re
 
-log = logging.getLogger("__name__")
+import effects
+import engines
+import models
+import settings
+from npc import GROUP_ALIASES, PRESETS, add_group_alias_stub
+from pedalboard.io import AudioFile
+from sqlalchemy import delete, select
+from voicebox.sinks import Distributor, SoundDevice, WaveFile
+
+log = logging.getLogger(__name__)
 
 PLAYER_CATEGORY = models.category_str2int("player")
 
@@ -34,7 +35,7 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
         add_group_alias_stub(preset_name)
         preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
 
-    with models.Session(models.engine) as session:
+    with models.db() as session:
         log.info('Applying preset: %s', preset)
         character = models.get_character(
             character_name,
@@ -87,9 +88,9 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
                     if gender == "any":
                         gender = None
                     
-
                     all_available_names = engines.get_engine(
-                        character.engine
+                        character.engine,
+                        session
                     ).get_voice_names(
                         gender=gender
                     )
@@ -155,7 +156,7 @@ def create(character, message, cachefile):
     have this particular message rendered.
 
     This is how npc_chatter talks.  editor has its own seperate-but=equal
-    version of this, they should really be merged.
+    version of this, they should really be merged. (WIP)
 
     1. Get vocal characteristics from sqlite using 
        the npc_id
@@ -164,7 +165,8 @@ def create(character, message, cachefile):
     """
     global ENGINE_OVERRIDE
     log.info(f'voice_builder.create({character=}, {message=}, {cachefile=})')
-    with models.Session(models.engine) as session:
+    
+    with models.db() as session:
         voice_effects = session.scalars(
             select(models.Effects).where(
                 models.Effects.character_id == character.id
@@ -186,7 +188,7 @@ def create(character, message, cachefile):
     if character.category != PLAYER_CATEGORY or settings.PERSIST_PLAYER_CHAT:
         # we want to collect and persist these to enable the editor to
         # rebuild them, replacing the mp3 in cache.
-        with models.Session(models.engine) as session:
+        with models.db() as session:
             phrase = session.execute(
                 select(models.Phrases).where(
                     models.Phrases.character_id == character.id,
@@ -194,11 +196,12 @@ def create(character, message, cachefile):
                 )
             ).first()
             
-            log.debug(phrase)
+        log.debug(phrase)
 
-            if phrase is None:
-                log.info('Phrase not found.  Creating...')
-                # it does not exist, now it does.
+        if phrase is None:
+            log.info('Phrase not found.  Creating...')
+            # it does not exist, now it does.
+            with models.db() as session:
                 phrase = models.Phrases(
                     character_id=character.id,
                     text=message,
@@ -226,21 +229,37 @@ def create(character, message, cachefile):
         save = False 
     
     selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
+    
+    rank = 'primary'
+    if ENGINE_OVERRIDE.get(character.engine, False):
+        rank = 'secondary'
 
-    # it is a little bit lovely.
-    character.engine = ENGINE_OVERRIDE.get(character.engine, character.engine)
+
     # character.engine may already have a value.  It probably does.  We're over-writing it
     # with anything we have in the dict ENGINE_OVERRIDE.  But if we don't have anything, you can keep
     # your previous value and carry on.
 
     try:
-        engines.get_engine(character.engine)(None, selected_name).say(message, effect_list, sink=sink)
-    except engines.DISABLE_ENGINES:
+        if rank == 'secondary':
+            raise engines.USE_SECONDARY
+        
+        log.info(f'Using engine: {character.engine}')
+        engines.get_engine(character.engine)(None, 'primary', selected_name).say(message, effect_list, sink=sink)
+    except engines.USE_SECONDARY:
         # our chosen engine for this character isn't working.  So we're going to switch
         # to the secondary and use that for the rest of this session.
-        engine_name = settings.get_config_key(f"{character.category}_engine_secondary")
-        ENGINE_OVERRIDE[character.engine] = engines.get_engine(engine_name)
+        ENGINE_OVERRIDE[character.engine] = True
 
+        if character.engine_secondary:
+            # use the secondary engine config defined for this character
+            engine_instance = engines.get_engine(character.engine_secondary)
+            engine_instance(None, 'secondary', selected_name).say(message, effect_list, sink=sink)
+        else:
+            # use the global default secondary engine
+            engine_name = settings.get_config_key(f"{character.category}_engine_secondary")
+            engine_instance = engines.get_engine(engine_name)
+            engine_instance(None, 'secondary', selected_name).say(message, effect_list, sink=sink)
+     
     if save:
         with AudioFile(cachefile + ".wav") as input:
             with AudioFile(

@@ -22,7 +22,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-log = logging.getLogger("__name__")
+log = logging.getLogger(__name__)
 
 def how_did_i_get_here():
     log.info(
@@ -74,7 +74,9 @@ def get_npc_gender(character_name):
     gender = None
     if npc_data:
         if npc_data["gender"] == "GENDER_MALE":
-            gender = "male"
+            gender = "Male"
         elif npc_data["gender"] == "GENDER_FEMALE":
-            gender = "female"    
+            gender = "Female"
+    
+    # Neuter == None
     return gender
