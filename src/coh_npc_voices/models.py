@@ -195,13 +195,15 @@ def get_character(name, category, session):
         # all of the available _engine_ configuration values
         engine_config_meta = session.scalars(
             select(EngineConfigMeta).where(
-                engine_key==engine_key
+                EngineConfigMeta.engine_key==engine_key
             )
         ).all()
 
+        log.info(f'|-  The configuration fields relevant to the {engine_key} TTS Engine are:')
         # None of these are in the DB yet, so this is a null-op
         # TODO: populate this db table
         for config_meta in engine_config_meta:
+            log.info(f"|-    {config_meta}")
             # we want sensible defaults with some jitter
             # for each voice engine config setting.
 
@@ -219,8 +221,6 @@ def get_character(name, category, session):
                     log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
                     value = "<Cache Failure>"
                 else:
-                    # log.info(f"{all_values=}")
-
                     # it's a dict, keyey on voice_name
                     if gender and 'gender' in all_values[0].keys():
                         def gender_filter(voice):
@@ -230,10 +230,14 @@ def get_character(name, category, session):
                     # does the preset have any more guidance?
                     # use the preset if there is one.  Otherwise
                     # choose randomly from the available options.
-                    value = preset.get(
-                        config_meta.key, 
-                        random.choice(list(all_values))[config_meta.key]
-                    )
+                    log.info(f"{all_values=}")
+
+                    if config_meta.key in preset:
+                        value = preset[config_meta.key]
+                    else:
+                        chosen_row = random.choice(list(all_values))
+                        log.info(f'Random selection: {chosen_row}')
+                        value = chosen_row[config_meta.key]
 
             elif config_meta.varfunc == "DoubleVar":
                 # no cache, use the preset or a random choice in the range.
@@ -251,12 +255,22 @@ def get_character(name, category, session):
                     resolution * round(value / resolution)
                 )
 
-            BaseTTSConfig(
+            elif config_meta.varfunc == "BooleanVar":
+                # to be or not to be, that is the question.
+                value = preset.get(
+                    config_meta.key,
+                    random.choice([True, False])
+                )
+
+            log.info(f'Configuring {rank} engine {engine_key}:  Setting {config_meta.key} to {value}')
+            new_config_entry = BaseTTSConfig(
                 character_id=character.id,
                 rank=rank,
                 key=config_meta.key,
                 value=value
             )
+            session.add(new_config_entry)
+            session.commit()
 
         # add any effects
         for effect_dict in preset.get('Effects', []):
@@ -284,7 +298,7 @@ def get_character(name, category, session):
                 session.add(effect_settings)
             session.commit()
 
-    log.info('\\-- get_character() returning')
+    log.info(f'\\-- get_character() returning {character}')
     return character
 
 
@@ -318,6 +332,9 @@ class EngineConfigMeta(Base):
     cfgdict: Mapped[JSON] = mapped_column(type_=JSON, nullable=False)
     # must be a self.gatherfunc() callable by the engine
     gatherfunc: Mapped[Optional[str]] = mapped_column(String(64))
+
+    def __str__(self):
+        return f"<EngineConfigMeta {self.engine_key=}, {self.cosmetic=}, {self.key=}, {self.varfunc=}, {self.default=}, {self.cfgdict=}, {self.gatherfunc=}/>"
 
 
 class Character(Base):

@@ -30,7 +30,7 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
     if gender is None:
         gender = settings.get_npc_gender(character_name)
 
-    if preset is None:
+    if preset is None or len(preset) == 0:
         log.info(f'No preset is available for {preset_name}')
         add_group_alias_stub(preset_name)
         preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
@@ -43,6 +43,7 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
             session=session
         )
        
+        # TODO: WTF?
         if character_category == 2:
             default = settings.get_config_key('DEFAULT_PLAYER_ENGINE')
         else:
@@ -63,6 +64,7 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
                 )
             )
         
+        # This is wrong.  we're only setting config for the fields that have values.
         for key in preset['BaseTTSConfig']:
             log.info(f'key: {key}, value: {preset["BaseTTSConfig"][key]}')
             value = preset['BaseTTSConfig'][key]
@@ -75,9 +77,9 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
                     # all_npcs.json
                     choice, default_gender = preset['BaseTTSConfig'][key]
                     if "FEMALE" in gender.upper():
-                        gender="female"
+                        gender="Female"
                     elif "MALE" in gender.upper():
-                        gender="male"
+                        gender="Male"
                     else:
                         gender = default_gender
                     

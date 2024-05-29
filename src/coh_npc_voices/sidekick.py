@@ -195,11 +195,8 @@ class ChartFrame(ttk.Frame):
                     sum_inf += inf_gain
                 event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
                 
-                filled = False
-
                 while previous_event and (event_time - previous_event) > timedelta(minutes=1, seconds=30):
-                    filled = True
-                    log.info('Adding a zero value to fill in a gap')
+                    log.debug('Adding a zero value to fill in a gap')
                     # We have a time gap; fill it with zeroes to keep our calculations truthy
                     new_event_time = previous_event + timedelta(minutes=1)
                     data_timestamp.append(new_event_time)
@@ -220,12 +217,11 @@ class ChartFrame(ttk.Frame):
                 rolling_average_value = np.mean(rolling_xp_list[-1 * roll_size:])
                 rolling_data_xp.append(rolling_average_value)
 
-                log.info(f'{filled=}')
-                log.info(f'{data_xp=}')
-                log.info(f'{data_inf=}')
-                log.info(f'{rolling_xp_list=}')
-                log.info(f'{rolling_data_xp=}')
-                log.info(f'{rolling_average_value=}')
+                # log.info(f'{data_xp=}')
+                # log.info(f'{data_inf=}')
+                # log.info(f'{rolling_xp_list=}')
+                # log.info(f'{rolling_data_xp=}')
+                # log.info(f'{rolling_average_value=}')
 
                 #try:
                 
@@ -273,7 +269,7 @@ class ChartFrame(ttk.Frame):
             ax2.scatter(samples_timestamp, samples_inf, c="darkgreen", marker=r'$\$$', s=75)
             #ax2.axhline(y=avg_inf_per_minute, color='green')
 
-            log.info(f'Plotting:\n\n [{len(data_timestamp)}]{data_timestamp=}\n{data_xp=}\n[{len(rolling_data_xp)}]{rolling_data_xp=}\n')
+            log.debug(f'Plotting:\n\n [{len(data_timestamp)}]{data_timestamp=}\n{data_xp=}\n[{len(rolling_data_xp)}]{rolling_data_xp=}\n')
             try:
                 ax.plot(data_timestamp, data_xp, drawstyle="steps", color='blue')  
                 ax.plot(data_timestamp, rolling_data_xp, 'o--', color='blue')

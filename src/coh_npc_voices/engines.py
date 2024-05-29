@@ -655,13 +655,14 @@ class ElevenLabs(TTSEngine):
         out = set()
         for voice in all_voices:
             if self._gender_filter(voice):
-                out.add(f"{voice['voice_name']} : {voice['id']}")
+                out.add(voice['voice_name'])
         
         out = sorted(list(out))
 
         if out:
             if self.config_vars["voice_name"].get() not in out:
                 # our currently selected voice is invalid.  Pick a new one.
+                log.error('Invalid voice selecton: %s.  Overriding...', self.config_vars["voice_name"].get())
                 self.config_vars["voice_name"].set(out[0])
             return out
         else:
@@ -752,6 +753,14 @@ class ttsElevenLabs(voicebox.tts.TTS):
     style: float = 0.0
     use_speaker_boost : bool = True
 
+    def voice_name_to_id(self, voice_name):
+        voice_name = voice_name.strip()
+        for voice in models.diskcache(f'elevenlabs_voice_name'):
+            if voice['voice_name'] == voice_name:
+                return voice['id']
+
+        log.error('Unknown voice:  %s', voice_name)
+
     def get_speech(self, text: StrOrSSML) -> Audio:
         client = get_elevenlabs_client()
         # https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/client.py#L118
@@ -761,9 +770,8 @@ class ttsElevenLabs(voicebox.tts.TTS):
         # but the PCM wav format returned by 11labs isn't direcly compatible with the 
         # wav format that the python wave library known how to open.
         log.debug(f"self.voice: {self.voice}")
-        voice_name, voice_id = self.voice.split(':')
-        voice_name = voice_name.strip()
-        voice_id = voice_id.strip()
+        
+        voice_id = self.voice_name_to_id(self.voice)
 
         # I'm not actually clear on what exactly 'model' does.
         # voice_model = None
