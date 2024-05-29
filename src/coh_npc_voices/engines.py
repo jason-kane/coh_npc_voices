@@ -18,7 +18,7 @@ import tts.sapi
 import voicebox
 from elevenlabs.client import ElevenLabs as ELABS
 from google.cloud import texttospeech
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from voicebox.audio import Audio
 from voicebox.tts.amazonpolly import AmazonPolly as AmazonPollyTTS
 from voicebox.types import StrOrSSML
@@ -379,7 +379,7 @@ class TTSEngine(ttk.Frame):
             # log.debug(f'{self.gender.title()} ?= {voice["gender"].title()}')
             try:
                 return self.gender.title() == voice["gender"].title()
-            except KeyError as err:
+            except KeyError:
                 log.info('Failed to find "gender" in:')
                 log.info(f"{voice=}")
         return True

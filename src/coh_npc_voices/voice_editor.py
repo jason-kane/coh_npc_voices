@@ -195,7 +195,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         # the currently selected character entry on the listside.
         raw_name = self.selected_character.get()
         
-        with models.db(models.engine) as session:
+        with models.db() as session:
             character = models.get_character_from_rawname(raw_name, session)
        
         if message == self.ALL_PHRASES:
