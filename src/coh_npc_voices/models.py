@@ -396,11 +396,7 @@ def get_engine_config(character_id, rank):
 
 def set_engine_config(character_id, rank, new_config):
     """
-    Generally speaking -- only one thing is actually changing, because this is called in the listeners on the config widgets.
-    that is what makes returning 'change' not stupid.  The most common multi-config setting change happens when the user switches
-    to a different TTS enigne.  That part isn't our concern.   
     """
-    change = None
     old_config = get_engine_config(character_id, rank)
     log.info(f"{character_id=} {old_config=} {new_config=}")
     with Session(engine) as session:
@@ -418,7 +414,6 @@ def set_engine_config(character_id, rank, new_config):
                     if row:
                         log.info(f'Changing value of {row} to {new_config[key]}')
                         row.value = new_config[key]
-                        change = key
                         session.commit()
                     else:
                         log.info(f'Charactger {character_id} has no previous engine config for {rank} {key}')
@@ -439,7 +434,6 @@ def set_engine_config(character_id, rank, new_config):
                     key=key,
                     value=new_config[key]
                 )
-                change = key
                 session.add(row)
 
         for key in old_config:
@@ -455,7 +449,6 @@ def set_engine_config(character_id, rank, new_config):
                 )
 
         session.commit()
-        return change
 
 
 class BaseTTSConfig(Base):

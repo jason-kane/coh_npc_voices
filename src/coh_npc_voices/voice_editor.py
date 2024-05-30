@@ -414,14 +414,21 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         # clear the old engine configuration
         # show the selected engine configuration
         log.info('EngineSelectAndConfigure.change_selected_engine()')
+
+        with models.db() as session:
+            raw_name = self.selected_character.get()
+            character = models.get_character_from_rawname(raw_name, session)
+
+        if self.rank == "primary":
+            log.info(f'{self.rank} engine changing from {character.engine} to {self.selected_engine.get()}')
+        elif self.rank == "secondary":
+            log.info(f'{self.rank} engine changing from {character.engine_secondary} to {self.selected_engine.get()}')
+
         if self.engine_parameters:
             self.engine_parameters.pack_forget()
 
         # remove any existing engine level configuration
         with models.db() as session:
-            raw_name = self.selected_character.get()
-            character = models.get_character_from_rawname(raw_name, session)
-
             rows = session.scalars(
                 select(models.BaseTTSConfig).where(
                     models.BaseTTSConfig.character_id == character.id,
@@ -894,7 +901,7 @@ class DetailSide(ttk.Frame):
         self.secondary_tab.set_engine(character.engine_secondary)
 
         # set engine and parameters
-        log.info(f'{dir(self.primary_tab)=}')
+        log.debug(f'{dir(self.primary_tab)=}')
         self.primary_tab.engine_parameters.load_character(raw_name)
         self.secondary_tab.engine_parameters.load_character(raw_name)
         
