@@ -63,10 +63,11 @@ class WavfileMajorFrame(ttk.LabelFrame):
         # without having to wait and listen to them all.  You can
         # also listen to everything a character says, back to back
         # without spending any TTS credits (presuming cached).
-        play_btn = ttk.Button(topline, text="Play", command=self.play_cache)
+        self.play_btn = ttk.Button(topline, text="Play", command=self.play_cache)
+
         regen_btn = ttk.Button(topline, text="Regen", command=self.say_it)
         regen_btn.pack(side="left")
-        play_btn.pack(side="left")        
+        self.play_btn.pack(side="left")        
 
         topline.pack(side="top", expand=True, fill="x")
 
@@ -75,24 +76,15 @@ class WavfileMajorFrame(ttk.LabelFrame):
     def chose_phrase(self, *args, **kwargs):
         # a phrase was chosen.
         raw_name = self.selected_character.get()
+
         with models.db() as session:
             character = models.get_character_from_rawname(raw_name, session)
 
             phrase = self.chosen_phrase.get()
-
-            _, clean_name = db.clean_customer_name(character.name)
-            filename = db.cache_filename(character.name, phrase)
-
-            cachefile = os.path.abspath(
-                os.path.join(
-                    "clip_library",
-                    character.cat_str(),
-                    clean_name,
-                    filename
-                )
-            )
+            cachefile = self.get_cachefile(character, phrase)
 
         if os.path.exists(cachefile):
+            self.play_btn["state"] = "normal"
             # convert mp3 to wav file
             with AudioFile(cachefile) as input:
                 with AudioFile(
@@ -108,6 +100,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         else:
             log.info(f'Cached mp3 {cachefile} does not exist.')
             self.clear_wave()
+            self.play_btn["state"] = "disabled"
         return
 
     def populate_phrases(self):
@@ -184,6 +177,19 @@ class WavfileMajorFrame(ttk.LabelFrame):
         # self.plt.set_xlim(0, duration)
         self.visualize_wav.pack(side='top', fill=tk.BOTH, expand=1)
 
+    def get_cachefile(self, character, msg):
+        _, clean_name = db.clean_customer_name(character.name)
+        filename = db.cache_filename(character.name, msg)
+        
+        return os.path.abspath(
+            os.path.join(
+                "clip_library",
+                character.cat_str(),
+                clean_name,
+                filename
+            )
+        )        
+
     def play_cache(self):
         """
         Play the cachefile
@@ -208,18 +214,8 @@ class WavfileMajorFrame(ttk.LabelFrame):
             # skip the all_phrases placeholder if we see it.
             if msg == self.ALL_PHRASES:
                 continue
-
-            _, clean_name = db.clean_customer_name(character.name)
-            filename = db.cache_filename(character.name, msg)
-        
-            cachefile = os.path.abspath(
-                os.path.join(
-                    "clip_library",
-                    character.cat_str(),
-                    clean_name,
-                    filename
-                )
-            )
+            
+            cachefile = self.get_cachefile(character, msg)
 
             with AudioFile(cachefile) as input:
                 # convert the mp3 to a wav
@@ -326,7 +322,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
                     if use_secondary or ENGINE_OVERRIDE.get(character.engine, False):
                         rank = 'secondary'
                     
-                    ttsengine(session, None, rank, self.selected_character).say(msg, effect_list, sink=sink)
+                    ttsengine(None, rank, self.selected_character).say(msg, effect_list, sink=sink)
                 except engines.USE_SECONDARY:
                     ENGINE_OVERRIDE[character.engine] = True
                     return self.say_it(use_secondary=True)

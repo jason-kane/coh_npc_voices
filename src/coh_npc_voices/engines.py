@@ -181,8 +181,8 @@ class TTSEngine(ttk.Frame):
         with models.db() as session:
             tts_config = session.scalars(
                 select(models.BaseTTSConfig).where(
-                    models.BaseTTSConfig.character_id == character.id,
-                    models.BaseTTSConfig.rank == self.rank
+                    models.BaseTTSConfig.character_id==character.id,
+                    models.BaseTTSConfig.rank==self.rank
                 )
             ).all()
         
@@ -372,6 +372,7 @@ class TTSEngine(ttk.Frame):
                 self.widget[m.key]["values"] = all_options
             
                 if self.config_vars[m.key].get() not in all_options:
+                    log.info(f'Expected to find {self.config_vars[m.key].get()} in list {all_options}')
                     self.config_vars[m.key].set(all_options[0])
             
     def _gender_filter(self, voice):
@@ -391,7 +392,7 @@ class WindowsTTS(TTSEngine):
 
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
-        ('Speaking Rate', 'rate', "DoubleVar", 1, {'min': -10, 'max': 10, 'resolution': 1}, None)
+        ('Speaking Rate', 'rate', "DoubleVar", 1, {'min': -3.5, 'max': 3.5, 'resolution': 1}, None)
     )
 
     def get_tts(self):
@@ -445,18 +446,18 @@ class WindowsTTS(TTSEngine):
             for v in voices:
                 name = " ".join(v.split("-")[0].split()[1:])
                 all_voices.append({
-                    'name': name,
+                    'voice_name': name,
                     'gender': self.name_to_gender(name)
                 })
             
-            models.diskcache(f"{self.key}_voice_name", voices)
+            models.diskcache(f"{self.key}_voice_name", all_voices)
       
         nice_names = []
         for voice in all_voices:
             if gender and voice['gender'] != gender:
                 continue
             
-            nice_names.append(voice)
+            nice_names.append(voice["voice_name"])
 
         return sorted(nice_names)
 
@@ -818,6 +819,7 @@ class AmazonPolly(TTSEngine):
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Sample Rate', 'sample_rate', "StringVar", '16000', {}, "get_sample_rates")
     )
+    client = None
 
     def get_client(self):
         if self.client:
@@ -842,6 +844,7 @@ class AmazonPolly(TTSEngine):
         all_language_codes = models.diskcache(f'{self.key}_language_code')
 
         if all_language_codes is None:
+            log.info('Building AmazonPolly language_code cache')
             all_voices = self.get_voices()
             out = set()
             
@@ -852,10 +855,14 @@ class AmazonPolly(TTSEngine):
                     out.add(voice["LanguageCode"])
                     for code in voice.get('AdditionalLanguageCodes', []):
                         out.add(code)
-            all_language_codes = sorted(list(out))
+
+            all_language_codes = [ {'language_code': code} for code in out]
             models.diskcache(f'{self.key}_language_code', all_language_codes)
 
-        return all_language_codes
+        # any filtering needed for language codes?
+        codes = [code['language_code'] for code in all_language_codes]
+
+        return codes
 
     def get_engine_names(self):
         all_engines = models.diskcache(f'{self.key}_engine')
@@ -882,12 +889,15 @@ class AmazonPolly(TTSEngine):
             self.gender = gender
 
         out = set()
-        for voice_id in all_voices:
-            voice = all_voices[voice_id]
+        # log.info(f'filtering to include only language_code == {self.config_vars["language_code"].get()}')
+        # log.info(f'filtering to include only gender == {self.gender}')
+        for voice in all_voices:
             if self._language_code_filter(voice) and self._gender_filter(voice):
-                log.info(f'Including voice {voice["Name"]}')
-                out.add(f'{voice["Name"]} - {voice["Id"]}')
-        
+                log.debug(f'Including voice {voice["Name"]}')
+                out.add(voice["Name"])
+            else:
+                log.debug(f'Excluding {voice["Name"]}')
+
         out = sorted(list(out))
         
         if out:
@@ -897,6 +907,16 @@ class AmazonPolly(TTSEngine):
             return out
         else:
             return []
+
+    def voice_name_to_voice_id(self, voice_name):
+        voice_name = voice_name.strip()
+        all_voices = self.get_voices()
+        for voice in all_voices:
+            if voice['Name'] == voice_name:
+                return voice['Id']
+
+        log.error(f'Could not convert {voice_name=} to a voice_id')
+        return None
 
     def get_sample_rates(self, filter_by=None):
         # what does this depend on?
@@ -937,7 +957,7 @@ class AmazonPolly(TTSEngine):
         # https://us-east-2.console.aws.amazon.com/polly/home/SynthesizeSpeech
         
         raw_voice_name = self.override.get('voice_name', self.config_vars["voice_name"].get())
-        voice_name, voice_id = raw_voice_name.split('-')
+        voice_id = self.voice_name_to_voice_id(raw_voice_name)
 
         # Engine (string) – Specifies the engine ( standard, neural, long-form
         # or generative) used by Amazon Polly when processing input text for
@@ -972,13 +992,13 @@ class AmazonPolly(TTSEngine):
             session = boto3.Session()
             client = session.client('polly')
 
-            all_voices = {}
+            all_voices = []
             for voice in client.describe_voices()['Voices']:
                 log.debug(f'{voice=}')
                 voice['voice_name'] = voice["Name"]
                 voice['language_code'] = voice["LanguageCode"]
                 voice['gender'] = voice["Gender"]
-                all_voices[voice["Id"]] = voice
+                all_voices.append(voice)
             
             models.diskcache(f'{self.key}_voice_name', all_voices)
 
