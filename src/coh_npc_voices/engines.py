@@ -462,8 +462,8 @@ class GoogleCloud(TTSEngine):
     config = (
         ('Language Code', 'language_code', "StringVar", 'en-US', {}, "get_language_codes"),
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
-        ('Speaking Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.25, 'max': 4.0, 'resolution': 0.25}, None),
-        ('Voice Pitch', 'voice_pitch', "DoubleVar", 1, {'min': -20, 'max': 20, 'resolution': 0.5}, None)
+        ('Speaking Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.25, 'max': 2.75, 'digits': 3, 'resolution': 0.25}, None),
+        ('Voice Pitch', 'voice_pitch', "DoubleVar", 1, {'min': -10, 'max': 10, 'resolution': 0.5}, None)
     )
 
     def get_language_codes(self):
@@ -482,10 +482,9 @@ class GoogleCloud(TTSEngine):
                 {'language_code': code} for code in sorted(list(out))
             ]
 
-            all_language_codes = sorted(list(out))
             models.diskcache(f'{self.key}_language_code', all_language_codes)
 
-        return all_language_codes
+        return [ code['language_code'] for code in all_language_codes ]
 
     def _language_code_filter(self, voice):
         """
