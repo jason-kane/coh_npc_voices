@@ -7,6 +7,7 @@ import os
 LOGLEVEL=logging.INFO 
 # this is the ultimate fallback engine if there is nothing configured
 DEFAULT_ENGINE="Windows TTS"
+DEFAULT_NORMALIZE=False
 
 PRESETS = "presets.json"
 ALIASES = "aliases.json"
@@ -21,7 +22,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-log = logging.getLogger("__name__")
+log = logging.getLogger(__name__)
 
 def how_did_i_get_here():
     log.info(
@@ -66,3 +67,16 @@ def get_npc_data(character_name):
         with open("all_npcs.json", "r") as h:
             ALL_NPC = json.loads(h.read())
     return ALL_NPC.get(character_name)
+
+def get_npc_gender(character_name):
+    # what is this characters gender (if it has one)?
+    npc_data = get_npc_data(character_name)
+    gender = None
+    if npc_data:
+        if npc_data["gender"] == "GENDER_MALE":
+            gender = "Male"
+        elif npc_data["gender"] == "GENDER_FEMALE":
+            gender = "Female"
+    
+    # Neuter == None
+    return gender

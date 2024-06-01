@@ -2,6 +2,8 @@
 There is more awesome to be had.
 """
 import logging
+from logging.config import dictConfig
+import matplotlib.dates as md
 import multiprocessing
 from datetime import datetime, timedelta
 import sys
@@ -10,6 +12,7 @@ from tkinter import ttk
 from sqlalchemy import func, select
 import models
 import matplotlib.dates as mdates
+import matplotlib.pyplot as pyplot
 import voice_editor
 import npc_chatter
 import numpy as np
@@ -28,23 +31,65 @@ import ctypes
 myappid = u'fun.side.projects.sidekick.1.0'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
+LOGGING_CONFIG = { 
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': { 
+        'standard': { 
+            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        },
+    },
+    'handlers': { 
+        'default': { 
+            'level': 'INFO',
+            'formatter': 'standard',
+            'class': 'logging.StreamHandler'
+        },
+        'error_file': { 
+            'level': 'ERROR',
+            'formatter': 'standard',
+            'class': 'logging.FileHandler',
+            'filename': 'error.log',
+            'mode': 'a'
+        },
+    },
+    'loggers': { 
+        '': {  # root logger
+            'handlers': ['default', 'error_file'],
+            'level': 'DEBUG',
+            'propagate': True
+        },
+        # 'coh_npc_voices': {
+        #     'handlers': ['default', 'error_file'],
+        #     'level': 'DEBUG',
+        #     'propagate': True
+        # },
+    } 
+}
 
-logging.basicConfig(
-    level=settings.LOGLEVEL,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+dictConfig(LOGGING_CONFIG)
+# # log info to stdout
+# logging.basicConfig(
+#     level=settings.LOGLEVEL,
+#     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+#     handlers=[logging.StreamHandler(sys.stdout)],
+# )
+# logging.basicConfig(
+#     filename="sidekick.log",
+#     level=logging.ERROR,
+#     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+# )
 
-log = logging.getLogger("__name__")
+log = logging.getLogger(__name__)
 
-class ChartFrame(tk.Frame):
+class ChartFrame(ttk.Frame):
     def __init__(self, parent, hero, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
         if not hero:
             return
         else:
-            log.info(f'Drawing graph for {hero}')
+            log.debug(f'Drawing graph for {hero}')
             self.hero = hero
             # draw graph for $category progress, total per/minute
             # binned to the minute for the last hour.
@@ -76,7 +121,7 @@ class ChartFrame(tk.Frame):
                 log.error(err)
                 raise
             
-            log.info(f'latest_event: {latest_event}')
+            log.debug(f'latest_event: {latest_event}')
 
             if latest_event:
                 end_time = latest_event.event_time
@@ -88,6 +133,23 @@ class ChartFrame(tk.Frame):
             log.debug(f'Graphing {self.category} gain between {start_time} and {end_time}')
 
             with models.Session(models.engine) as session:
+                try:
+                    raw_samples = session.scalars(
+                        select(
+                            models.HeroStatEvent
+                        ).where(
+                            models.HeroStatEvent.hero_id == self.hero.id,
+                            models.HeroStatEvent.event_time >= start_time,
+                            models.HeroStatEvent.event_time <= end_time,
+                        )
+                    ).all()
+                except Exception as err:
+                    log.error('Error gathering data samples')
+                    log.error(err)
+                    raise
+
+
+                # do some binning in per-minute buckets in the database.
                 try:
                     samples = session.execute(
                         select(
@@ -110,59 +172,137 @@ class ChartFrame(tk.Frame):
                     log.error(err)
                     raise
             
-            log.debug(f'Found {len(samples)} samples')
+            log.debug(f'Found {len(samples)} binned samples, {len(raw_samples)} raw values')
 
-            data_x = []
-            data_y = []
-            rolling_data_y = []
-            last_n = []
+            data_timestamp = []
+            data_xp = []
+            data_inf = []
+            rolling_data_xp = []
+            rolling_xp_list = []
             roll_size = 5
-            last_event = None
+            previous_event = None
+            sum_xp = 0
+            sum_inf = 0
 
             for row in samples:
+                # per bin
                 # log.info(f'row: {row}')
                 datestring, xp_gain, inf_gain = row
+
+                if xp_gain:
+                    sum_xp += xp_gain
+                if inf_gain:
+                    sum_inf += inf_gain
                 event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
-                while last_event and (event_time - last_event) > timedelta(minutes=1, seconds=30):
-                    # We have a time gap; fill it with zeroes
-                    new_event_time = last_event + timedelta(minutes=1)
-                    data_x.append(new_event_time)
-                    data_y.append(0)
-                    last_n.append(0)
-                    last_event = new_event_time
                 
-                if self.category == "xp":
-                    if xp_gain is None:
-                        continue
+                while previous_event and (event_time - previous_event) > timedelta(minutes=1, seconds=30):
+                    log.debug('Adding a zero value to fill in a gap')
+                    # We have a time gap; fill it with zeroes to keep our calculations truthy
+                    new_event_time = previous_event + timedelta(minutes=1)
+                    data_timestamp.append(new_event_time)
+                    data_xp.append(0)
+                    data_inf.append(0)
+                    rolling_xp_list.append(0)
+                    
+                    rolling_data_xp.append(np.mean(rolling_xp_list[-1 * roll_size:]))
 
-                    data_x.append(event_time)
-                    data_y.append(xp_gain)
-                    last_n.append(xp_gain)
+                    previous_event = new_event_time
+                               
+                data_timestamp.append(event_time)
 
-                    try:
-                        rolling_data_y.append(np.mean(last_n))
-                    except Exception as err:
-                        log.error(err)
-                        log.error(f'last_n: {last_n}')
-                        raise
+                data_xp.append(xp_gain)
+                data_inf.append(inf_gain)
+                rolling_xp_list.append(xp_gain)
 
-                    while len(last_n) > roll_size:
-                        log.debug(f"clipping {len(last_n)} is too many.  {last_n}")
-                        last_n.pop(0)
+                rolling_average_value = np.mean(rolling_xp_list[-1 * roll_size:])
+                rolling_data_xp.append(rolling_average_value)
 
-                elif self.category == "inf":
-                    data_x.append(event_time)
-                    data_y.append(inf_gain)
-                    .00
+                # log.info(f'{data_xp=}')
+                # log.info(f'{data_inf=}')
+                # log.info(f'{rolling_xp_list=}')
+                # log.info(f'{rolling_data_xp=}')
+                # log.info(f'{rolling_average_value=}')
 
-            # log.info(f'Plotting {data_x}:{data_y}/{rolling_data_y}')
+                #try:
+                
+                # except Exception as err:
+                #     log.error(err)
+                #     log.error(f'rolling_xp_list: {rolling_xp_list[-1 * roll_size:]}')
+                #     raise
+
+                # while len(rolling_xp_list) > roll_size:
+                #     log.debug(f"clipping {len(rolling_xp_list)} is too many.  {rolling_xp_list}")
+                #     rolling_xp_list.pop(0)
+
+                previous_event = event_time
+
+            samples_timestamp = []
+            samples_xp = []
+            samples_inf = []
+            for row in raw_samples:
+                log.debug(f"{row=}")
+                #event, xp, inf = row
+                samples_timestamp.append(row.event_time)
+                samples_xp.append(row.xp_gain)
+                samples_inf.append(row.inf_gain)
+                        
+            oldest = datetime.strptime(samples[0][0], "%Y-%m-%d %H:%M:%S") 
+            newest = datetime.strptime(samples[-1][0], "%Y-%m-%d %H:%M:%S")
+
+            log.info(f"drawing graph between {oldest} and {newest}")
+
+            duration = (newest - oldest).total_seconds()
+            if duration == 0:
+                return
+
+            # avg_xp_per_minute = 60 * sum_xp / duration
+            # avg_inf_per_minute = 60 * sum_inf / duration
+
+            # shifting to per minute should push it up to where its
+            # visible/interesting (it doesn't)
+            # ax.axhline(y=avg_xp_per_minute, color='blue')
+
+            ax.scatter(samples_timestamp, samples_xp, c="darkblue", marker='*')
+
+            # samples
+            ax2 = ax.twinx()            
+            ax2.scatter(samples_timestamp, samples_inf, c="darkgreen", marker=r'$\$$', s=75)
+            #ax2.axhline(y=avg_inf_per_minute, color='green')
+
+            log.debug(f'Plotting:\n\n [{len(data_timestamp)}]{data_timestamp=}\n{data_xp=}\n[{len(rolling_data_xp)}]{rolling_data_xp=}\n')
             try:
-                ax.plot(data_x, data_y, drawstyle="steps", label=f"{self.category}")
-                ax.plot(data_x, rolling_data_y, 'o--')
+                ax.plot(data_timestamp, data_xp, drawstyle="steps", color='blue')  
+                ax.plot(data_timestamp, rolling_data_xp, 'o--', color='blue')
+
+                ax2.plot(data_timestamp, data_inf, drawstyle="steps", color='green')
             except Exception as err:
                 log.error(err)
-                log.error(data_x, data_y, rolling_data_y)
+                log.error("ERROR!!! %s/%s/%s", data_timestamp, data_xp, rolling_data_xp)
         
+            ## Set time format and the interval of ticks (every 15 minutes)
+            xformatter = md.DateFormatter('%H:%M')
+            xlocator = md.MinuteLocator(interval = 1)
+
+            ## Set xtick labels to appear every 15 minutes
+            ax.xaxis.set_major_locator(xlocator)
+
+            ## Format xtick labels as HH:MM
+            # pyplot.gcf().axes[0].xaxis.set_major_formatter(xformatter)
+
+            #start, end = ax.get_xlim()
+            #ax.xaxis.set_ticks(np.arange(start, end, 1))
+
+            # why?  glad you asked.  rewards tend to be both xp and inf, and the
+            # ratio of xp to inf is pretty steady.  Since each has its own
+            # scale, and they autoscale, the graphs end up overlapping.  a LOT.
+            # this 90% scaling on the inf graph should have it track xp, but a little below.
+            # ax2.set(
+            #     xlim=ax2.get_xlim(), 
+            #     ylim=(ax2.get_ylim()[0], 
+            #           ax2.get_ylim()[0] * 0.95
+            #     )
+            # )
+
             # creating the Tkinter canvas 
             # containing the Matplotlib figure 
             canvas = FigureCanvasTkAgg(
@@ -173,7 +313,7 @@ class ChartFrame(tk.Frame):
             canvas.get_tk_widget().pack(fill="both", expand=True)
             log.debug('graph constructed')      
 
-class CharacterTab(tk.Frame):
+class CharacterTab(ttk.Frame):
     def __init__(self, parent, event_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
@@ -189,7 +329,7 @@ class CharacterTab(tk.Frame):
         #self.inf_chart.pack(side="top", fill="both", expand=True)
 
     def set_hero(self, *args, **kwargs):
-        log.info(f'set_hero({self.chatter.hero})')
+        log.debug(f'set_hero({self.chatter.hero})')
         if hasattr(self, "xp_chart"):
             self.xp_chart.pack_forget()
 
@@ -209,17 +349,16 @@ class CharacterTab(tk.Frame):
 
     # character.name.trace_add('write', set_hero)
   
-class ConfigurationTab(tk.Frame):
-    def __init__(self, parent, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
+class ConfigurationTab(ttk.Frame):
+    tkdict = {}
 
-        elevenlabs = tk.Frame(
+    def elevenlabs_token_frame(self):
+        elevenlabs = ttk.Frame(
             self, 
             borderwidth=1, 
-            highlightbackground="black", 
             relief="groove"
         )
-        tk.Label(
+        ttk.Label(
             elevenlabs,
             text="ElevenLabs API Token",
             anchor="e",
@@ -227,64 +366,110 @@ class ConfigurationTab(tk.Frame):
         
         self.elevenlabs_key = tk.StringVar(value=self.get_elevenlabs_key())
         self.elevenlabs_key.trace_add('write', self.change_elevenlabs_key)
-        tk.Entry(
+        ttk.Entry(
             elevenlabs,
             textvariable=self.elevenlabs_key,
             show="*"
         ).pack(side="left", fill="x", expand=True)
-        elevenlabs.pack(side="top", fill="x")
-        ##############
-        ##############
-        ##############
-        self.default_engine = tk.StringVar(
-            value=settings.get_config_key('DEFAULT_ENGINE', "Windows TTS")
-        )
-        self.default_engine.trace_add('write', self.change_default_engine)
+        return elevenlabs
 
-        self.default_engine_normalize = tk.BooleanVar(
-            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE_NORMALIZE', False)
-        )
-        self.default_engine_normalize.trace_add(
-            'write', self.change_default_engine_normalize
-        )
+    def polymorph(self, a, b, c):
+        """
+        Given a config change through the UI, persist it.  Easy.
+        """
+        log.warning('Polymorph is a dangerous and powerful thing')
+        for key in self.tkdict:
+            value = self.tkdict[key].get()
+            # settings is smart enough to only write to disk when there is
+            # a change so this is much better than worst case.
+            settings.set_config_key(key, value)
+        return
 
-        default_npc_engine = self.choose_engine(
-            "Default NPC Engine",
-            self.default_engine,
-            self.default_engine_normalize,
-        )
-        
-        default_npc_engine.pack(side="top", fill="x")
-        ####
-        ####
-        self.default_player_engine = tk.StringVar(
-            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE', "Windows TTS")
-        )
-        self.default_player_engine.trace_add('write', self.change_default_player_engine)
+    def get_tkvar(self, tkvarClass, category, system, tag):
+        """
+        There is a tkvarClass instance located at category/system/tag.
+        Instantiate it, give it the right value, hand it back.
+        """
+        key = f'{category}_{system}_{tag}'
+        tkvar = self.tkdict.get(key)
+        if tkvar is None:
+            tkvar = tkvarClass(
+                value=settings.get_config_key(key, False)  # False is sus.
+            )
+            tkvar.trace_add(
+                'write', self.polymorph
+            )
+            self.tkdict[key] = tkvar
 
-        self.default_player_engine_normalize = tk.BooleanVar(
-            value=settings.get_config_key('DEFAULT_PLAYER_ENGINE_NORMALIZE', False)
-        )
-        self.default_player_engine_normalize.trace_add(
-            'write', self.change_default_player_engine_normalize
-        )         
+        return tkvar
 
-        default_player_engine = self.choose_engine(
-            "Default Player Engine",
-            self.default_player_engine,
-            self.default_player_engine_normalize,
-        )
-        
-        default_player_engine.pack(side="top", fill="x")
-        
-    def choose_engine(self, prompt, engine_var, normalize_var):
-        frame = tk.Frame(
-            self, 
+    def normalize_prompt_frame(self, parent, category):
+        """
+        frame with ui for the normalize checkbox
+        """
+        frame = ttk.Frame(parent)
+        ttk.Label(
+            frame,
+            text="Normalize all voices",
+            anchor="e",
+        ).grid(column=0, row=1)
+
+        tk.Checkbutton(
+            frame,
+            variable=self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
+        ).grid(column=1, row=1)
+        return frame
+              
+    def engine_priorities_frame(self, category):
+        """
+        the whole config frame for a particular category of entity within the game.
+        npc/player/system
+        """
+        frame = ttk.Frame(
+            self,
             borderwidth=1, 
-            highlightbackground="black", 
             relief="groove"
         )
-        tk.Label(
+
+        ttk.Label(
+            frame,
+            text=f"{category}",
+            anchor="e",
+        ).pack(side="top")
+
+        primary_engine = self.choose_engine(
+            frame,
+            "Primary Engine",
+            self.get_tkvar(tk.StringVar, category, 'engine', 'primary')
+        )
+        primary_engine.pack(side="top")
+
+        secondary_engine = self.choose_engine(
+            frame,
+            "Secondary Engine",
+            self.get_tkvar(tk.StringVar, category, 'engine', 'secondary')
+        )
+        secondary_engine.pack(side="top")
+
+        # tkvar = self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
+        self.normalize_prompt_frame(frame, category).pack(side="top")
+
+        return frame
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self.elevenlabs_token_frame().pack(side="top", fill="x")
+       
+        self.engine_priorities_frame("npc").pack(side="top", fill="x")
+        self.engine_priorities_frame("player").pack(side="top", fill="x")
+        self.engine_priorities_frame("system").pack(side="top", fill="x")
+        
+    def choose_engine(self, parent, prompt, engine_var):
+        frame = ttk.Frame(
+            parent, 
+        )
+        ttk.Label(
             frame,
             text=prompt,
             anchor="e",
@@ -294,17 +479,6 @@ class ConfigurationTab(tk.Frame):
         default_engine_combo["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
         default_engine_combo["state"] = "readonly"
         default_engine_combo.grid(column=1, row=0)
-
-        tk.Label(
-            frame,
-            text=f"Normalize {prompt}",
-            anchor="e",
-        ).grid(column=0, row=1)
-
-        tk.Checkbutton(
-            frame,
-            variable=normalize_var
-        ).grid(column=1, row=1)
 
         return frame
 
@@ -367,7 +541,7 @@ def main():
     character.pack(side="top", fill="both", expand=True)
     notebook.add(character, text='Character')  
 
-    voices = tk.Frame(notebook)
+    voices = ttk.Frame(notebook)
     voices.pack(side="top", fill="both", expand=True)
     notebook.add(voices, text='Voices')
 
@@ -375,12 +549,6 @@ def main():
     configuration.pack(side="top", fill="both", expand=True)
     notebook.add(configuration, text="Configuration")
 
-    # with models.Session(models.engine) as session:
-    #     first_character = session.query(models.Character).order_by(models.Character.name).first()
-
-    #if first_character:
-    #    selected_character = tk.StringVar(value=f"{first_character.cat_str()} {first_character.name}")
-    #else:
     selected_character = tk.StringVar()
 
     detailside = voice_editor.DetailSide(voices, selected_character)
@@ -392,14 +560,16 @@ def main():
 
     # in the mainloop we want to know if event_queue gets a new
     # entry.
-    #root.mainloop()
     last_character_update = None
     
     # update the graph(s) this often
     update_frequency = timedelta(minutes=1)
 
     while not EXIT:
+        # our primary event loop
         try:
+            # the event queue is how messages are sent up
+            # from children.
             event_action = event_queue.get(block=False)
             # we got an action (no exception)
             log.info('Event Received: %s', event_action)
@@ -410,6 +580,9 @@ def main():
                 log.info('Calling set_hero()...')
                 character.set_hero()
                 last_character_update = datetime.now()
+            elif key == "SPOKE":
+                # character named value just spoke
+                listside.refresh_character_list()
             else:
                 log.error('Unknown event_queue key: %s', key)
 

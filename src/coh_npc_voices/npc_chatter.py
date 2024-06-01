@@ -2,11 +2,11 @@ import argparse
 import glob
 import io
 import logging
+import audio
 from datetime import datetime
 import os
 import queue
 import re
-import json
 import sys
 import threading
 import time
@@ -21,27 +21,15 @@ import voicebox
 from pedalboard.io import AudioFile
 from voicebox.tts.utils import get_audio_from_wav_file
 
+REPLAY = False
+
 logging.basicConfig(
     level=settings.LOGLEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-log = logging.getLogger("__name__")
-
-
-# TODO:
-#   goals:
-#       consistent, unique(-ish) voice for every character in the game that speaks.
-#       free option, best possible quality
-#       cheap option, multiple options (paying TTS providers, responses cached)
-#           how much are we talking?
-#
-#   Fun:
-#       gui voice creator
-#       exports to a stringified voice profile
-#       players can tell other players what they sound like, and you then hear them.
-#       speech-to-text chat input (whisper?)
+log = logging.getLogger(__name__)
 
 # so frequently enough to merit this; people will identify themselves in the CAPTION messages.
 # like:
@@ -80,25 +68,13 @@ class ParallelTTS(threading.Thread):
 
     def playfile(self, cachefile):
         log.info(f"Cache Hit: {cachefile}")
-        # requires pydub
-        with AudioFile(cachefile) as input:
-            with AudioFile(
-                filename=cachefile + ".wav",
-                samplerate=input.samplerate,
-                num_channels=input.num_channels,
-            ) as output:
-                while input.tell() < input.frames:
-                    output.write(input.read(1024))
+        audio_obj = audio.mp3file_to_Audio(cachefile)
+        voicebox.sinks.SoundDevice().play(audio_obj)
 
-        audio = get_audio_from_wav_file(cachefile + ".wav")
-        os.unlink(cachefile + ".wav")
-
-        voicebox.sinks.SoundDevice().play(audio)
-
-    def makefile(self, cachefile, character, message):
-        log.info(f"Cache Miss -- {cachefile} not found")
-        # ok, what kind of voice do we want for this NPC?
-        voice_builder.create(character, message, cachefile)
+    def makefile(self, cachefile, character, message, session):
+        log.info(f"(makefile) Cache Miss -- {cachefile} not found")
+        # ok, what kind of voice do we need for this NPC?
+        voice_builder.create(character, message, cachefile, session)
 
     def pluck_and_speak(self, name, message, category):
         name, clean_name = db.clean_customer_name(name)
@@ -120,14 +96,17 @@ class ParallelTTS(threading.Thread):
             # the directory already exists.  This is not a problem.
             pass
 
-        character = models.get_character(name, category)
+        with models.db() as session:
+            character = models.get_character(name, category, session)
 
-        if os.path.exists(cachefile):
-            self.playfile(cachefile)
-        else:
-            self.makefile(cachefile, character, message)
+            if os.path.exists(cachefile):
+                self.playfile(cachefile)
+            else:
+                self.makefile(cachefile, character, message, session)
 
-        models.update_character_last_spoke(character)
+            models.update_character_last_spoke(character, session)
+            if self.event_queue:
+                self.event_queue.put(("SPOKE", character))
 
         self.speaking_queue.task_done()
 
@@ -213,7 +192,7 @@ class TightTTS(threading.Thread):
 
             if os.path.exists(cachefile):
                 log.info(f"Cache Hit: {cachefile}")
-                # requires pydub
+                # requires pydub?
                 with AudioFile(cachefile) as input:
                     with AudioFile(
                         filename=cachefile + ".wav",
@@ -228,87 +207,23 @@ class TightTTS(threading.Thread):
 
                 voicebox.sinks.SoundDevice().play(audio)
             else:
-                log.info(f"Cache Miss -- {cachefile} not found")
+                log.info(f"(tighttts) Cache Miss -- {cachefile} not found")
                 # ok, what kind of voice do we want for this NPC?
-                character = models.get_character(name, category)
-
-                if character is None:
-                    # this is the first time we've gotten a message from this
-                    # NPC, so they don't have a voice yet.  We will default to
-                    # the windows voice because it is free and no voice effects.
-                    if not self.all_npcs and os.path.exists("all_npcs.json"):
-                        with open("all_npcs.json", "r") as h:
-                            self.all_npcs = json.loads(h.read())
-
-                    found = self.all_npcs.get(name)
-                    normalize = False
-                    with models.Session(models.engine) as session:
-                        if category == "player":
-                            default = settings.get_config_key(
-                                'DEFAULT_PLAYER_ENGINE', settings.DEFAULT_ENGINE
-                            )
-                            normalize = settings.get_config_key(
-                                'DEFAULT_PLAYER_ENGINE_NORMALIZE', settings.DEFAULT_ENGINE
-                            )
-                        else:
-                            default = settings.get_config_key(
-                                'DEFAULT_ENGINE', settings.DEFAULT_ENGINE
-                            )
-                            normalize = settings.get_config_key(
-                                'DEFAULT_ENGINE_NORMALIZE', settings.DEFAULT_ENGINE
-                            )
-
-                        character = models.Character(
-                            name=name,
-                            engine=default,
-                            category=models.category_str2int(category),
-                        )
-
-                        session.add(character)
-                        session.commit()
-                        session.refresh(character)
-
-                        if normalize:
-                            # we want to automatically apply
-                            # the "normalize" effect to 
-                            # give us a stable baseline volume for
-                            # voices.
-                            effect = models.Effects(
-                                character_id=character.id,
-                                effect_name="Normalize"
-                            )
-                            session.add(effect)
-                            session.commit()
-                            session.refresh(effect)
-
-                            setting = models.EffectSetting(
-                                effect_id=effect.id,
-                                key='max_amplitude',
-                                value='1.0'
-                            )
-                            session.add(setting)
-
-                            setting = models.EffectSetting(
-                                effect_id=effect.id,
-                                key='remove_dc_offset',
-                                value='True'
-                            )
-                            session.add(setting)
-
-                    if found:
-                        # make a better voice default based on the
-                        # faction and gender
-                        voice_builder.apply_preset(
-                            character.name,
-                            character.category,
-                            found["group_name"],
-                            gender=found["gender"],
-                        )
-
+                with models.db() as session:
+                    character = models.get_character(name, category, session)
+            
+                with models.db() as session:
+                    models.update_character_last_spoke(character, session)
                 voice_builder.create(character, message, cachefile)
 
             self.speaking_queue.task_done()
 
+
+def plainstring(dialog):
+    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
+    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
+    dialog = re.sub(r"<bordercolor [#a-zA-Z0-9]+>", "", dialog).strip()
+    return dialog
 
 class LogStream:
     def __init__(
@@ -377,8 +292,10 @@ class LogStream:
         # now move the file handle to the end, we
         # will starting parsing everything for real this
         # time.
-        self.handle.seek(0, io.SEEK_END)
-        # self.handle.seek(0, 0)
+        if REPLAY:
+            self.handle.seek(0, 0)
+        else:
+            self.handle.seek(0, io.SEEK_END)
 
     def tail(self):
         # read any new lines that have arrives since we last read the file and process
@@ -397,13 +314,11 @@ class LogStream:
                 lstring = line_string.replace(".", "").strip().split()
                 if self.npc_speak and lstring[0] == "[NPC]":
                     name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+                    dialog = plainstring(dialog)
                     log.debug(f"Adding {name}/{dialog} to reading queue")
-                    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
-                    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
-                    dialog = re.sub(r"<bordercolor [#a-zA-Z0-9]+>", "", dialog).strip()
 
                     self.speaking_queue.put((name, dialog, "npc"))
-
+                    
                 elif self.team_speak and lstring[0] == "[Team]":
                     # ['2024-03-30', '23:29:48', '[Team] Khold: <color #010101>ugg, I gotta roll, nice little team.  dangerous without supports\n']
                     name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
@@ -527,6 +442,11 @@ class LogStream:
                     name = " ".join(lstring[0:-4])
                     action = lstring[-3]  # joined or quit
                     self.speaking_queue.put((None, f"Player {name} has {action} the team", "system"))
+
+                elif lstring[-2:] == ["The", "name"]:
+                    # 2024-05-03 19:46:15 The name <color red>Toothbreaker Jones</color> keeps popping up, and these Skulls were nice enough to tell you where to find him. Time to pay him a visit.
+                    dialog = plainstring(" ".join(lstring))
+                    self.speaking_queue.put((None, dialog, "system"))
 
                 # else:
                 #    log.warning(f'tag {lstring[0]} not classified.')

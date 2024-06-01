@@ -8,11 +8,11 @@ import pedalboard
 import voicebox
 from sqlalchemy import select
 
-log = logging.getLogger('__name__')
+log = logging.getLogger(__name__)
 
 WRAPLENGTH=250
 
-class LScale(tk.Frame):
+class LScale(ttk.Frame):
     def __init__(
         self,
         parent,
@@ -23,21 +23,21 @@ class LScale(tk.Frame):
         from_,
         to,
         _type=float,
-        *args, digits=None, resolution=None, **kwargs
+        *args, digits=None, resolution=0, **kwargs
     ):
         super().__init__(parent, *args, **kwargs)
         if _type == int:
             variable = tk.IntVar(
-                name=f"{pname}",
+                name=f"{parent.label.lower()}_{pname}",
                 value=default
             )
         else:
             variable = tk.DoubleVar(
-                name=f"{pname}",
+                name=f"{parent.label.lower()}_{pname}",
                 value=default
             )
 
-        tk.Label(
+        ttk.Label(
             self,
             text=label,
             anchor="e",
@@ -61,7 +61,7 @@ class LScale(tk.Frame):
         parent.parameters.append(pname)
 
 
-class LCombo(tk.Frame):
+class LCombo(ttk.Frame):
 
     def __init__(self,
         parent,
@@ -76,7 +76,7 @@ class LCombo(tk.Frame):
 
         variable = tk.StringVar(value=default)
 
-        tk.Label(
+        ttk.Label(
             self,
             text=label,
             anchor="e",
@@ -97,7 +97,7 @@ class LCombo(tk.Frame):
         parent.parameters.append(pname)        
 
 
-class LBoolean(tk.Frame):
+class LBoolean(ttk.Frame):
     def __init__(
         self,
         parent,
@@ -114,7 +114,7 @@ class LBoolean(tk.Frame):
             value=default
         )
 
-        tk.Label(
+        ttk.Label(
             self,
             text=label,
             anchor="e",
@@ -134,7 +134,7 @@ class LBoolean(tk.Frame):
         parent.parameters.append(pname)  
 
 
-class EffectParameterEditor(tk.Frame):
+class EffectParameterEditor(ttk.Frame):
     label = "Label"
     desc = "Description of effect"
 
@@ -143,10 +143,10 @@ class EffectParameterEditor(tk.Frame):
         self.parent = parent  # parent is the effectlist
         self.effect_id = tk.IntVar()
         self.parameters = []
-        self.traces = []
+        self.traces = {}
 
-        topbar = tk.Frame(self)
-        tk.Label(
+        topbar = ttk.Frame(self)
+        ttk.Label(
             topbar,
             text=self.label,
             anchor="n",
@@ -155,17 +155,22 @@ class EffectParameterEditor(tk.Frame):
             justify='left'
         ).pack(side='left', fill='x', expand=True)
     
-        tk.Button(
-            topbar,
-            text="X",
+        ttk.Style().configure(
+            "CloseFrame.TButton",
             anchor="center",
             width=1,
-            height=1,
+            height=1
+        )
+
+        ttk.Button(
+            topbar,
+            text="X",
+            style="CloseFrame.TButton",
             command=self.remove_effect
         ).pack(side="right")
         topbar.pack(side="top", fill='x', expand=True)
 
-        tk.Label(
+        ttk.Label(
             self,
             text=self.desc,
             anchor="n",
@@ -178,11 +183,12 @@ class EffectParameterEditor(tk.Frame):
         return None
     
     def clear_traces(self):
-        while self.traces:
-            v = self.traces.pop()
-            for trace in v.trace_info():
+        log.info('Clearing traces...')
+        for trace_var in self.traces:
+            log.info(f'{trace_var=}')
+            for trace in self.traces[trace_var].trace_info():
                 log.info(f"trace: {trace!r}")
-                v.trace_remove(trace[0], trace[1])
+                self.traces[trace_var].trace_remove(trace[0], trace[1])
 
     def remove_effect(self):
         log.info("EffectParamaterEngine.remove_effect()")
@@ -201,17 +207,22 @@ class EffectParameterEditor(tk.Frame):
         """
         log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
+        key = varname.split('_')[-1]  # I know, I feel dirty.
 
         with models.Session(models.engine) as session:
+            # fragile, varname is what is coming off the trace trigger
+            log.info(f'Reading effects settings when {effect_id=} and key={key}')
             effect_settings = session.scalars(
                 select(models.EffectSetting).where(
                     models.EffectSetting.effect_id==effect_id,
-                    models.EffectSetting.key==varname
+                    models.EffectSetting.key==key
                 )
             ).all()
 
-            log.debug('Sync to db')
+            log.info(f'Sync to db {effect_settings}')
+            found = set()
             for effect_setting in effect_settings:
+                found.add(effect_setting.key)
                 try:
                     new_value = str(getattr(self, effect_setting.key).get())
                 except AttributeError:
@@ -226,6 +237,22 @@ class EffectParameterEditor(tk.Frame):
                     session.commit()
                 else:
                     log.info(f'Value for {effect_setting.key} has not changed')
+
+            log.info(found)
+            for effect_setting_key in self.traces:
+                if effect_setting_key not in found:
+                    log.info(f'Expected key {effect_setting_key} does not exist in the database')
+                    value = self.traces[effect_setting_key].get()
+                    log.info(f'Creating new EffectSetting({effect_id}, key={effect_setting_key}, value={value})')
+                    new_setting = models.EffectSetting(
+                        effect_id=effect_id,
+                        key=effect_setting_key,
+                        value=value
+                    )
+                    session.add(new_setting)
+                log.info('commiting db session')
+                session.commit()
+
 
     def load(self, session=None):
         """
@@ -245,8 +272,11 @@ class EffectParameterEditor(tk.Frame):
         ).all()
 
         for setting in effect_settings:
+            log.info(f'Working on {setting}')
+
             tkvar = getattr(self, setting.key, None)
-            if tkvar not in self.traces:
+
+            if setting.key not in self.traces:
                 if tkvar:
                     tkvar.set(setting.value)
                 else:
@@ -256,7 +286,7 @@ class EffectParameterEditor(tk.Frame):
                         f'{self}')
             
                 tkvar.trace_add("write", self.reconfig)
-                self.traces.append(tkvar)
+                self.traces[setting.key] = tkvar
 
 # scipy iir filters
 IIR_FILTERS = ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
@@ -562,7 +592,7 @@ class Glitch(EffectParameterEditor):
         effect = voicebox.effects.Glitch(
             chunk_time=self.chunk_time.get(),
             p_repeat=self.p_repeat.get(),
-            max_repeats=self.max_repeats.get()
+            max_repeats=int(self.max_repeats.get())
         )
         return effect
 

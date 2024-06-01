@@ -16,7 +16,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-log = logging.getLogger("__name__")
+log = logging.getLogger(__name__)
 
 def build_migrate():
     # it really doesn't exist.
@@ -32,6 +32,7 @@ if not database_exists(engine.url):
         default = models.Character(
             name="default",
             engine="Windows TTS",
+            engine_secondary="Windows TTS",
             category=3
         )
         session.add(default)
