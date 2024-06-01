@@ -3,11 +3,11 @@
 
 #define SourcePath "\\?\Volume{cc498e86-0000-0000-0000-602200000000}\Users\jason\Desktop\coh_npc_voices"
 #define MyAppName "Sidekick"
-#define MyAppVersion "1.0"
+#define MyAppVersion "2.0"
 #define MyAppPublisher "Jason Kane"
 #define MyAppURL "https://github.com/jason-kane/coh_npc_voices"
 #define MyAppExeName "Sidekick.bat"
-#define MyAppIcon "sidekick.ico
+#define MyAppIcon "sidekick.ico"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
@@ -42,10 +42,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourcePath}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\aliases.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\all_npcs.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\config.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\sidekick.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\win_install.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\src\coh_npc_voices\__init__.py"; DestDir: "{app}\src\coh_npc_voices\"; Flags: ignoreversion
+Source: "{#SourcePath}\src\coh_npc_voices\audio.py"; DestDir: "{app}\src\coh_npc_voices\"; Flags: ignoreversion
 Source: "{#SourcePath}\src\coh_npc_voices\db.py"; DestDir: "{app}\src\coh_npc_voices\"; Flags: ignoreversion
 Source: "{#SourcePath}\src\coh_npc_voices\effects.py"; DestDir: "{app}\src\coh_npc_voices\"; Flags: ignoreversion
 Source: "{#SourcePath}\src\coh_npc_voices\engines.py"; DestDir: "{app}\src\coh_npc_voices\"; Flags: ignoreversion
