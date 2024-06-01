@@ -7,7 +7,6 @@ from datetime import datetime
 import os
 import queue
 import re
-import json
 import sys
 import threading
 import time
@@ -97,7 +96,7 @@ class ParallelTTS(threading.Thread):
             # the directory already exists.  This is not a problem.
             pass
 
-        with models.Session(models.engine) as session:
+        with models.db() as session:
             character = models.get_character(name, category, session)
 
             if os.path.exists(cachefile):
@@ -212,82 +211,6 @@ class TightTTS(threading.Thread):
                 # ok, what kind of voice do we want for this NPC?
                 with models.db() as session:
                     character = models.get_character(name, category, session)
-
-                # if character is None:
-                #     log.info('Creating new database character...')
-                #     # this is the first time we've gotten a message from this
-                #     # NPC, so they don't have a voice yet.  We will default to
-                #     # the windows voice because it is free and no voice effects.
-                #     if not self.all_npcs and os.path.exists("all_npcs.json"):
-                #         with open("all_npcs.json", "r") as h:
-                #             self.all_npcs = json.loads(h.read())
-
-                #     found = self.all_npcs.get(name)
-                #     normalize = False
-                
-                #     primary = settings.get_config_key(
-                #         f'{category}_engine_primary', settings.DEFAULT_ENGINE
-                #     )
-                #     secondary = settings.get_config_key(
-                #         f'{category}_engine_secondary', settings.DEFAULT_ENGINE
-                #     )
-                #     normalize = settings.get_config_key(
-                #         f'{category}_engine_normalize', settings.DEFAULT_NORMALIZE
-                #     )
-
-                #     with models.db() as session:
-                #         character = models.Character(
-                #             name=name,
-                #             engine=primary,
-                #             engine_secondary=secondary,
-                #             category=models.category_str2int(category),
-                #         )
-
-                #         session.add(character)
-                #         session.commit()
-                #         session.refresh(character)
-
-                #     if normalize:
-                #         # we want to automatically apply
-                #         # the "normalize" effect to 
-                #         # give us a stable baseline volume for
-                #         # voices.
-                #         with models.db() as session:
-                #             effect = models.Effects(
-                #                 character_id=character.id,
-                #                 effect_name="Normalize"
-                #             )
-                #             session.add(effect)
-                #             session.commit()
-                #             session.refresh(effect)
-
-                #             setting = models.EffectSetting(
-                #                 effect_id=effect.id,
-                #                 key='max_amplitude',
-                #                 value='1.0'
-                #             )
-                #             session.add(setting)
-
-                #             setting = models.EffectSetting(
-                #                 effect_id=effect.id,
-                #                 key='remove_dc_offset',
-                #                 value='True'
-                #             )
-                #             session.add(setting)
-
-                #     if found:
-                #         # this npc is in the all_npc file which means we have
-                #         # some faction/gender data we can use to (hopefully)
-                #         # improve the voice selection. 
-                #         log.info(f'Applying preset for {name=}')
-                #         voice_builder.apply_preset(
-                #             character.name,
-                #             character.category,
-                #             found["group_name"],
-                #             gender=found["gender"],
-                #         )
-                #     else:
-                #         log.info(f'{name=} _not_ found in all_npcs.json')
             
                 with models.db() as session:
                     models.update_character_last_spoke(character, session)

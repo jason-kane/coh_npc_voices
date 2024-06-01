@@ -414,34 +414,40 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         with models.db() as session:
             raw_name = self.selected_character.get()
             character = models.get_character_from_rawname(raw_name, session)
+        clear = False
 
         if self.rank == "primary":
-            log.info(f'{self.rank} engine changing from {character.engine} to {self.selected_engine.get()}')
+            if character.engine != self.selected_engine.get():
+                clear = True
+                log.info(f'{self.rank} engine changing from {character.engine!r} to {self.selected_engine.get()!r}')
         elif self.rank == "secondary":
-            log.info(f'{self.rank} engine changing from {character.engine_secondary} to {self.selected_engine.get()}')
+            if character.engine_secondary != self.selected_engine.get():
+                clear = True
+                log.info(f'{self.rank} engine changing from {character.engine_secondary!r} to {self.selected_engine.get()!r}')
 
         if self.engine_parameters:
             self.engine_parameters.pack_forget()
 
         # remove any existing engine level configuration
-        with models.db() as session:
-            rows = session.scalars(
-                select(models.BaseTTSConfig).where(
-                    models.BaseTTSConfig.character_id == character.id,
-                    models.BaseTTSConfig.rank == self.rank
-                )
-            ).all()
+        if clear:
+            with models.db() as session:
+                rows = session.scalars(
+                    select(models.BaseTTSConfig).where(
+                        models.BaseTTSConfig.character_id == character.id,
+                        models.BaseTTSConfig.rank == self.rank
+                    )
+                ).all()
 
-            for row in rows:
-                log.info(f'Deleting {row}...')
-                # if row.key in self.config_vars:
-                #     # remove traces
-                #     info = self.config_vars[row.key].trace_info()
-                #     for i in info:
-                #         self.config_vars[row.key].trace_remove(*i)
-                #     del self.config_vars[row.key]
-                session.delete(row)
-            session.commit()
+                for row in rows:
+                    log.info(f'Deleting {row}...')
+                    # if row.key in self.config_vars:
+                    #     # remove traces
+                    #     info = self.config_vars[row.key].trace_info()
+                    #     for i in info:
+                    #         self.config_vars[row.key].trace_remove(*i)
+                    #     del self.config_vars[row.key]
+                    session.delete(row)
+                session.commit()
 
         engine_cls = engines.get_engine(self.selected_engine.get())
         if engine_cls:

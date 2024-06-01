@@ -2,11 +2,13 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional
 
+import pyfiglet
 import settings
 from npc import GROUP_ALIASES, PRESETS, add_group_alias_stub
 from sqlalchemy import (
@@ -96,6 +98,8 @@ ENGINE_COSMETIC_TO_ID = {
     'Amazon Polly': 'amazonpolly'
 }
 
+language_code_regex = "en-.*"
+
 def get_character(name, category, session):
     log.info(f'/-- models.get_character({name=}, {category=}, {session=})')
     str_category = category
@@ -114,6 +118,9 @@ def get_character(name, category, session):
     )
 
     if character is None:
+        # go big or go home, right?
+        log.info("\n" + pyfiglet.figlet_format(f'New {str_category}', font="3d_diagonal", width=120))
+        log.info("\n" + pyfiglet.figlet_format(name, font="3d_diagonal", width=120))
         log.info(f'|- Creating new {str_category} character {name} in database...')
         # this is the first time we've gotten a message from this
         # NPC, so they don't have a voice yet.
@@ -190,7 +197,7 @@ def get_character(name, category, session):
         if gender is None:
             # otherwise, use the gender value in preset.  If there isn't
             # one, fall back to a random choice.
-            gender = preset.get('gender', random.choice(['Male', 'Female']))              
+            gender = preset.get('gender', random.choice(['Male', 'Female']))
 
         # all of the available _engine_ configuration values
         engine_config_meta = session.scalars(
@@ -222,6 +229,14 @@ def get_character(name, category, session):
                     value = "<Cache Failure>"
                 else:
                     # it's a dict, keyey on voice_name
+                    if language_code_regex and 'language_code' in all_values[0].keys():
+                        out = []
+                        for v in all_values:
+                            code = v.get('language_code', '')
+                            if re.match(language_code_regex, code):
+                                out.append(v)
+                        all_values = out
+                        
                     if gender and 'gender' in all_values[0].keys():
                         def gender_filter(voice):
                             return voice['gender'] == gender
@@ -398,6 +413,7 @@ def set_engine_config(character_id, rank, new_config):
     """
     """
     old_config = get_engine_config(character_id, rank)
+    log.info(pyfiglet.figlet_format("Engine Edit", font="3d_diagonal", width=120))
     log.info(f"{character_id=} {old_config=} {new_config=}")
     with Session(engine) as session:
         for key in new_config:   
@@ -424,6 +440,8 @@ def set_engine_config(character_id, rank, new_config):
                             value=new_config[key]
                         )
                         session.add(row)        
+                else:
+                    log.debug(f'The value of {key} has not changed (still {new_config[key]})')
             else:
                 # we have a new key/value, this will only 
                 # happen when upgrading/downgrading.

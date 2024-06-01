@@ -130,8 +130,8 @@ class TTSEngine(ttk.Frame):
 
     def say(self, message, effects, sink=None, *args, **kwargs):
         tts = self.get_tts()
-        log.info(f'{self}.say({message=}, {effects=}, {sink=}, {args=}, {kwargs=}')
-        log.info(f'Invoking voicebox.SimpleVoicebox({tts=}, {effects=}, {sink=})')
+        # log.info(f'{self}.say({message=}, {effects=}, {sink=}, {args=}, {kwargs=}')
+        # log.info(f'Invoking voicebox.SimpleVoicebox({tts=}, {effects=}, {sink=})')
         vb = voicebox.SimpleVoicebox(
             tts=tts,
             effects=effects, 
@@ -174,34 +174,25 @@ class TTSEngine(ttk.Frame):
             character = models.get_character_from_rawname(raw_name, session)
 
         self.gender = settings.get_npc_gender(character.name)
-
-        log.info(f'TTSEngine.load_character() Assigning NPC gender for {character.name} == {self.gender}')
-        log.info(f'Engine {character.engine} found.')
-    
-        with models.db() as session:
-            tts_config = session.scalars(
-                select(models.BaseTTSConfig).where(
-                    models.BaseTTSConfig.character_id==character.id,
-                    models.BaseTTSConfig.rank==self.rank
-                )
-            ).all()
         
-        log.info(f"{tts_config=}")
+        engine_config = models.get_engine_config(character.id, self.rank)
 
-        for config in tts_config:
-            log.info(f'Setting config {config.key} to {config.value}')
+        log.info(f"{engine_config=}")
+
+        for key, value in engine_config.items():
+            log.info(f'Setting config {key} to {value}')
             
             # log.info(f"{dir(self)}")
             if hasattr(self, 'config_vars'):
                 # the polly way
-                log.info(f'PolyConfig[{config.key}] = {config.value}')
+                log.info(f'PolyConfig[{key}] = {value}')
                 log.info(f'{self.config_vars=}')
-                self.config_vars[config.key].set(config.value)
+                self.config_vars[key].set(value)
             else:
-                log.info(f'oldstyle config[{config.key}] = {config.value}')
+                log.info(f'oldstyle config[{key}] = {value}')
                 # everything else
-                getattr(self, config.key).set(config.value)
-                setattr(self, config.key + "_base", config.value)
+                getattr(self, key).set(value)
+                setattr(self, key + "_base", value)
 
         log.info("TTSEngine.load_character complete")
         self.loading = False
@@ -278,11 +269,11 @@ class TTSEngine(ttk.Frame):
             self.config_vars[m.key] = varfunc(value=m.default)
 
             # create the widget itself
-            if varfunc == tk.StringVar:
+            if m.varfunc == "StringVar":
                 self._tkStringVar(m.key, frame)
-            elif varfunc == tk.DoubleVar:
+            elif m.varfunc == "DoubleVar":
                 self._tkDoubleVar(m.key, frame, m.cfgdict)
-            elif varfunc == tk.BooleanVar:
+            elif m.varfunc == "BooleanVar":
                 self._tkBooleanVar(m.key, frame)
             else:
                 # this will fail, but at least it will fail with a log message.
@@ -306,12 +297,14 @@ class TTSEngine(ttk.Frame):
         # doubles get a scale widget.  I haven't been able to get the ttk.Scale
         # widget to behave itself.  I like the visual a bit better, but its hard
         # to get equivilent results.
+
         self.widget[key] = tk.Scale(
             frame,
             variable=self.config_vars[key],
             from_=cfg.get('min', 0),
             to=cfg['max'],
             orient='horizontal',
+            digits=cfg.get('digits', 2),
             resolution=cfg.get('resolution', 1)
         )
         self.widget[key].pack(side="left", fill="x", expand=True)
@@ -363,7 +356,7 @@ class TTSEngine(ttk.Frame):
 
     def repopulate_options(self):
         for m in self.get_config_meta():
-        # for cosmetic, key, varfunc, default, cfg, fn in self.CONFIG_TUPLE:
+            # for cosmetic, key, varfunc, default, cfg, fn in self.CONFIG_TUPLE:
             # our change may filter the other widgets, possibly
             # rendering the previous value invalid.
             if m.varfunc == "StringVar":
@@ -372,7 +365,7 @@ class TTSEngine(ttk.Frame):
                 self.widget[m.key]["values"] = all_options
             
                 if self.config_vars[m.key].get() not in all_options:
-                    log.info(f'Expected to find {self.config_vars[m.key].get()} in list {all_options}')
+                    log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')
                     self.config_vars[m.key].set(all_options[0])
             
     def _gender_filter(self, voice):
@@ -392,7 +385,7 @@ class WindowsTTS(TTSEngine):
 
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
-        ('Speaking Rate', 'rate', "DoubleVar", 1, {'min': -3.5, 'max': 3.5, 'resolution': 1}, None)
+        ('Speaking Rate', 'rate', "DoubleVar", 1, {'min': -3.5, 'max': 3.5, 'digits': 2, 'resolution': 0.5}, None)
     )
 
     def get_tts(self):
@@ -517,8 +510,10 @@ class GoogleCloud(TTSEngine):
         out = sorted(list(out))
 
         if out:
-            if self.config_vars["voice_name"].get() not in out:
+            voice_name = self.config_vars["voice_name"].get()
+            if voice_name not in out:
                 # our currently selected voice is invalid.  Pick a new one.
+                log.error(f'Voice {voice_name} is now invalid')
                 self.config_vars["voice_name"].set(out[0])
             return out
         else:
@@ -933,8 +928,8 @@ class AmazonPolly(TTSEngine):
 
         if all_sample_rates is None:
             all_sample_rates = [
-                {"sample_rate": 8000}, 
-                {"sample_rate": 16000}
+                {"sample_rate": "8000"}, 
+                {"sample_rate": "16000"}
             ]
             models.diskcache(f'{self.key}_sample_rate', all_sample_rates)
         
