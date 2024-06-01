@@ -872,15 +872,16 @@ class AmazonPolly(TTSEngine):
 
             out = set()
             # is this going to be intuitive or just weird?
-            for voice_id in all_voices:
-                voice = all_voices[voice_id]
+            for voice in all_voices:
+
                 if self._language_code_filter(voice) and self._gender_filter(voice):
                     for code in voice.get('SupportedEngines', []):
                         out.add(code)
-            all_engines = sorted(list(out))
+
+            all_engines = [ {'engine': engine_name} for engine_name in out ]
             models.diskcache(f'{self.key}_engine', all_engines)
 
-        return all_engines
+        return [engine['engine'] for engine in all_engines]
 
     def get_voice_names(self, gender=None):
         all_voices = self.get_voices()
@@ -931,10 +932,13 @@ class AmazonPolly(TTSEngine):
         all_sample_rates = models.diskcache(f'{self.key}_sample_rate')
 
         if all_sample_rates is None:
-            all_sample_rates = ["8000", "16000"]
+            all_sample_rates = [
+                {"sample_rate": 8000}, 
+                {"sample_rate": 16000}
+            ]
             models.diskcache(f'{self.key}_sample_rate', all_sample_rates)
         
-        return all_sample_rates
+        return [ rate['sample_rate'] for rate in all_sample_rates ]
 
     def get_tts(self):
         """
