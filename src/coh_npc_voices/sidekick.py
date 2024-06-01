@@ -1,30 +1,28 @@
 """
 There is more awesome to be had.
 """
+import ctypes
 import logging
-from logging.config import dictConfig
-import matplotlib.dates as md
 import multiprocessing
-from datetime import datetime, timedelta
+import os
 import sys
 import tkinter as tk
+from datetime import datetime, timedelta
+from logging.config import dictConfig
 from tkinter import ttk
-from sqlalchemy import func, select
-import models
+
+import engines
+import matplotlib.dates as md
 import matplotlib.dates as mdates
-import matplotlib.pyplot as pyplot
-import voice_editor
+import models
 import npc_chatter
 import numpy as np
 import settings
-import engines
+import voice_editor
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+from sqlalchemy import func, select
 
-from matplotlib.figure import Figure 
-from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg
-) 
-
-import ctypes
 # this unlinks us from python so windows will
 # use our icon instead of the python icon in the
 # taskbar.
@@ -487,8 +485,12 @@ class ConfigurationTab(ttk.Frame):
             h.write(self.elevenlabs_key.get())
 
     def get_elevenlabs_key(self):
-        with open('eleven_labs.key', 'r') as h:
-            value = h.read()
+        keyfile = 'eleven_labs.key'
+        value = None
+
+        if os.path.exists(keyfile):
+            with open(keyfile, 'r') as h:
+                value = h.read()
         return value
 
     def change_default_engine(self, a, b, c):

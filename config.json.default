@@ -1,0 +1,11 @@
+{
+    "npc_engine_primary": "Windows TTS",
+    "npc_engine_secondary": "Windows TTS",
+    "npc_engine_normalize": false,
+    "player_engine_primary": "Windows TTS",
+    "player_engine_secondary": "Windows TTS",
+    "player_engine_normalize": false,
+    "system_engine_primary": "Windows TTS",
+    "system_engine_secondary": "Windows TTS",
+    "system_engine_normalize": false
+}

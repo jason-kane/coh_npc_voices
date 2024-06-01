@@ -1,6 +1,6 @@
 [project]
 name = "coh_npc_voices"
-version = "1.1.0"
+version = "2.0.0"
 authors = [
   { name="Jason Kane" },
 ]
@@ -16,19 +16,20 @@ classifiers = [
     "Operating System :: Microsoft :: Windows"
 ]
 dependencies = [
-    "pypiwin32",
-    "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8",
-    "voicebox-tts[google-cloud-tts]",
-    "google-cloud-texttospeech",
-    "voicebox-tts",
-    "wheel",
-    "setuptools",
-    "matplotlib",
-    "sqlalchemy",
-    "sqlalchemy-utils",
     "alembic",
     "elevenlabs",
-    "voicebox-tts[elevenlabs]"
+    "google-cloud-texttospeech",
+    "matplotlib",
+    "pyfiglet",
+    "pypiwin32",
+    "setuptools",
+    "sqlalchemy-utils",
+    "sqlalchemy",
+    "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8",
+    "voicebox-tts",
+    "voicebox-tts[elevenlabs]",
+    "voicebox-tts[google-cloud-tts]",
+    "wheel",
 ]
 
 [build-system]
