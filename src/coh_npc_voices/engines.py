@@ -462,7 +462,7 @@ class GoogleCloud(TTSEngine):
     config = (
         ('Language Code', 'language_code', "StringVar", 'en-US', {}, "get_language_codes"),
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
-        ('Speaking Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.25, 'max': 2.75, 'digits': 3, 'resolution': 0.25}, None),
+        ('Speakin Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.5, 'max': 1.75, 'digits': 3, 'resolution': 0.25}, None),
         ('Voice Pitch', 'voice_pitch', "DoubleVar", 1, {'min': -10, 'max': 10, 'resolution': 0.5}, None)
     )
 

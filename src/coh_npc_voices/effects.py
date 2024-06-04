@@ -609,9 +609,9 @@ class Normalize(EffectParameterEditor):
             pname="max_amplitude",
             label='Max-Amplitude', 
             desc="Maximum amplitude in Hz",
-            default=1.0,
-            from_=0,
-            to=3,
+            default=0.0,
+            from_=-1,
+            to=1,
             digits=2,
             resolution=0.1
         ).pack(side='top', fill='x', expand=True)
