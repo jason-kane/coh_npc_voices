@@ -21,6 +21,7 @@ dependencies = [
     "google-cloud-texttospeech",
     "matplotlib",
     "pyfiglet",
+    "pyfeather",
     "pypiwin32",
     "setuptools",
     "sqlalchemy-utils",

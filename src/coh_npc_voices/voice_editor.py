@@ -20,6 +20,7 @@ from npc import PRESETS
 from pedalboard.io import AudioFile
 from scipy.io import wavfile
 from sqlalchemy import delete, desc, select, update
+from tkfeather import Feather
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from voicebox.tts.utils import get_audio_from_wav_file
 
@@ -766,6 +767,7 @@ class DetailSide(ttk.Frame):
         self.parent = parent
         self.selected_character = selected_character
         self.listside = None
+        self.trashcan = Feather("trash-2", size=24)
 
         self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
         self.frame = ttk.Frame(self.canvas)
@@ -798,7 +800,7 @@ class DetailSide(ttk.Frame):
 
         ttk.Button(
             name_frame,
-            text="X",
+            image=self.trashcan.icon,
             style="RemoveCharacter.TButton",
             command=self.remove_character
         ).pack(side="right")

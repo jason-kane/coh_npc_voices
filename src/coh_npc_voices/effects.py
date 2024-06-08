@@ -7,6 +7,7 @@ import numpy as np
 import pedalboard
 import voicebox
 from sqlalchemy import select
+from tkfeather import Feather
 
 log = logging.getLogger(__name__)
 
@@ -144,6 +145,7 @@ class EffectParameterEditor(ttk.Frame):
         self.effect_id = tk.IntVar()
         self.parameters = []
         self.traces = {}
+        self.trashcan = Feather("trash-2", size=24)
 
         topbar = ttk.Frame(self)
         ttk.Label(
@@ -164,7 +166,7 @@ class EffectParameterEditor(ttk.Frame):
 
         ttk.Button(
             topbar,
-            text="X",
+            image=self.trashcan.icon,
             style="CloseFrame.TButton",
             command=self.remove_effect
         ).pack(side="right")
