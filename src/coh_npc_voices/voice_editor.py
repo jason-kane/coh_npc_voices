@@ -764,24 +764,39 @@ class DetailSide(ttk.Frame):
     """
     def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+
         self.parent = parent
         self.selected_character = selected_character
         self.listside = None
         self.trashcan = Feather("trash-2", size=24)
 
-        self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
-        self.frame = ttk.Frame(self.canvas)
-        self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.vsb.set)
+        self.vsb = tk.Scrollbar(self, orient="vertical")
+        self.vsb.pack(side="right", fill="y", expand=False)
 
-        self.vsb.pack(side="right", fill="y")
+        self.canvas = tk.Canvas(
+            self, 
+            borderwidth=0, 
+            background="#ffffff",
+            yscrollcommand=self.vsb.set
+        )
         self.canvas.pack(side="left", fill="both", expand=True)
 
+        # drag the scrollbar, see the canvas slide
+        self.vsb.config(command=self.canvas.yview)
+
+        self.canvas.xview_moveto(0)
+        self.canvas.yview_moveto(0)
+
+        # this is the scrollable thing
+        self.frame = ttk.Frame(self.canvas)
         self.frame_id = self.canvas.create_window(
-            (0, 0), window=self.frame, anchor="nw", tags="self.frame"
+            (0, 0), window=self.frame, anchor="nw",
+            tags="self.frame"
         )
+
         self.frame.bind("<Configure>", self.onFrameConfigure)
-        # self.frame.pack(side='top', fill='x')
+        self.canvas.bind("<Configure>", self.onCanvasConfigure)
+        ###
 
         name_frame = ttk.Frame(self.frame)
 
@@ -869,7 +884,22 @@ class DetailSide(ttk.Frame):
 
     def onFrameConfigure(self, event):
         """Reset the scroll region to encompass the inner frame"""
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        # Update the scrollbars to match the size of the inner frame.
+        size = (self.frame.winfo_reqwidth(), self.frame.winfo_reqheight())
+        self.canvas.config(scrollregion="0 0 %s %s" % size)
+        if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
+            # Update the canvas's width to fit the inner frame.
+            self.canvas.config(width=self.frame.winfo_reqwidth())        
+
+        # self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def onCanvasConfigure(self, event):
+        if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
+            # Update the frame width to fill the canvas.
+            self.canvas.itemconfigure(
+                self.frame_id, 
+                width=self.canvas.winfo_width()
+            )
 
     def load_character(self, raw_name):
         """
