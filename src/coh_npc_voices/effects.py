@@ -7,6 +7,7 @@ import numpy as np
 import pedalboard
 import voicebox
 from sqlalchemy import select
+from tkfeather import Feather
 
 log = logging.getLogger(__name__)
 
@@ -144,6 +145,7 @@ class EffectParameterEditor(ttk.Frame):
         self.effect_id = tk.IntVar()
         self.parameters = []
         self.traces = {}
+        self.trashcan = Feather("trash-2", size=24)
 
         topbar = ttk.Frame(self)
         ttk.Label(
@@ -164,7 +166,7 @@ class EffectParameterEditor(ttk.Frame):
 
         ttk.Button(
             topbar,
-            text="X",
+            image=self.trashcan.icon,
             style="CloseFrame.TButton",
             command=self.remove_effect
         ).pack(side="right")
@@ -207,15 +209,15 @@ class EffectParameterEditor(ttk.Frame):
         """
         log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
-        key = varname.split('_')[-1]  # I know, I feel dirty.
+        # key = "_".join(varname.split('_')[1:])  # I know, I feel dirty.
 
         with models.Session(models.engine) as session:
             # fragile, varname is what is coming off the trace trigger
-            log.info(f'Reading effects settings when {effect_id=} and key={key}')
+            log.info(f'Reading effects settings when {effect_id=}')
             effect_settings = session.scalars(
                 select(models.EffectSetting).where(
-                    models.EffectSetting.effect_id==effect_id,
-                    models.EffectSetting.key==key
+                    models.EffectSetting.effect_id==effect_id
+                    # models.EffectSetting.key==key
                 )
             ).all()
 
@@ -238,9 +240,11 @@ class EffectParameterEditor(ttk.Frame):
                 else:
                     log.info(f'Value for {effect_setting.key} has not changed')
 
-            log.info(found)
+            log.info(f"{found=}")
+            change = False
             for effect_setting_key in self.traces:
                 if effect_setting_key not in found:
+                    change = True
                     log.info(f'Expected key {effect_setting_key} does not exist in the database')
                     value = self.traces[effect_setting_key].get()
                     log.info(f'Creating new EffectSetting({effect_id}, key={effect_setting_key}, value={value})')
@@ -250,43 +254,56 @@ class EffectParameterEditor(ttk.Frame):
                         value=value
                     )
                     session.add(new_setting)
-                log.info('commiting db session')
-                session.commit()
+
+                if change:
+                    log.info('commiting db session')
+                    session.commit()
 
 
-    def load(self, session=None):
+    def load(self):
         """
         reflect the current db values for each effect setting
         to the tk.Variable tied to the widget for that
         setting.
         """
-        if session is None:
-            session = models.Session(models.engine)
+        #if session is None:
+        #    session = models.Session(models.engine)
 
         effect_id = self.effect_id.get()
+        log.info(f'Loading {effect_id=}')
 
-        effect_settings = session.scalars(
-            select(models.EffectSetting).where(
-                models.EffectSetting.effect_id == effect_id
-            )
-        ).all()
+        with models.db() as session:
+            effect_settings = session.scalars(
+                select(models.EffectSetting).where(
+                    models.EffectSetting.effect_id == effect_id
+                )
+            ).all()
 
-        for setting in effect_settings:
-            log.info(f'Working on {setting}')
+            found = set()
+            for setting in effect_settings:
+                log.info(f'Working on {setting}')
+                
+                if setting.key in found:
+                    log.info(f'Duplicate setting for {setting.key=} where {effect_id=}')
+                    session.delete(setting)
+                    continue
 
-            tkvar = getattr(self, setting.key, None)
+                found.add(setting.key)
 
-            if setting.key not in self.traces:
-                if tkvar:
-                    tkvar.set(setting.value)
-                else:
-                    log.error(
-                        f'Invalid configuration.  '
-                        f'{setting.key} is not available for '
-                        f'{self}')
-            
-                tkvar.trace_add("write", self.reconfig)
-                self.traces[setting.key] = tkvar
+                tkvar = getattr(self, setting.key, None)
+
+                if setting.key not in self.traces:
+                    if tkvar:
+                        tkvar.set(setting.value)
+                    else:
+                        log.error(
+                            f'Invalid configuration.  '
+                            f'{setting.key} is not available for '
+                            f'{self}')
+                
+                    tkvar.trace_add("write", self.reconfig)
+                    self.traces[setting.key] = tkvar
+            session.commit()
 
 # scipy iir filters
 IIR_FILTERS = ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
@@ -609,9 +626,9 @@ class Normalize(EffectParameterEditor):
             pname="max_amplitude",
             label='Max-Amplitude', 
             desc="Maximum amplitude in Hz",
-            default=1.0,
-            from_=0,
-            to=3,
+            default=0.0,
+            from_=-1,
+            to=1,
             digits=2,
             resolution=0.1
         ).pack(side='top', fill='x', expand=True)

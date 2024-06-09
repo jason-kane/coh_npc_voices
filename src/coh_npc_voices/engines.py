@@ -3,7 +3,9 @@ import logging
 import os
 import sys
 import tempfile
+import numpy as np
 import time
+from io import BytesIO
 import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import ttk
@@ -48,26 +50,29 @@ class WindowsSapi(voicebox.tts.tts.TTS):
         voice.set_rate(self.rate)
         voice.set_voice(self.voice)
 
-        with tempfile.NamedTemporaryFile() as tmp:
-            # just need the safe filename
-            tmp.close()
-            # this can:
-            #   File "C:\Users\jason\Desktop\coh_npc_voices\venv\Lib\site-packages\tts\sapi.py", line 93, in say
-            #     self.voice.Speak(message, flag)
-            # _ctypes.COMError: (-2147200958, None, ('XML parser error', None, None, 0, None))
+        stream = tts.sapi.comtypes.client.CreateObject('SAPI.SpMemoryStream')
+        
+        # save the original output stream
+        temp_stream = voice.voice.AudioOutputStream
 
-            success = False
-            while not success:
-                try:
-                    # create a temporary wave file
-                    voice.create_recording(tmp.name, text)
-                    success = True
-                except Exception as err:
-                    log.error(err)
-                    log.error("Text was: %s", text)
-                    time.sleep(0.1)
+        # hijack it
+        voice.voice.AudioOutputStream = stream
 
-            audio = voicebox.tts.utils.get_audio_from_wav_file(tmp.name)
+        voice.say(text)
+
+        # restore it
+        voice.voice.AudioOutputStream = temp_stream
+        
+        samples = np.frombuffer(
+            bytes(stream.GetData()), 
+            dtype=np.int16
+        )
+
+        audio = voicebox.tts.utils.get_audio_from_samples(
+            samples,
+            22050
+        )
+
         return audio
 
 
@@ -462,7 +467,7 @@ class GoogleCloud(TTSEngine):
     config = (
         ('Language Code', 'language_code', "StringVar", 'en-US', {}, "get_language_codes"),
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
-        ('Speaking Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.25, 'max': 2.75, 'digits': 3, 'resolution': 0.25}, None),
+        ('Speakin Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.5, 'max': 1.75, 'digits': 3, 'resolution': 0.25}, None),
         ('Voice Pitch', 'voice_pitch', "DoubleVar", 1, {'min': -10, 'max': 10, 'resolution': 0.5}, None)
     )
 

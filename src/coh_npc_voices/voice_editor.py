@@ -20,6 +20,7 @@ from npc import PRESETS
 from pedalboard.io import AudioFile
 from scipy.io import wavfile
 from sqlalchemy import delete, desc, select, update
+from tkfeather import Feather
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from voicebox.tts.utils import get_audio_from_wav_file
 
@@ -560,7 +561,7 @@ class EffectList(ttk.LabelFrame):
 
         category, name = raw_name.split(maxsplit=1)
 
-        with models.Session(models.engine) as session:
+        with models.db() as session:
             character = models.get_character(name, category, session)
             
             if character is None:
@@ -597,7 +598,7 @@ class EffectList(ttk.LabelFrame):
                 effect_config_frame.effect_id.set(effect.id)
                 self.effects.append(effect_config_frame)
 
-                effect_config_frame.load(session=session)
+                effect_config_frame.load()
                         
             if not has_effects:
                 self.buffer = ttk.Frame(self, width=1, height=1).pack(side="top")
@@ -763,23 +764,39 @@ class DetailSide(ttk.Frame):
     """
     def __init__(self, parent, selected_character, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+
         self.parent = parent
         self.selected_character = selected_character
         self.listside = None
+        self.trashcan = Feather("trash-2", size=24)
 
-        self.canvas = tk.Canvas(self, borderwidth=0, background="#ffffff")
-        self.frame = ttk.Frame(self.canvas)
-        self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.vsb.set)
+        self.vsb = tk.Scrollbar(self, orient="vertical")
+        self.vsb.pack(side="right", fill="y", expand=False)
 
-        self.vsb.pack(side="right", fill="y")
+        self.canvas = tk.Canvas(
+            self, 
+            borderwidth=0, 
+            background="#ffffff",
+            yscrollcommand=self.vsb.set
+        )
         self.canvas.pack(side="left", fill="both", expand=True)
 
+        # drag the scrollbar, see the canvas slide
+        self.vsb.config(command=self.canvas.yview)
+
+        self.canvas.xview_moveto(0)
+        self.canvas.yview_moveto(0)
+
+        # this is the scrollable thing
+        self.frame = ttk.Frame(self.canvas)
         self.frame_id = self.canvas.create_window(
-            (0, 0), window=self.frame, anchor="nw", tags="self.frame"
+            (0, 0), window=self.frame, anchor="nw",
+            tags="self.frame"
         )
+
         self.frame.bind("<Configure>", self.onFrameConfigure)
-        # self.frame.pack(side='top', fill='x')
+        self.canvas.bind("<Configure>", self.onCanvasConfigure)
+        ###
 
         name_frame = ttk.Frame(self.frame)
 
@@ -798,7 +815,7 @@ class DetailSide(ttk.Frame):
 
         ttk.Button(
             name_frame,
-            text="X",
+            image=self.trashcan.icon,
             style="RemoveCharacter.TButton",
             command=self.remove_character
         ).pack(side="right")
@@ -849,13 +866,40 @@ class DetailSide(ttk.Frame):
         self.effect_list = EffectList(self.frame, selected_character)
         self.effect_list.pack(side="top", fill="x", expand=True)
 
+        self.bind('<Enter>', self._bound_to_mousewheel)
+        self.bind('<Leave>', self._unbound_to_mousewheel)
+
+    def _bound_to_mousewheel(self, event):
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _unbound_to_mousewheel(self, event):
+        self.canvas.unbind_all("<MouseWheel>")
+
+    def _on_mousewheel(self, event):
+        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
     def remove_character(self):
         if self.listside:
             self.listside.delete_selected_character()
 
     def onFrameConfigure(self, event):
         """Reset the scroll region to encompass the inner frame"""
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        # Update the scrollbars to match the size of the inner frame.
+        size = (self.frame.winfo_reqwidth(), self.frame.winfo_reqheight())
+        self.canvas.config(scrollregion="0 0 %s %s" % size)
+        if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
+            # Update the canvas's width to fit the inner frame.
+            self.canvas.config(width=self.frame.winfo_reqwidth())        
+
+        # self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def onCanvasConfigure(self, event):
+        if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
+            # Update the frame width to fill the canvas.
+            self.canvas.itemconfigure(
+                self.frame_id, 
+                width=self.canvas.winfo_width()
+            )
 
     def load_character(self, raw_name):
         """
@@ -1021,8 +1065,21 @@ class ListSide(ttk.Frame):
         self.list_items = tk.Variable(value=[])
         self.refresh_character_list()
 
-        self.listbox = tk.Listbox(self, height=10, listvariable=self.list_items)
-        self.listbox.pack(side="top", expand=True, fill=tk.BOTH)
+        listarea = ttk.Frame(self)
+        self.listbox = tk.Listbox(listarea, height=10, listvariable=self.list_items)
+        self.listbox.pack(side="left", expand=True, fill=tk.BOTH)
+        vsb = tk.Scrollbar(
+            listarea,
+            orient='vertical',
+            command=self.listbox.yview
+        )
+        self.listbox.configure(yscrollcommand=vsb.set)
+
+        self.bind('<Enter>', self._bound_to_mousewheel)
+        self.bind('<Leave>', self._unbound_to_mousewheel)
+
+        vsb.pack(side='right', fill='y')
+        listarea.pack(side="top", expand=True, fill=tk.BOTH)
 
         action_frame = ttk.Frame(self)
         ttk.Button(
@@ -1036,6 +1093,15 @@ class ListSide(ttk.Frame):
         action_frame.pack(side="top", expand=False, fill=tk.X)
         self.listbox.select_set(0)
         self.listbox.bind("<<ListboxSelect>>", self.character_selected)
+
+    def _bound_to_mousewheel(self, event):
+        self.listbox.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _unbound_to_mousewheel(self, event):
+        self.listbox.unbind_all("<MouseWheel>")
+
+    def _on_mousewheel(self, event):
+        self.listbox.yview_scroll(int(-1*(event.delta/120)), "units")
 
     def apply_list_filter(self, a, b, c):
         self.refresh_character_list()
