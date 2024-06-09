@@ -561,7 +561,7 @@ class EffectList(ttk.LabelFrame):
 
         category, name = raw_name.split(maxsplit=1)
 
-        with models.Session(models.engine) as session:
+        with models.db() as session:
             character = models.get_character(name, category, session)
             
             if character is None:
@@ -598,7 +598,7 @@ class EffectList(ttk.LabelFrame):
                 effect_config_frame.effect_id.set(effect.id)
                 self.effects.append(effect_config_frame)
 
-                effect_config_frame.load(session=session)
+                effect_config_frame.load()
                         
             if not has_effects:
                 self.buffer = ttk.Frame(self, width=1, height=1).pack(side="top")
