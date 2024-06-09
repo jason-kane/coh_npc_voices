@@ -851,6 +851,18 @@ class DetailSide(ttk.Frame):
         self.effect_list = EffectList(self.frame, selected_character)
         self.effect_list.pack(side="top", fill="x", expand=True)
 
+        self.bind('<Enter>', self._bound_to_mousewheel)
+        self.bind('<Leave>', self._unbound_to_mousewheel)
+
+    def _bound_to_mousewheel(self, event):
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _unbound_to_mousewheel(self, event):
+        self.canvas.unbind_all("<MouseWheel>")
+
+    def _on_mousewheel(self, event):
+        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
     def remove_character(self):
         if self.listside:
             self.listside.delete_selected_character()
@@ -1023,8 +1035,21 @@ class ListSide(ttk.Frame):
         self.list_items = tk.Variable(value=[])
         self.refresh_character_list()
 
-        self.listbox = tk.Listbox(self, height=10, listvariable=self.list_items)
-        self.listbox.pack(side="top", expand=True, fill=tk.BOTH)
+        listarea = ttk.Frame(self)
+        self.listbox = tk.Listbox(listarea, height=10, listvariable=self.list_items)
+        self.listbox.pack(side="left", expand=True, fill=tk.BOTH)
+        vsb = tk.Scrollbar(
+            listarea,
+            orient='vertical',
+            command=self.listbox.yview
+        )
+        self.listbox.configure(yscrollcommand=vsb.set)
+
+        self.bind('<Enter>', self._bound_to_mousewheel)
+        self.bind('<Leave>', self._unbound_to_mousewheel)
+
+        vsb.pack(side='right', fill='y')
+        listarea.pack(side="top", expand=True, fill=tk.BOTH)
 
         action_frame = ttk.Frame(self)
         ttk.Button(
@@ -1038,6 +1063,15 @@ class ListSide(ttk.Frame):
         action_frame.pack(side="top", expand=False, fill=tk.X)
         self.listbox.select_set(0)
         self.listbox.bind("<<ListboxSelect>>", self.character_selected)
+
+    def _bound_to_mousewheel(self, event):
+        self.listbox.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _unbound_to_mousewheel(self, event):
+        self.listbox.unbind_all("<MouseWheel>")
+
+    def _on_mousewheel(self, event):
+        self.listbox.yview_scroll(int(-1*(event.delta/120)), "units")
 
     def apply_list_filter(self, a, b, c):
         self.refresh_character_list()
