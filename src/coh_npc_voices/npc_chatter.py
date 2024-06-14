@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 # 2024-04-26 18:40:13 [Caption] <scale 1.75><color white><bgcolor DarkGreen>Positron here. I'm monitoring your current progress in the sewers.
 # we want to use that voice for captions until we find out otherwise.  This way they can have their own voice.
 CAPTION_SPEAKER_INDICATORS = (
-    ('Positron here.', 'Positron'),
+    ('Positron here', 'Positron'),
 )
 
 class ParallelTTS(threading.Thread):
@@ -153,7 +153,12 @@ class TightTTS(threading.Thread):
     def run(self):
         pythoncom.CoInitialize()
         while True:
+            # Pull a message off the speaking_queue
             raw_message = self.speaking_queue.get()
+            # parse it.  
+
+            # TODO:  what exactly are the limits on what can safely pass through
+            # a queue to a thread?
             try:
                 name, message, category = raw_message
             except ValueError:
@@ -171,9 +176,12 @@ class TightTTS(threading.Thread):
             log.debug(f"{name} -- {clean_name}")
 
             # ie: abcde_timetodan.mp3
+            # this should be unique to this messags, it's only
+            # a 5 character hash, collisions are possible.
             filename = db.cache_filename(name, message)
 
-            # do we already have this NPC/Message rendered?
+            # do we already have this NPC/Message rendered to an audio file?
+            # first we need the path the file ought to have
             try:
                 cachefile = os.path.abspath(
                     os.path.join("clip_library", category, clean_name, filename)
@@ -183,13 +191,7 @@ class TightTTS(threading.Thread):
                     f'invalid os.path.join("clip_library", {category}, {clean_name}, {filename})'
                 )
                 raise
-
-            try:
-                os.mkdir(os.path.join("clip_library", category, clean_name))
-            except OSError:
-                # the directory already exists.  This is not a problem.
-                pass
-
+            
             if os.path.exists(cachefile):
                 log.info(f"Cache Hit: {cachefile}")
                 # requires pydub?
@@ -207,25 +209,69 @@ class TightTTS(threading.Thread):
 
                 voicebox.sinks.SoundDevice().play(audio)
             else:
+                # make sure the diretory exists
+                try:
+                    os.mkdir(os.path.join("clip_library", category, clean_name))
+                except OSError:
+                    # the directory already exists.  This is not a problem.
+                    pass
+
                 log.info(f"(tighttts) Cache Miss -- {cachefile} not found")
-                # ok, what kind of voice do we want for this NPC?
+                
+                # building session out here instead of inside get_character
+                # keeps character alive and properly tied to the database as we
+                # pass it into update_character_last_spoke and voice_builder.
                 with models.db() as session:
                     character = models.get_character(name, category, session)
-            
-                with models.db() as session:
                     models.update_character_last_spoke(character, session)
-                voice_builder.create(character, message, cachefile)
+                    # it isn't very well named, but this will speak "message" as
+                    # character and cache a copy into cachefile.
+                    voice_builder.create(character, message, cachefile, session)
 
+            # we've said our piece.
             self.speaking_queue.task_done()
 
 
 def plainstring(dialog):
+    """
+    Clean up any color codes and give us just the basic text string
+    """
+    dialog = re.sub(r"<scale [#a-zA-Z0-9]+>", "", dialog).strip()
     dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
     dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
     dialog = re.sub(r"<bordercolor [#a-zA-Z0-9]+>", "", dialog).strip()
     return dialog
 
 class LogStream:
+    """
+    This is a streaming processor for the log file.  Its kind of sorely
+    deficient in more than one way but seems to be at least barely adequate.
+    """
+    # what channels are we paying attention to, which self.parser function is
+    # going to be called to properly extract the data from that log entry.
+    channel_guide = {
+        'NPC': {
+            'enabled': True,
+            'name': "npc",
+            'parser': 'channel_chat_parser'
+        },
+        'Team': {
+            'enabled': True,
+            'name': "player",
+            'parser': 'channel_chat_parser'
+        },
+        'Tell': {
+            'enabled': True,
+            'name': "player",
+            'parser': 'tell_chat_parser'
+        },
+        'Caption': {
+            'enabled': True,
+            'name': "npc",
+            'parser': 'caption_parser'
+        }
+    }
+
     def __init__(
         self,
         logdir: str,
@@ -236,32 +282,45 @@ class LogStream:
         team: bool,
     ):
         """
-        find the most recent logfile in logdir
-        note which file it is, open it and skip
-        to the end so we're ready to start tailing.
+        find the most recent logfile in logdir note which file it is, open it,
+        do a light scan to find the beginning of the current characters session.
+        There is some character data there we need. Then we skip to the end and
+        start tailing.
         """
         all_files = glob.glob(os.path.join(logdir, "*.txt"))
         self.filename = max(all_files, key=os.path.getctime)
         self.announce_badges = badges
+        # TODO: these should be exposed on the configuration page
         self.npc_speak = npc
         self.team_speak = team
         self.tell_speak = True
         self.caption_speak = True
         self.announce_levels = True
         self.hero = None
-        # who is currently speaking as CAPTION ?
+        # who is (as far as we know) currently speaking as CAPTION ?
         self.caption_speaker = None
+        self.caption_color_to_speaker = {}
 
         print(f"Tailing {self.filename}...")
+        # grab a file handle
         self.handle = open(
             os.path.join(logdir, self.filename),
             encoding="utf-8"
         )
 
+        # carry these along for I/O
         self.speaking_queue = speaking_queue
         self.event_queue = event_queue
+        
+        self.find_character_login()
 
-        # skim through and see if can find the hero name
+    def find_character_login(self):
+        """
+        Skim through and see if can find the beginning of the current characters
+        login.
+        """
+        self.handle.seek(0, 0)
+        hero_name = None
         for line in self.handle.readlines():
             try:
                 datestr, timestr, line_string = line.split(None, 2)
@@ -271,35 +330,126 @@ class LogStream:
             lstring = line_string.split()
             if lstring[0] == "Welcome":
                 # Welcome to City of Heroes, <HERO NAME>
-                self.hero = Hero(" ".join(lstring[5:]).strip("!"))
-
+                self.is_hero = True
+                hero_name = " ".join(lstring[5:]).strip("!")
                 # we want to notify upstream UI about this.
-                if self.event_queue:
-                    self.event_queue.put(("SET_CHARACTER", self.hero.name))
             elif lstring[0:5] == ["Now", "entering", "the", "Rogue", "Isles,"]:
                 # 2024-04-17 17:10:27 Now entering the Rogue Isles, Kim Chee!
-                self.hero = Hero(" ".join(lstring[5:]).strip("!"))
-                # we want to notify upstream UI about this.
-                if self.event_queue:
-                    self.event_queue.put(("SET_CHARACTER", self.hero.name))
+                self.is_hero = False
+                hero_name = " ".join(lstring[5:]).strip("!")
+                            
+        if hero_name:
+            self.hero = Hero(hero_name)
+            
+            if self.event_queue:
+                self.event_queue.put(("SET_CHARACTER", self.hero.name))
 
-        if self.hero is None:
-            self.speaking_queue.put((None, "User name not detected", "system"))
-            log.info("Could NOT find hero name.. good luck.")
-        else:
             self.speaking_queue.put((None, f"Welcome back {self.hero.name}", "system"))
+
+        else:
+            self.speaking_queue.put((None, "User name not detected", "system"))
+            log.info("Could NOT find hero name.. good luck.")      
 
         # now move the file handle to the end, we
         # will starting parsing everything for real this
         # time.
         if REPLAY:
+            # this will process the whole file, essentailly re-playing the
+            # session.  This is very handy for diagnostics since it makes your
+            # most recent chat log a canned example you can send through the
+            # engine over and over.  Super helpful.
             self.handle.seek(0, 0)
         else:
+            # this is what users will expect.
             self.handle.seek(0, io.SEEK_END)
 
+    def channel_chat_parser(self, lstring):
+        speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+        dialog = plainstring(dialog)
+        return speaker, dialog
+
+    def tell_chat_parser(self, lstring):
+        # why is there an extra colon for Tell?  IDK.        
+        if lstring[1][:3] == "-->":
+            # ["[Tell]", "-->Toxic", "Timber:", "pls"]
+            # this is a reply to a tell, or an outbound tell.
+            dialog = (
+                " ".join(lstring[1:]).split(":", maxsplit=1)[-1].strip()
+            )
+            speaker = "__self__"
+        else:
+            # ["[Tell]", ":Dressy Bessie:", "I", "can", "bump", "you"]
+            # ["[Tell]", ":StoneRipper:", "it:s", "underneath"]
+            try:
+                _, speaker, dialog = " ".join(lstring[1:]).split(
+                    ":", maxsplit=2
+                )
+                # ["", "Dressy Bessie", "I can bump you"]
+                # ['', 'StoneRipper', ' it:s underneath']
+            except ValueError:
+                # I didn't note the string that caused me to add this.  Oops.
+                log.info(f'1 ADD DOC: {lstring=}')
+                speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+        
+        dialog = plainstring(dialog)
+        return speaker, dialog
+
+    def caption_parser(self, lstring):
+        # [Caption] <scalxe 2.75><color red><bgcolor White>My Shadow Simulacrum will destroy Task Force White Sands!
+        # [Caption] <scale 1.75><color white><bgcolor DarkGreen>Positron here. I'm monitoring your current progress in the sewers. 
+        log.info(f'CAPTION: {lstring}')
+        dialog = plainstring(" ".join(lstring[1:]))
+
+        # make an effort to identify the speaker
+        # Positron here. I'm monitoring your current progress in the sewers.
+        tags = {keyvalue.split()[0]: keyvalue.split()[1] for keyvalue in re.findall(
+            r'<([^<>]*)>',
+            " ".join(lstring)
+        )}
+
+        color = tags.get('bgcolor')
+        if color:
+            speaker_name = self.caption_color_to_speaker.get(color)
+            if speaker_name is None:
+                log.info(f'Color {color} has no associated speaker')
+            else:
+                self.caption_speaker = speaker_name
+
+        for indicator, speaker in CAPTION_SPEAKER_INDICATORS:
+            if indicator in dialog:
+                log.info(f'Caption speaker identified: {speaker}')
+                self.caption_speaker = speaker
+                if color:
+                    log.info(f'Assigning speaker {speaker} to color {color}')
+                    self.caption_color_to_speaker[color] = speaker
+            else:
+                log.info(f'{indicator} is not in {dialog}')
+        
+        return self.caption_speaker, dialog
+
+    def channel_messager(self, lstring):
+        # channel message
+        dialog = " ".join(lstring)
+        channel = dialog[1: dialog.find(']')]
+
+        log.info(f'{channel=}')
+        
+        guide = self.channel_guide.get(channel, None)
+        if guide and guide['enabled']:
+            # channel messages are from someone
+            parser = getattr(self, guide['parser'])
+            speaker, dialog = parser(lstring)
+
+            log.debug(f"Adding {speaker}/{dialog} to reading queue")
+            self.speaking_queue.put((speaker, dialog, guide['name']))
+        else:
+            log.info(f'{guide=}')
+
     def tail(self):
-        # read any new lines that have arrives since we last read the file and process
-        # each of them.
+        """
+        read any new lines that have arrives since we last read the file and
+        process each of them.
+        """
         lstring = ""
         previous = ""
         for line in self.handle.readlines():
@@ -312,82 +462,46 @@ class LogStream:
 
                 previous = lstring
                 lstring = line_string.replace(".", "").strip().split()
-                if self.npc_speak and lstring[0] == "[NPC]":
-                    name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
-                    dialog = plainstring(dialog)
-                    log.debug(f"Adding {name}/{dialog} to reading queue")
-
-                    self.speaking_queue.put((name, dialog, "npc"))
-                    
-                elif self.team_speak and lstring[0] == "[Team]":
-                    # ['2024-03-30', '23:29:48', '[Team] Khold: <color #010101>ugg, I gotta roll, nice little team.  dangerous without supports\n']
-                    name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
-                    log.debug(f"Adding {name}/{dialog} to reading queue")
-                    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
-                    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
-                    self.speaking_queue.put((name, dialog, "player"))
-
-                elif self.tell_speak and lstring[0] == "[Tell]":
-                    # why is there an extra colon for Tell?  IDK.
-                    # 2024-04-02 17:56:21 [Tell] :Dressy Bessie: I can bump you up a few levels if you want
-                    if lstring[1][:3] == "-->":
-                        # 2024-04-06 20:23:32 [Tell] -->Toxic Timber: pls
-                        # this is a reply to a tell, or an outbound tell.
-                        dialog = (
-                            " ".join(lstring[1:]).split(":", maxsplit=1)[-1].strip()
-                        )
-                        name = None
-                    else:
-                        try:
-                            _, name, dialog = " ".join(lstring[1:]).split(
-                                ":", maxsplit=2
-                            )
-                        except ValueError:
-                            name, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
-
-                    log.debug(f"Adding {name}/{dialog} to reading queue")
-                    self.speaking_queue.put((name, dialog, "player"))
-
-                elif self.caption_speak and lstring[0] == "[Caption]":
-                    # 2024-04-02 20:09:50 [Caption] <scalxe 2.75><color red><bgcolor White>My Shadow Simulacrum will destroy Task Force White Sands!
-        
-                    dialog = " ".join(lstring[1:])
-                    # make an effort to identify the speaker
-                    for indicator, speaker in CAPTION_SPEAKER_INDICATORS:
-                        if indicator in dialog:
-                            self.caption_speaker = speaker
-
-                    log.debug(f"Adding Caption {dialog} to reading queue")
-                    dialog = re.sub(r"<scale [0-9\.]+>", "", dialog).strip()
-                    dialog = re.sub(r"<color [#a-zA-Z0-9]+>", "", dialog).strip()
-                    dialog = re.sub(r"<bgcolor [#a-zA-Z0-9]+>", "", dialog).strip()
-                    self.speaking_queue.put((self.caption_speaker, dialog, "player"))
+                "['Hasten', 'is', 'recharged']"
+                if lstring[0][0] == "[":
+                    self.channel_messager(lstring)
 
                 elif self.announce_badges and lstring[0] == "Congratulations!":
                     self.speaking_queue.put((None, (" ".join(lstring[4:])), "system"))
 
                 elif lstring[0] == "You":
-                    # 2024-04-26 19:13:31 You have quit your team
-                    # 2024-04-26 19:13:31 Pew Pew Die Die Die has quit the league.
-                    # 2024-04-26 19:13:31 You are now fighting at level 9.                    
+                    # ["You", "have", "quit", "your", "team"]
+                    # ["Pew Pew Die Die Die has quit the league.
+                    # ["Ice-Mech", "has", "quit", "the", "team"]
+                    # ["You", "are", "now", "fighting", "at", "level", "9."]
                     if lstring[1] == "are":
                         if (
                             self.announce_levels and lstring[2:3] == ["now", "fighting"]
                         ) and (
                             " ".join(previous[-4:]).strip(".")
-                            not in ["have quit your team", "has joined the team",  "has joined the league", "has quit the league"]
+                            not in [
+                                "have quit your team", 
+                                "has quit the team", 
+                                "has joined the team",
+                                "has joined the league", 
+                                "has quit the league",
+                            ]
                         ):
                             level = lstring[-1].strip(".")
                             self.speaking_queue.put(
                                 (
                                     None,
-                                    f"Congratulations.  You've reached Level {level}",
+                                    f"Congratulations.  You have reached Level {level}",
                                     "system",
                                 )
                             )
 
                     elif self.hero and lstring[1] == "gain":
-                        # 2024-04-05 21:43:45 You gain 104 experience and 36 influence.
+                        # You gain 104 experience and 36 influence.
+                        # You gain 15 experience, work off 15 debt, and gain 14 influence.
+                        # You gain 26 experience and work off 2,676 debt.
+                        # You gain 70 experience.
+                        # You gain 2 stacks of Blood Frenzy!
                         # I'm just going to make the database carry the burden, so much easier.
                         # is this string stable enough to get away with this?  It's friggin'
                         # cheating.
@@ -395,6 +509,8 @@ class LogStream:
                         # You gain 250 influence.
 
                         inf_gain = None
+                        xp_gain = None
+
                         for inftype in ["influence", "information"]:
                             try:
                                 influence_index = lstring.index(inftype) - 1
@@ -405,10 +521,13 @@ class LogStream:
                                 pass
 
                         try:
-                            xp_index = lstring.index("experience") - 1
+                            xp_index = max(
+                                lstring.index("experience"), 
+                                lstring.index("experience,")
+                            ) - 1
                             xp_gain = int(lstring[xp_index].replace(",", ""))
                         except ValueError:
-                            xp_gain = None
+                            pass                            
 
                         # try:
                         #     did_i_defeat_it = previous.index("defeated")
@@ -417,19 +536,22 @@ class LogStream:
                         #     # no, someone else did.  you just got some
                         #     # points for it.  Lazybones.
                         #     foe = None
-
-                        log.info(f"Awarding xp: {xp_gain} and inf: {inf_gain}")
-                        with models.Session(models.engine) as session:
-                            new_event = models.HeroStatEvent(
-                                hero_id=self.hero.id,
-                                event_time=datetime.strptime(
-                                    f"{datestr} {timestr}", "%Y-%m-%d %H:%M:%S"
-                                ),
-                                xp_gain=xp_gain,
-                                inf_gain=inf_gain,
-                            )
-                            session.add(new_event)
-                            session.commit()
+                        
+                        # we _could_ visualize the percentage of kills
+                        # by each player in the party.
+                        if inf_gain or xp_gain:
+                            log.debug(f"Awarding xp: {xp_gain} and inf: {inf_gain}")
+                            with models.db() as session:
+                                new_event = models.HeroStatEvent(
+                                    hero_id=self.hero.id,
+                                    event_time=datetime.strptime(
+                                        f"{datestr} {timestr}", "%Y-%m-%d %H:%M:%S"
+                                    ),
+                                    xp_gain=xp_gain,
+                                    inf_gain=inf_gain,
+                                )
+                                session.add(new_event)
+                                session.commit()
 
                 elif lstring[0] == "Welcome":
                     # Welcome to City of Heroes, <HERO NAME>
@@ -443,13 +565,17 @@ class LogStream:
                     action = lstring[-3]  # joined or quit
                     self.speaking_queue.put((None, f"Player {name} has {action} the team", "system"))
 
-                elif lstring[-2:] == ["The", "name"]:
-                    # 2024-05-03 19:46:15 The name <color red>Toothbreaker Jones</color> keeps popping up, and these Skulls were nice enough to tell you where to find him. Time to pay him a visit.
+                elif lstring[:2] == ["The", "name"]:
+                    # The name <color red>Toothbreaker Jones</color> keeps popping up, and these Skulls were nice enough to tell you where to find him. Time to pay him a visit.
                     dialog = plainstring(" ".join(lstring))
                     self.speaking_queue.put((None, dialog, "system"))
 
                 # else:
                 #    log.warning(f'tag {lstring[0]} not classified.')
+                #
+                # Team task completed.
+                # A new team task has been chosen.
+
 
 
 class Hero:

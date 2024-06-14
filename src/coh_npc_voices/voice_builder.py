@@ -152,7 +152,7 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
 
 ENGINE_OVERRIDE = {}
 
-def create(character, message, cachefile):
+def create(character, message, cachefile, session):
     """
     This NPC exists in our database but we don't
     have this particular message rendered.
@@ -168,12 +168,11 @@ def create(character, message, cachefile):
     global ENGINE_OVERRIDE
     log.info(f'voice_builder.create({character=}, {message=}, {cachefile=})')
     
-    with models.db() as session:
-        voice_effects = session.scalars(
-            select(models.Effects).where(
-                models.Effects.character_id == character.id
-            )
-        ).all()
+    voice_effects = session.scalars(
+        select(models.Effects).where(
+            models.Effects.character_id == character.id
+        )
+    ).all()
     
     effect_list = []
     for effect in voice_effects:
@@ -190,27 +189,25 @@ def create(character, message, cachefile):
     if character.category != PLAYER_CATEGORY or settings.PERSIST_PLAYER_CHAT:
         # we want to collect and persist these to enable the editor to
         # rebuild them, replacing the mp3 in cache.
-        with models.db() as session:
-            phrase = session.execute(
-                select(models.Phrases).where(
-                    models.Phrases.character_id == character.id,
-                    models.Phrases.text == message
-                )
-            ).first()
+        phrase = session.execute(
+            select(models.Phrases).where(
+                models.Phrases.character_id == character.id,
+                models.Phrases.text == message
+            )
+        ).first()
             
         log.debug(phrase)
 
         if phrase is None:
             log.info('Phrase not found.  Creating...')
             # it does not exist, now it does.
-            with models.db() as session:
-                phrase = models.Phrases(
-                    character_id=character.id,
-                    text=message,
-                    ssml=""
-                )
-                session.add(phrase)
-                session.commit()
+            phrase = models.Phrases(
+                character_id=character.id,
+                text=message,
+                ssml=""
+            )
+            session.add(phrase)
+            session.commit()
 
         try:
             clean_name = re.sub(r'[^\w]', '',character.name)
