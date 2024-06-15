@@ -21,7 +21,7 @@ import voicebox
 from pedalboard.io import AudioFile
 from voicebox.tts.utils import get_audio_from_wav_file
 
-REPLAY = False
+REPLAY = settings.REPLAY
 
 logging.basicConfig(
     level=settings.LOGLEVEL,
@@ -521,11 +521,13 @@ class LogStream:
                                 pass
 
                         try:
-                            xp_index = max(
-                                lstring.index("experience"), 
-                                lstring.index("experience,")
-                            ) - 1
-                            xp_gain = int(lstring[xp_index].replace(",", ""))
+                            if 'experience' in lstring:
+                                xp_gain = lstring[lstring.index('experience') - 1]
+                            elif 'experience,' in lstring:
+                                xp_gain = lstring[lstring.index('experience,') - 1]
+
+                            if xp_gain:
+                                xp_gain = int(xp_gain.replace(",", ""))
                         except ValueError:
                             pass                            
 

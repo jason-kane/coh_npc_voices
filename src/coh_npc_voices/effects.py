@@ -997,9 +997,9 @@ class Delay(EffectParameterEditor):
             pname="delay_seconds",
             label='Delay (sec)', 
             desc="",
-            default=0.5,
+            default=0.25,
             from_=-0.1,
-            to=1,
+            to=0.5,
             digits=3,
             resolution=0.01
         ).pack(side='top', fill='x', expand=True)

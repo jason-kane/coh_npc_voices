@@ -83,7 +83,7 @@ log = logging.getLogger(__name__)
 class ChartFrame(ttk.Frame):
     def __init__(self, parent, hero, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-
+        log.debug('Initializing ChartFrame()')
         if not hero:
             return
         else:
@@ -130,7 +130,8 @@ class ChartFrame(ttk.Frame):
             start_time = end_time - timedelta(minutes=120)
             log.debug(f'Graphing {self.category} gain between {start_time} and {end_time}')
 
-            with models.Session(models.engine) as session:
+            with models.db() as session:
+                log.debug('Gathering samples')
                 try:
                     raw_samples = session.scalars(
                         select(
@@ -148,6 +149,7 @@ class ChartFrame(ttk.Frame):
 
 
                 # do some binning in per-minute buckets in the database.
+                log.debug('Gathering binned samples')
                 try:
                     samples = session.execute(
                         select(
@@ -184,7 +186,7 @@ class ChartFrame(ttk.Frame):
 
             for row in samples:
                 # per bin
-                # log.info(f'row: {row}')
+                log.debug(f'row: {row}')
                 datestring, xp_gain, inf_gain = row
 
                 if xp_gain:
@@ -212,8 +214,15 @@ class ChartFrame(ttk.Frame):
                 data_inf.append(inf_gain)
                 rolling_xp_list.append(xp_gain)
 
-                rolling_average_value = np.mean(rolling_xp_list[-1 * roll_size:])
+                log.debug(f'{rolling_xp_list=}')
+                if any(rolling_xp_list):
+                    rolling_average_value = np.mean(rolling_xp_list[-1 * roll_size:])
+                else:
+                    rolling_average_value = 0
+
+                log.debug(f'{rolling_average_value=}')
                 rolling_data_xp.append(rolling_average_value)
+                log.debug(f'{rolling_data_xp=}')
 
                 # log.info(f'{data_xp=}')
                 # log.info(f'{data_inf=}')
@@ -247,7 +256,7 @@ class ChartFrame(ttk.Frame):
             oldest = datetime.strptime(samples[0][0], "%Y-%m-%d %H:%M:%S") 
             newest = datetime.strptime(samples[-1][0], "%Y-%m-%d %H:%M:%S")
 
-            log.info(f"drawing graph between {oldest} and {newest}")
+            log.debug(f"drawing graph between {oldest} and {newest}")
 
             duration = (newest - oldest).total_seconds()
             if duration == 0:
