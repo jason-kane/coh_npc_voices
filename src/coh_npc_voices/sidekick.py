@@ -3,6 +3,10 @@ There is more awesome to be had.
 """
 import ctypes
 import logging
+import win32process
+import win32con
+import win32api
+
 import multiprocessing
 import os
 import sys
@@ -17,6 +21,8 @@ import matplotlib.dates as mdates
 import models
 import npc_chatter
 import numpy as np
+import pyautogui as p
+from win32gui import GetWindowText, GetForegroundWindow
 import settings
 import voice_editor
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -585,6 +591,7 @@ def main():
             # we got an action (no exception)
             log.info('Event Received: %s', event_action)
             key, value = event_action
+            
             if key == "SET_CHARACTER":
                 log.info('path set_chraracter')
                 character.chatter.hero = npc_chatter.Hero(value)
@@ -594,6 +601,33 @@ def main():
             elif key == "SPOKE":
                 # character named value just spoke
                 listside.refresh_character_list()
+            elif key == "RECHARGED":
+                log.info(f'Power {value} has recharged.')
+                if value in ["Hasten", ]:
+                    if settings.get_config_key('auto_hasten'):
+                        # only send keyboard activity to the city of heroes window
+                        # if it is not the foreground window do not do anything.
+                        foreground_window_handle = GetForegroundWindow()
+                        pid = win32process.GetWindowThreadProcessId(foreground_window_handle)
+                        handle = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid[1])
+                        try:
+                            proc_name = win32process.GetModuleFileNameEx(handle, 0)
+                            log.info(f'{proc_name=}')
+                        except Exception as err:
+                            log.error(err)
+
+                        zone = GetWindowText(foreground_window_handle)
+                        log.info(f'{zone=}')
+
+                        if proc_name.split("\\")[-1] == "cityofheroes.exe":
+                            p.press("enter")
+                            p.typewrite(f"/powexec_name \"{value}\"\n")
+                        else:
+                            log.info(f'Not stuffing the keyboard buffer of {proc_name!r}.  That would be rude.')
+                    else:
+                        log.info('auto_hasten is disabled')
+
+                # /powexec_name "hasten"
             else:
                 log.error('Unknown event_queue key: %s', key)
 

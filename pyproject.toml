@@ -20,6 +20,7 @@ dependencies = [
     "elevenlabs",
     "google-cloud-texttospeech",
     "matplotlib",
+    "pyautogui",
     "pyfiglet",
     "pyfeather",
     "pypiwin32",

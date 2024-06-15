@@ -63,6 +63,7 @@ proto-plus==1.23.0
 protobuf==4.25.3
 pure-eval==0.2.2
 tkfeather==1.0.0
+pyautogui==0.9.54
 pyasn1-modules==0.3.0
 pyasn1==0.5.1
 pycparser==2.21

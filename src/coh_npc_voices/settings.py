@@ -14,7 +14,9 @@ ALIASES = "aliases.json"
 
 # by default, don't save things players say.  It's not likely
 # to cache hit anyway.  
-PERSIST_PLAYER_CHAT = False
+PERSIST_PLAYER_CHAT = True
+
+REPLAY=False
 
 logging.basicConfig(
     level=LOGLEVEL,

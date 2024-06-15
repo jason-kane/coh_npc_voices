@@ -453,8 +453,8 @@ class LogStream:
         lstring = ""
         previous = ""
         for line in self.handle.readlines():
-            if line.strip():
-                # print(line.split(None, 2))
+            line = line.strip()
+            if line:
                 try:
                     datestr, timestr, line_string = line.split(None, 2)
                 except ValueError:
@@ -462,7 +462,7 @@ class LogStream:
 
                 previous = lstring
                 lstring = line_string.replace(".", "").strip().split()
-                "['Hasten', 'is', 'recharged']"
+                # "['Hasten', 'is', 'recharged']"
                 if lstring[0][0] == "[":
                     self.channel_messager(lstring)
 
@@ -561,6 +561,12 @@ class LogStream:
 
                     # we want to notify upstream UI about this.
                     self.event_queue.put(("SET_CHARACTER", self.hero.name))
+
+                elif lstring[-2:] == ["is", "recharged"]:
+                    log.info('Adding RECHARGED event to event_queue...')
+                    self.event_queue.put(
+                        ("RECHARGED", " ".join(lstring[0:lstring.index("is")]))
+                    )
 
                 elif lstring[-2:] == ["the", "team"]:
                     name = " ".join(lstring[0:-4])
