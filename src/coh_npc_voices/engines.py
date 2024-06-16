@@ -209,7 +209,7 @@ class TTSEngine(ttk.Frame):
         log.info(f"save_character({raw_name})")
 
         category, name = raw_name.split(maxsplit=1)
-        character = models.get_character(name, category)
+        character = models.Character.get(name, category)
 
         if character is None:
             # new character?  This is not typical.

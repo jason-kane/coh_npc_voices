@@ -610,20 +610,17 @@ def main():
                         foreground_window_handle = GetForegroundWindow()
                         pid = win32process.GetWindowThreadProcessId(foreground_window_handle)
                         handle = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid[1])
-                        try:
-                            proc_name = win32process.GetModuleFileNameEx(handle, 0)
-                            log.info(f'{proc_name=}')
-                        except Exception as err:
-                            log.error(err)
-
+                        
+                        proc_name = win32process.GetModuleFileNameEx(handle, 0)
                         zone = GetWindowText(foreground_window_handle)
                         log.info(f'{zone=}')
 
                         if proc_name.split("\\")[-1] == "cityofheroes.exe":
+                            log.info('Triggering Hasten')
                             p.press("enter")
                             p.typewrite(f"/powexec_name \"{value}\"\n")
                         else:
-                            log.info(f'Not stuffing the keyboard buffer of {proc_name!r}.  That would be rude.')
+                            log.info(f'Not touch the keyboard of {proc_name!r}.  That would be rude.')
                     else:
                         log.info('auto_hasten is disabled')
 

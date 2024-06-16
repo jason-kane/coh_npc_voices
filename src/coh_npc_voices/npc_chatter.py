@@ -97,7 +97,7 @@ class ParallelTTS(threading.Thread):
             pass
 
         with models.db() as session:
-            character = models.get_character(name, category, session)
+            character = models.Character.get(name, category, session)
 
             if os.path.exists(cachefile):
                 self.playfile(cachefile)
@@ -222,7 +222,7 @@ class TightTTS(threading.Thread):
                 # keeps character alive and properly tied to the database as we
                 # pass it into update_character_last_spoke and voice_builder.
                 with models.db() as session:
-                    character = models.get_character(name, category, session)
+                    character = models.Character.get(name, category, session)
                     models.update_character_last_spoke(character, session)
                     # it isn't very well named, but this will speak "message" as
                     # character and cache a copy into cachefile.
@@ -442,6 +442,8 @@ class LogStream:
 
             log.debug(f"Adding {speaker}/{dialog} to reading queue")
             self.speaking_queue.put((speaker, dialog, guide['name']))
+        elif guide is None:
+            log.info(f'{channel=}')
         else:
             log.info(f'{guide=}')
 

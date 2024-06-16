@@ -55,7 +55,7 @@ def set_config_key(key, value):
 def save_config(config):
     global CACHE_CONFIG
     with open('config.json', 'w') as h:
-        h.write(json.dumps(config))
+        h.write(json.dumps(config, indent=4, sort_keys=True))
         CACHE_CONFIG = config
 
 def get_config_key(key, default=None):

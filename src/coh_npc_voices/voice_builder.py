@@ -4,6 +4,7 @@ import random
 import re
 
 import effects
+import pyfiglet
 import engines
 import models
 import settings
@@ -37,7 +38,7 @@ def apply_preset(character_name, character_category, preset_name, gender=None):
 
     with models.db() as session:
         log.info('Applying preset: %s', preset)
-        character = models.get_character(
+        character = models.Character.get(
             character_name,
             character_category,
             session=session
@@ -233,7 +234,6 @@ def create(character, message, cachefile, session):
     if ENGINE_OVERRIDE.get(character.engine, False):
         rank = 'secondary'
 
-
     # character.engine may already have a value.  It probably does.  We're over-writing it
     # with anything we have in the dict ENGINE_OVERRIDE.  But if we don't have anything, you can keep
     # your previous value and carry on.
@@ -248,7 +248,12 @@ def create(character, message, cachefile, session):
         # our chosen engine for this character isn't working.  So we're going to switch
         # to the secondary and use that for the rest of this session.
         ENGINE_OVERRIDE[character.engine] = True
-
+        log.info("\n" + pyfiglet.figlet_format(
+                "Engaging\nSecondary\nEngine", 
+                font="3d_diagonal", width=120
+            )
+        )
+        
         if character.engine_secondary:
             # use the secondary engine config defined for this character
             engine_instance = engines.get_engine(character.engine_secondary)
@@ -260,23 +265,27 @@ def create(character, message, cachefile, session):
             engine_instance(None, 'secondary', selected_name).say(message, effect_list, sink=sink)
      
     if save:
-        with AudioFile(cachefile + ".wav") as input:
-            with AudioFile(
-                filename=cachefile,
-                samplerate=input.samplerate,
-                num_channels=input.num_channels
-            ) as output:
-                while input.tell() < input.frames:
-                    retries = 5
-                    success = False
-                    while not success and retries > 0:
-                        try:
-                            output.write(input.read(1024))
-                            success = True
-                        except RuntimeError as err:
-                            log.errror(err)
-                        retries -= 1
-                    
-            log.info(f'Created {cachefile}')
+        # it is already saved as a wav file, this converts it to an mp3 then
+        # erases the wav file.
+        if settings.get_config_key('save_as_mp3', True):
+            with AudioFile(cachefile + ".wav") as input:
+                with AudioFile(
+                    filename=cachefile,
+                    samplerate=input.samplerate,
+                    num_channels=input.num_channels
+                ) as output:
+                    while input.tell() < input.frames:
+                        retries = 5
+                        success = False
+                        while not success and retries > 0:
+                            try:
+                                output.write(input.read(1024))
+                                success = True
+                            except RuntimeError as err:
+                                log.errror(err)
+                            retries -= 1
+                        
+                log.info(f'Created {cachefile}')
 
-        os.unlink(cachefile + ".wav")
+        if not settings.get_config_key('save_as_wav', True):
+            os.unlink(cachefile + ".wav")
