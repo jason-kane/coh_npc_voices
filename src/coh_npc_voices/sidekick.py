@@ -1,6 +1,17 @@
 """
 There is more awesome to be had.
 """
+import sys, os
+sys.path.append(
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(
+                os.path.realpath(__file__)
+            ), 
+        '..', '..')
+    )
+)
+
 import ctypes
 import logging
 import win32process
@@ -8,14 +19,12 @@ import win32con
 import win32api
 
 import multiprocessing
-import os
-import sys
 import tkinter as tk
 from datetime import datetime, timedelta
 from logging.config import dictConfig
 from tkinter import ttk
 
-import engines
+from src.coh_npc_voices import engines
 import matplotlib.dates as md
 import matplotlib.dates as mdates
 import models
@@ -362,6 +371,46 @@ class CharacterTab(ttk.Frame):
 
     # character.name.trace_add('write', set_hero)
   
+
+class VoicesTab(ttk.Frame):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.detailside=None
+        self.listside=None
+
+    def get_selected_character(self):
+        if (self.detailside is None or self.listside is None):
+            for child in self.winfo_children():
+                if child.winfo_name() == "!detailside":
+                    log.info('Found detailside')
+                    self.detailside = child
+                elif child.winfo_name() == "!listside":
+                    log.info('Found listside')
+                    self.listside = child
+                else:
+                    log.info(f'{child.winfo_name()=}')
+        
+        if self.listside:
+            log.info(dir(self.listside))
+            log.info(f"{self.listside=}")
+
+        if self.detailside:
+            log.info(dir(self.detailside))
+            log.info(f"{self.detailside=}")
+
+        # returns a Character() object for the
+        # currently selected npc or player.
+        if self.listside:
+            selection = self.listside.get_selected_character()
+            with models.db() as session:
+                character = models.get_character_from_rawname(
+                    selection['values'],
+                    session
+                )
+            return character
+        else:
+            return None
+
 class ConfigurationTab(ttk.Frame):
     tkdict = {}
 
@@ -558,7 +607,8 @@ def main():
     character.pack(side="top", fill="both", expand=True)
     notebook.add(character, text='Character')  
 
-    voices = ttk.Frame(notebook)
+    voices = VoicesTab(notebook)
+    
     voices.pack(side="top", fill="both", expand=True)
     notebook.add(voices, text='Voices')
 
@@ -566,9 +616,7 @@ def main():
     configuration.pack(side="top", fill="both", expand=True)
     notebook.add(configuration, text="Configuration")
 
-    selected_character = tk.StringVar()
-
-    detailside = voice_editor.DetailSide(voices, selected_character)
+    detailside = voice_editor.DetailSide(voices)
     listside = voice_editor.ListSide(voices, detailside)
 
     listside.pack(side="left", fill="both", expand=True)
@@ -641,6 +689,7 @@ def main():
 
 
 if __name__ == '__main__':
+
     if sys.platform.startswith('win'):
         multiprocessing.freeze_support()
     main()

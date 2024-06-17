@@ -78,11 +78,11 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 
 # Base Class for engines
 class TTSEngine(ttk.Frame):
-    def __init__(self, parent, rank, selected_character, *args, **kwargs):
+    def __init__(self, parent, rank, raw_name, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.rank = rank
         self.parent = parent
-        self.selected_character = selected_character
+        self.raw_name = raw_name
         self.override = {}
         self.parameters = set('voice_name')
         self.config_vars = {}
@@ -91,8 +91,7 @@ class TTSEngine(ttk.Frame):
         self.set_config_meta(self.config)
 
         self.draw_config_meta()
-        self.selected_character = selected_character
-        self.load_character(self.selected_character.get())
+        self.load_character(raw_name)
         self.repopulate_options()        
 
     def get_config_meta(self):
@@ -173,6 +172,7 @@ class TTSEngine(ttk.Frame):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
         self.loading = True
+        self.raw_name = raw_name
         log.info(f"TTSEngine.load_character({raw_name})")
         
         with models.db() as session:
@@ -348,7 +348,7 @@ class TTSEngine(ttk.Frame):
         log.info(f'reconfig({args=}, {kwargs=})')
         with models.db() as session:
             character = models.get_character_from_rawname(
-                self.selected_character.get(),
+                self.selected_character,
                 session=session
             )
     

@@ -9,8 +9,8 @@ from datetime import datetime
 from typing import Optional, Self
 
 import pyfiglet
-import settings
-from npc import GROUP_ALIASES, PRESETS, add_group_alias_stub
+from src.coh_npc_voices import settings
+from src.coh_npc_voices.npc import GROUP_ALIASES, PRESETS, add_group_alias_stub
 from sqlalchemy import (
     JSON,
     DateTime,
@@ -115,6 +115,7 @@ class Character(Base):
     engine_secondary: Mapped[str] = mapped_column(String(64))
     category: Mapped[int] = mapped_column(Integer, index=True)
     last_spoke: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    group_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     def cat_str(self):
         return ['', 'npc', 'player', 'system'][self.category]
@@ -350,10 +351,14 @@ class Character(Base):
 
 
 def get_character_from_rawname(raw_name, session):
+    log.info(f'get_character_from_rawname({raw_name=}, {session=})')
+    if raw_name is None:
+        return
+    
     try:
-        category, name = raw_name.split(maxsplit=1)
+        category, name = raw_name
     except ValueError:
-        log.error('Invalid character raw_name: %s', raw_name)
+        log.error(f'Invalid character {raw_name=}')
         return None
 
     return Character.get(name, category, session)

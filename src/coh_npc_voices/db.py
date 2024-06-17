@@ -1,11 +1,15 @@
+import os
 import logging
 import sys
 import re
 import hashlib
+from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy_utils import database_exists, create_database
 import models
+import alembic.config
 
 engine = create_engine("sqlite:///voices.db", echo=True)
 
@@ -18,11 +22,39 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
+alembicArgs = [
+    '-c',
+    'alembic.ini',
+    '--raiseerr',
+    'upgrade', 
+    'head',
+]
+
+@contextmanager
+def set_directory(path: Path):
+    """
+    Sets the cwd within the context
+    https://dev.to/teckert/changing-directory-with-a-python-context-manager-2bj8
+
+    Args:
+        path (Path): The path to the cwd
+
+    Yields:
+        None
+    """
+
+    origin = Path().absolute()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(origin)
+
 def build_migrate():
     # it really doesn't exist.
     if not database_exists(engine.url):    
         create_database(engine.url)
-        models.Base.metadata.create_all(engine)
+        models.Base.metadata.create_all(engine)    
     return
 
 if not database_exists(engine.url):
@@ -37,6 +69,18 @@ if not database_exists(engine.url):
         )
         session.add(default)
         session.commit()
+
+
+with set_directory(
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(
+                os.path.realpath(__file__)
+            ), 
+        '..', '..')
+    )):
+    alembic.config.main(argv=alembicArgs)
+
 
 def clean_customer_name(in_name):
     if in_name:

@@ -1,6 +1,6 @@
 import json
 import os
-import settings
+from src.coh_npc_voices import settings
 
 
 if os.path.exists(settings.ALIASES):
