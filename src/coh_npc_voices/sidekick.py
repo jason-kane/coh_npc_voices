@@ -335,6 +335,7 @@ class ChartFrame(ttk.Frame):
             canvas.get_tk_widget().pack(fill="both", expand=True)
             log.debug('graph constructed')      
 
+
 class CharacterTab(ttk.Frame):
     def __init__(self, parent, event_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -407,6 +408,7 @@ class VoicesTab(ttk.Frame):
             return character
         else:
             return None
+
 
 class ConfigurationTab(ttk.Frame):
     tkdict = {}
@@ -578,6 +580,54 @@ class ConfigurationTab(ttk.Frame):
             self.default_player_engine_normalize.get()
         )
 
+class PowerAutoclick:
+    def __init__(self, powername, vartype, default):
+        self.name = powername
+        self.key = f"auto_{self.name}"
+        value = settings.get_config_key(self.key, default=default)
+        self.var = getattr(tk, vartype)(value=value)
+        self.listener()
+
+    def listener(self):
+        self.var.trace_add('write', lambda a,b,c:self.change_setting())
+
+    def change_setting(self):
+        value = self.var.get()
+        settings.set_config_key(self.key, value)
+
+    def widget(self, parent):
+        return tk.Checkbutton(
+            parent,
+            variable=self.var
+        )        
+
+
+class AutomationTab(ttk.Frame):
+    """
+    Lets make this awesome.
+    """
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        if parent:
+            self.draw()
+
+    def draw(self):
+        for power in [ 
+            PowerAutoclick('hasten', 'BooleanVar', False), 
+            PowerAutoclick('domination', 'BooleanVar', False), 
+        ]:
+            frame = ttk.Frame(self)
+            tk.Label(
+                frame,
+                text=f"Autoclick {power.name}",
+            ).pack(side="left")
+
+            mywidget = power.widget(frame)
+            mywidget.pack(side='left')
+            frame.pack(side="top")
+
 
 EXIT = False
 
@@ -612,6 +662,10 @@ def main():
     configuration = ConfigurationTab(notebook)
     configuration.pack(side="top", fill="both", expand=True)
     notebook.add(configuration, text="Configuration")
+
+    automation = AutomationTab(notebook)
+    automation.pack(side="top", fill="both", expand=True)
+    notebook.add(automation, text="Automation")
 
     detailside = voice_editor.DetailSide(voices)
     listside = voice_editor.ListSide(voices, detailside)
@@ -648,8 +702,8 @@ def main():
                 listside.refresh_character_list()
             elif key == "RECHARGED":
                 log.info(f'Power {value} has recharged.')
-                if value in ["Hasten", ]:
-                    if settings.get_config_key('auto_hasten'):
+                if value in ["Hasten", "Domination"]:
+                    if settings.get_config_key(f'auto_{value.lower()}'):
                         # only send keyboard activity to the city of heroes window
                         # if it is not the foreground window do not do anything.
                         foreground_window_handle = GetForegroundWindow()
@@ -661,13 +715,13 @@ def main():
                         log.info(f'{zone=}')
 
                         if proc_name.split("\\")[-1] == "cityofheroes.exe":
-                            log.info('Triggering Hasten')
+                            log.info(f'Triggering {value}')
                             p.press("enter")
                             p.typewrite(f"/powexec_name \"{value}\"\n")
                         else:
                             log.info(f'Not touch the keyboard of {proc_name!r}.  That would be rude.')
                     else:
-                        log.info('auto_hasten is disabled')
+                        log.info(f'auto_{value.lower()} is disabled')
 
                 # /powexec_name "hasten"
             else:

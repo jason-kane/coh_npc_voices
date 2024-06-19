@@ -1208,6 +1208,7 @@ class ListSide(ttk.Frame):
                             tags=('grouprow')
                         )
                         groups[c.group_name] = parent
+                    tag = "member"
                 elif c.category == player_category:
                     parent = groups.get("Players")
                     if parent is None:
@@ -1220,16 +1221,18 @@ class ListSide(ttk.Frame):
                             tags=('grouprow')
                         )
                         groups["Players"] = parent
+                    tag = "member"
                 else:
                     log.info(f'Not a player or group member {c=}')
                     parent = ""
+                    tag = "base"
 
                 node = self.listbox.insert(
                     parent, 
                     'end', 
                     # text=c.name, 
                     values=(c.name, ),
-                    tags=(models.category_int2str(c.category), )
+                    tags=(models.category_int2str(c.category), tag)
                 )
 
                 if first is None:
@@ -1240,7 +1243,8 @@ class ListSide(ttk.Frame):
                 [first, ]
             )
             
-            self.listbox.tag_configure('grouprow', background='grey30', foreground='white')
+            self.listbox.tag_configure('grouprow', background='grey28', foreground='white')
+            self.listbox.tag_configure('member', background='grey60', foreground='black')
     
     def delete_selected_character(self):
         category, name, item = self.selected_category_and_name()
