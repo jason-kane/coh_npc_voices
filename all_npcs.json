@@ -2837,6 +2837,14 @@
     "gender": "GENDER_MALE",
     "group_name": "Independent"
   },
+  "Back Breaker": {
+    "costumes": [
+      "Thug_Skulls_01"
+    ],
+    "description": "",
+    "gender": "GENDER_MALE",
+    "group_name": "Skulls"
+  },  
   "Backdraft": {
     "costumes": [
       "Puddle"

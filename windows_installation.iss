@@ -3,7 +3,7 @@
 
 #define SourcePath "\\?\Volume{cc498e86-0000-0000-0000-602200000000}\Users\jason\Desktop\coh_npc_voices"
 #define MyAppName "Sidekick"
-#define MyAppVersion "2.0"
+#define MyAppVersion "2.1"
 #define MyAppPublisher "Jason Kane"
 #define MyAppURL "https://github.com/jason-kane/coh_npc_voices"
 #define MyAppExeName "Sidekick.bat"

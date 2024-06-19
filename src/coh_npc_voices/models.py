@@ -351,13 +351,15 @@ class Character(Base):
 
 
 def get_character_from_rawname(raw_name, session):
-    log.info(f'get_character_from_rawname({raw_name=}, {session=})')
+    log.error(f'OBSOLETE get_character_from_rawname({raw_name=}, {session=})')
+    # use Character.get()
     if raw_name is None:
         return
     
     try:
         category, name = raw_name
     except ValueError:
+        settings.how_did_i_get_here()
         log.error(f'Invalid character {raw_name=}')
         return None
 

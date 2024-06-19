@@ -390,23 +390,20 @@ class VoicesTab(ttk.Frame):
                 else:
                     log.info(f'{child.winfo_name()=}')
         
-        if self.listside:
-            log.info(dir(self.listside))
-            log.info(f"{self.listside=}")
+        #if self.listside:
+            #log.info(dir(self.listside))
+            #log.info(f"{self.listside=}")
 
-        if self.detailside:
-            log.info(dir(self.detailside))
-            log.info(f"{self.detailside=}")
+        #if self.detailside:
+        #    log.info(dir(self.detailside))
+        #    log.info(f"{self.detailside=}")
 
         # returns a Character() object for the
         # currently selected npc or player.
         if self.listside:
-            selection = self.listside.get_selected_character()
+            category, name, _ = self.listside.selected_category_and_name()
             with models.db() as session:
-                character = models.get_character_from_rawname(
-                    selection['values'],
-                    session
-                )
+                character = models.Character.get(name, category, session)
             return character
         else:
             return None
@@ -619,7 +616,7 @@ def main():
     detailside = voice_editor.DetailSide(voices)
     listside = voice_editor.ListSide(voices, detailside)
 
-    listside.pack(side="left", fill="both", expand=True)
+    listside.pack(side="left", fill=tk.Y, expand=False)
     detailside.pack(side="left", fill="both", expand=True)
     notebook.pack(fill="both", expand=True)
 

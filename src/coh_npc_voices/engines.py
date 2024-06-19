@@ -78,11 +78,12 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 
 # Base Class for engines
 class TTSEngine(ttk.Frame):
-    def __init__(self, parent, rank, raw_name, *args, **kwargs):
+    def __init__(self, parent, rank, name, category, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.rank = rank
         self.parent = parent
-        self.raw_name = raw_name
+        self.name = name
+        self.category = category
         self.override = {}
         self.parameters = set('voice_name')
         self.config_vars = {}
@@ -91,8 +92,8 @@ class TTSEngine(ttk.Frame):
         self.set_config_meta(self.config)
 
         self.draw_config_meta()
-        self.load_character(raw_name)
-        self.repopulate_options()        
+        self.load_character(category=category, name=name)
+        self.repopulate_options()
 
     def get_config_meta(self):
         with models.db() as session:
@@ -168,15 +169,16 @@ class TTSEngine(ttk.Frame):
     def get_tts(self):
         return voicebox.tts.tts.TTS()
 
-    def load_character(self, raw_name):
+    def load_character(self, category, name):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
         self.loading = True
-        self.raw_name = raw_name
-        log.info(f"TTSEngine.load_character({raw_name})")
+        self.name = name
+        self.category = category
+        log.info(f"TTSEngine.load_character({category=}, {name=})")
         
         with models.db() as session:
-            character = models.get_character_from_rawname(raw_name, session)
+            character = models.Character.get(name, category, session)
 
         self.gender = settings.get_npc_gender(character.name)
         
@@ -203,12 +205,11 @@ class TTSEngine(ttk.Frame):
         self.loading = False
         return character
 
-    def save_character(self, raw_name):
+    def save_character(self, name, category):
         # Retrieve configuration settings from widgets
         # and persist them to the DB
-        log.info(f"save_character({raw_name})")
+        log.info(f"save_character({name}, {category})")
 
-        category, name = raw_name.split(maxsplit=1)
         character = models.Character.get(name, category)
 
         if character is None:
@@ -347,8 +348,9 @@ class TTSEngine(ttk.Frame):
         
         log.info(f'reconfig({args=}, {kwargs=})')
         with models.db() as session:
-            character = models.get_character_from_rawname(
-                self.selected_character,
+            character = models.Character.get(
+                name=self.name, 
+                category=self.category,
                 session=session
             )
     

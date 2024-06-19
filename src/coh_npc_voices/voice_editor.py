@@ -36,12 +36,11 @@ ENGINE_OVERRIDE = {}
 #class ChoosePhrase(ttk.Frame):
 class WavfileMajorFrame(ttk.LabelFrame):    
     ALL_PHRASES = "< Rebuild all phrases >"
-    def __init__(self, parent, detailside, selected_character, *args, **kwargs):
+    def __init__(self, parent, detailside, *args, **kwargs):
         kwargs['text'] = 'Wavefile(s)'
         super().__init__(parent, *args, **kwargs)
         topline = ttk.Frame(self)
         
-        self.selected_character = selected_character
         self.detailside = detailside
 
         self.chosen_phrase = tk.StringVar(
@@ -76,13 +75,9 @@ class WavfileMajorFrame(ttk.LabelFrame):
 
     def chose_phrase(self, *args, **kwargs):
         # a phrase was chosen.
-        raw_name = self.selected_character
-
-        with models.db() as session:
-            character = models.get_character_from_rawname(raw_name, session)
-
-            phrase = self.chosen_phrase.get()
-            cachefile = self.get_cachefile(character, phrase)
+        character = self.detailside.parent.get_selected_character()
+        phrase = self.chosen_phrase.get()
+        cachefile = self.get_cachefile(character, phrase)
 
         if os.path.exists(cachefile):
             self.play_btn["state"] = "normal"
@@ -106,16 +101,19 @@ class WavfileMajorFrame(ttk.LabelFrame):
 
     def populate_phrases(self):
         log.info('** populate_phrases() called **')
-        log.info(f'{self.selected_character=}')
-        raw_name = self.selected_character
+        
+        character = self.detailside.parent.get_selected_character()
+        if character is None:
+            # no character selected
+            return 
 
         # pull phrases for this character from the database
         with models.db() as session:            
-            character = models.get_character_from_rawname(raw_name, session)
+            # character = models.get_character_from_rawname(raw_name, session)
         
-            if character is None:
-                log.error(f'62 Character {raw_name} does not exist!')
-                return
+            #if character is None:
+            #    log.error(f'62 Character {raw_name} does not exist!')
+            #    return
 
             character_phrases = session.scalars(
                 select(models.Phrases).where(
@@ -128,7 +126,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
             self.chosen_phrase.set(character_phrases[0].text)
         else:
             self.chosen_phrase.set(
-                f'I have no record of what {raw_name} says.')
+                f'I have no record of what {character.name} says.')
             
         self.options["values"] = [
             p.text for p in character_phrases
@@ -200,11 +198,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         message = self.chosen_phrase.get()
         log.debug(f"Speak: {message}")
 
-        # the currently selected character entry on the listside.
-        raw_name = self.selected_character
-        
-        with models.db() as session:
-            character = models.get_character_from_rawname(raw_name, session)
+        character = self.detailside.parent.get_selected_character()
        
         if message == self.ALL_PHRASES:
             # we want to re-speak _every_ phrase, one at a time
@@ -263,18 +257,9 @@ class WavfileMajorFrame(ttk.LabelFrame):
             e.get_effect() for e in self.detailside.effect_list.effects
         ]
 
-        # the currently selected character entry on the listside.
-        raw_name = self.selected_character
-        if not raw_name:
-            log.warning('Name is required')
-            return
+        character = self.detailside.parent.get_selected_character()
         
-        category, name = raw_name.split(maxsplit=1)
-
         with models.db() as session:
-            # it should be get_or_create_character()
-            character = models.Character.get(name, category, session)
-
             # every phrase this character has ever said previously.  These make it
             # easy to tune the voice with the same dialog.
             all_phrases = [ 
@@ -316,7 +301,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 ])
 
                 log.debug(f'effect_list: {effect_list}')
-                log.info(f"Creating ttsengine for {self.selected_character}")
+                log.info(f"Creating ttsengine for {character.name}")
 
                 # None because we aren't attaching any widgets
                 try:
@@ -324,7 +309,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
                     if use_secondary or ENGINE_OVERRIDE.get(character.engine, False):
                         rank = 'secondary'
                     
-                    ttsengine(None, rank, self.selected_character).say(msg, effect_list, sink=sink)
+                    ttsengine(None, rank, name=character.name, category=character.category).say(msg, effect_list, sink=sink)
                 except engines.USE_SECONDARY:
                     ENGINE_OVERRIDE[character.engine] = True
                     return self.say_it(use_secondary=True)
@@ -413,8 +398,7 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         # show the selected engine configuration
         log.info('EngineSelectAndConfigure.change_selected_engine()')
 
-        with models.db() as session:
-            character = self.parent.get_selected_character()
+        character = self.parent.get_selected_character()
         clear = False
 
         if character is None:
@@ -456,7 +440,12 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         engine_cls = engines.get_engine(self.selected_engine.get())
 
         if engine_cls:
-            self.engine_parameters = engine_cls(self, self.rank, [character.category, character.name])
+            self.engine_parameters = engine_cls(
+                self, 
+                rank=self.rank, 
+                category=character.category,
+                name=character.name
+            )
             self.engine_parameters.pack(side="top", fill="x", expand=True)
         else:
             engine_cls = engines.get_engine(settings.DEFAULT_ENGINE)
@@ -543,33 +532,31 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
 
 
 class EffectList(ttk.LabelFrame):
-    def __init__(self, parent, selected_character, *args, **kwargs):       
-        self.selected_character = selected_character
+    def __init__(self, parent, *args, **kwargs):       
         kwargs['text'] = "Effects",
         super().__init__(parent, *args, **kwargs)
 
         self.effects = []
         self.buffer = False
-        self.load_effects()
+        
+        self.name = None
+        self.category = None
 
         self.add_effect_combo = AddEffect(self, self)
         self.add_effect_combo.pack(side="top", fill="x", expand=True)
 
-    def load_effects(self):
+    def load_effects(self, name, category):
         log.info('EffectList.load_effects()')
         has_effects = False
+
+        self.name = name
+        self.category = category
 
         # teardown any effects already in place
         while self.effects:
             effect = self.effects.pop()
             effect.clear_traces()
             effect.pack_forget()
-
-        raw_name = self.selected_character
-        if raw_name in ["", None]:
-            return
-
-        category, name = raw_name.split(maxsplit=1)
 
         with models.db() as session:
             character = models.Character.get(name, category, session)
@@ -664,12 +651,9 @@ class EffectList(ttk.LabelFrame):
             effect_config_frame.pack(side="top", fill="x", expand=True)
             self.effects.append(effect_config_frame)
 
-            raw_name = self.selected_character
-            category, name = raw_name.split(maxsplit=1)
-
             with models.Session(models.engine) as session:
                 # retrieve this character
-                character = models.Character.get(name, category, session)
+                character = models.Character.get(self.name, self.category, session)
 
                 # save the current effect selection
                 effect = models.Effects(
@@ -779,8 +763,6 @@ class DetailSide(ttk.Frame):
         self.listside = None
         self.trashcan = Feather("trash-2", size=24)
 
-        self.selected_character = None
-
         self.vsb = tk.Scrollbar(self, orient="vertical")
         self.vsb.pack(side="right", fill="y", expand=False)
 
@@ -804,6 +786,7 @@ class DetailSide(ttk.Frame):
             (0, 0), window=self.frame, anchor="nw",
             tags="self.frame"
         )
+        # TODO: get rid of this shite
         self.frame.get_selected_character = parent.get_selected_character
 
         self.frame.bind("<Configure>", self.onFrameConfigure)
@@ -812,16 +795,10 @@ class DetailSide(ttk.Frame):
 
         name_frame = ttk.Frame(self.frame)
 
-        selected_character = parent.get_selected_character()
-        if selected_character:
-            character_name = selected_character.name
-        else:
-            character_name = ""
-
-        self.character_name = ttk.Label(
+        self.character_name = tk.StringVar()
+        ttk.Label(
             name_frame,
-            text=character_name,
-            # textvariable=
+            textvariable=self.character_name,
             anchor="center",
             font=font.Font(weight="bold"),
         ).pack(side="left", fill="x", expand=True)
@@ -860,7 +837,7 @@ class DetailSide(ttk.Frame):
         ).pack(side="top", fill="x")
 
         self.phrase_selector = WavfileMajorFrame(
-            self.frame, self, selected_character
+            self.frame, self,
         )
         self.phrase_selector.pack(side="top", fill="x", expand=True)
 
@@ -881,12 +858,19 @@ class DetailSide(ttk.Frame):
 
         engine_notebook.pack(side="top", fill="x", expand=True)
 
-        # list of effects already configured
-        self.effect_list = EffectList(self.frame, selected_character)
+        # list of effects already configured, but .. we don't
+        # actually _have_ a character yet, so this is kind of stupid.
+        self.effect_list = EffectList(self.frame, name=None, category=None)
         self.effect_list.pack(side="top", fill="x", expand=True)
 
         self.bind('<Enter>', self._bound_to_mousewheel)
         self.bind('<Leave>', self._unbound_to_mousewheel)
+
+    def selected_category_and_name(self):
+        """
+        returns tuple of category, name, item
+        """
+        return self.listside.selected_category_and_name()
 
     def _bound_to_mousewheel(self, event):
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
@@ -920,7 +904,7 @@ class DetailSide(ttk.Frame):
                 width=self.canvas.winfo_width()
             )
 
-    def load_character(self, raw_name):
+    def load_character(self, category, name):
         """
         load this NPC and populate the detailside widgets
         """
@@ -929,15 +913,13 @@ class DetailSide(ttk.Frame):
         # loop effects
         # add each effect
         # set parameters for each effect
-        log.info(f'DetailSide.load_character({raw_name})')
-        
-        raw_was = self.selected_character
-        if raw_was != raw_name:
-            self.selected_character = raw_name
-            # TODO: "choose" and highlight this character on the listside
+        log.info(f'DetailSide.load_character({name})')
+           
+        # TODO: "choose" and highlight this character on the listside
 
-        category, name = raw_name
         group_name = ""
+
+        self.character_name.set(name)
 
         if category == "npc":
             npc_data = settings.get_npc_data(name)
@@ -945,8 +927,10 @@ class DetailSide(ttk.Frame):
             if npc_data:
                 description = npc_data["description"]
                 group_name = npc_data["group_name"]
-            self.character_description.set(description)    
+            self.character_description.set(description)
             self.group_name.set(group_name)
+        elif category == "":
+            return
         else:
             self.character_description.set("")
             self.group_name.set("")
@@ -970,13 +954,16 @@ class DetailSide(ttk.Frame):
         # set engine and parameters
         log.debug(f'{dir(self.primary_tab)=}')
         if self.primary_tab.engine_parameters:
-            self.primary_tab.engine_parameters.load_character(raw_name)
+            self.primary_tab.engine_parameters.load_character(category, name)
         
         if self.secondary_tab.engine_parameters:
-            self.secondary_tab.engine_parameters.load_character(raw_name)
+            self.secondary_tab.engine_parameters.load_character(category, name)
         
         # effects
-        self.effect_list.load_effects()
+        self.effect_list.load_effects(
+            name=name,
+            category=category
+        )
 
         # reset the preset selector
         # self.presetSelect.reset()
@@ -1086,15 +1073,20 @@ class ListSide(ttk.Frame):
         listfilter.pack(side="top", fill=tk.X)
         self.list_filter.trace_add('write', self.apply_list_filter)
 
-        #self.list_items = tk.Variable(value=[])
-
         listarea = ttk.Frame(self)
-        self.listbox = ttk.Treeview(listarea, selectmode="browse")
+        columns = ('name', )
+        self.listbox = ttk.Treeview(listarea, selectmode="browse", columns=columns)
+        #self.listbox.column('name', width=200, stretch=tk.NO)
+        self.listbox.heading('name', text='Name')
+
+        self.listbox.column('#0', width=25, stretch=tk.NO)
+        self.listbox.column('name', width=200, stretch=tk.NO)
+        #self.listbox.heading('category', text='Category')            
         
         self.refresh_character_list()
 
-        #self.listbox = tk.Listbox(listarea, height=10, listvariable=self.list_items)
-        self.listbox.pack(side="left", expand=True, fill=tk.BOTH)
+        self.listbox.pack(side="left", fill=tk.Y)
+
         vsb = tk.Scrollbar(
             listarea,
             orient='vertical',
@@ -1105,8 +1097,8 @@ class ListSide(ttk.Frame):
         self.bind('<Enter>', self._bound_to_mousewheel)
         self.bind('<Leave>', self._unbound_to_mousewheel)
 
-        vsb.pack(side='right', fill='y')
-        listarea.pack(side="top", expand=True, fill=tk.BOTH)
+        vsb.pack(side='right', fill=tk.Y)
+        listarea.pack(side="top", expand=True, fill=tk.Y)
 
         action_frame = ttk.Frame(self)
         ttk.Button(
@@ -1133,14 +1125,30 @@ class ListSide(ttk.Frame):
     def apply_list_filter(self, a, b, c):
         self.refresh_character_list()
 
-    def character_selected(self, event=None):
-        item = self.get_selected_character()
-        log.info(f"{item=} {event=}")
-        value = item["values"]
+    def selected_category_and_name(self):
+        item = self.get_selected_character_item()
+        if item is None:
+            return None, None, None
+        
+        name = item["values"][0]
 
-        name, category = value
+        category = None
+        if 'player' in item['tags']:
+            category = "player"
+        elif 'npc' in item['tags']:
+            category = 'npc'
+        elif 'system' in item['tags']:
+            category = 'system' 
+
+        return category, name, item
+
+    def character_selected(self, event=None):
+        category, name, item = self.selected_category_and_name()
+        if name is None:
+            return
+
         if category:
-            self.detailside.load_character(value)
+            self.detailside.load_character(category, name)
         else:
             # click group row to open/close that group
             if item['open']:
@@ -1182,33 +1190,46 @@ class ListSide(ttk.Frame):
             #    [f"{character.cat_str()} {character.name}" for character in all_characters]
             #)
             self.listbox.delete(*self.listbox.get_children())
-            self.listbox["columns"] = {"Category", "Name"}
+            self.listbox["columns"] = ("Name", )
             
             groups = {}
             first = None
+            player_category = models.category_str2int("player")
             for c in all_characters:
                 if c.group_name:
                     parent = groups.get(c.group_name)
                     if parent is None:
-                        log.info(f'Creating new group for {c.group_name!r}')
+                        log.debug(f'Creating new group for {c.group_name!r}')
                         parent = self.listbox.insert(
                             "", 
                             'end', 
-                            text=c.group_name, 
-                            values=(c.group_name, ""),
+                            # text=c.group_name, 
+                            values=(c.group_name, ),
                             tags=('grouprow')
                         )
                         groups[c.group_name] = parent
+                elif c.category == player_category:
+                    parent = groups.get("Players")
+                    if parent is None:
+                        log.debug('Creating new group for Players')
+                        parent = self.listbox.insert(
+                            "", 
+                            'end', 
+                            # text=c.group_name, 
+                            values=("Players", ),
+                            tags=('grouprow')
+                        )
+                        groups["Players"] = parent
                 else:
+                    log.info(f'Not a player or group member {c=}')
                     parent = ""
 
                 node = self.listbox.insert(
                     parent, 
                     'end', 
-                    text=c.name, 
-                    values=(
-                        (models.category_int2str(c.category), c.name)
-                    )
+                    # text=c.name, 
+                    values=(c.name, ),
+                    tags=(models.category_int2str(c.category), )
                 )
 
                 if first is None:
@@ -1222,11 +1243,9 @@ class ListSide(ttk.Frame):
             self.listbox.tag_configure('grouprow', background='grey30', foreground='white')
     
     def delete_selected_character(self):
-        index = int(self.listbox.curselection()[0])
-        raw_name = self.listbox.get(index)
-        log.info(f'Deleting character {raw_name!r}')
+        category, name, item = self.selected_category_and_name()
 
-        category, name = raw_name.split(maxsplit=1)
+        log.info(f'Deleting character {name!r}')
         log.info(f'Name: {name!r}  Category: {category!r}')
         
         with models.db() as session:
@@ -1290,18 +1309,23 @@ class ListSide(ttk.Frame):
         # disk too.
 
         self.refresh_character_list()
-        self.listbox.select_clear(0, 'end')
-        self.listbox.select_set(0)
+
+        for item in self.listbox.selection():
+            self.listbox.selection_remove(item)
+        
         self.listbox.event_generate("<<ListboxSelect>>")
 
-    def get_selected_character(self):
+    def get_selected_character_item(self):
         if len(self.listbox.selection()) == 0:
             # we de-selected everything
             # TODO: wipe the detail side?
             return
 
-        item = self.listbox.selection()[0]
-        return self.listbox.item(item)
+        item = self.listbox.item(
+            self.listbox.selection()[0]
+        )
+       
+        return item
         
 
 class ChatterService:

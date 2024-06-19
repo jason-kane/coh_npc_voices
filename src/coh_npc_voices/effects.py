@@ -1061,7 +1061,7 @@ class Distortion(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Distortion(
-                delay_seconds=self.drive_db.get(), 
+                drive_db=self.drive_db.get(), 
             )
         )
         return effect

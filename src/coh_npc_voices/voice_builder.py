@@ -25,127 +25,127 @@ class tkvar_ish:
         return self.value
 
 
-def apply_preset(character_name, character_category, preset_name, gender=None):
-    preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
+# def apply_preset(character_name, character_category, preset_name, gender=None):
+#     preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
     
-    if gender is None:
-        gender = settings.get_npc_gender(character_name)
+#     if gender is None:
+#         gender = settings.get_npc_gender(character_name)
 
-    if preset is None or len(preset) == 0:
-        log.info(f'No preset is available for {preset_name}')
-        add_group_alias_stub(preset_name)
-        preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
+#     if preset is None or len(preset) == 0:
+#         log.info(f'No preset is available for {preset_name}')
+#         add_group_alias_stub(preset_name)
+#         preset = PRESETS.get(GROUP_ALIASES.get(preset_name, preset_name))
 
-    with models.db() as session:
-        log.info('Applying preset: %s', preset)
-        character = models.Character.get(
-            character_name,
-            character_category,
-            session=session
-        )
+#     with models.db() as session:
+#         log.info('Applying preset: %s', preset)
+#         character = models.Character.get(
+#             character_name,
+#             character_category,
+#             session=session
+#         )
        
-        # TODO: WTF?
-        if character_category == 2:
-            default = settings.get_config_key('DEFAULT_PLAYER_ENGINE')
-        else:
-            default = settings.get_config_key('DEFAULT_ENGINE')
+#         # TODO: WTF?
+#         if character_category == 2:
+#             default = settings.get_config_key('DEFAULT_PLAYER_ENGINE')
+#         else:
+#             default = settings.get_config_key('DEFAULT_ENGINE')
 
-        if preset['engine'] == 'any':
-            character.engine = default
-        else:
-            character.engine = preset['engine']
+#         if preset['engine'] == 'any':
+#             character.engine = default
+#         else:
+#             character.engine = preset['engine']
 
-        session.commit()
+#         session.commit()
         
-        for model in ("BaseTTSConfig", "Effects"):
-            # wipe any existing entries for this character
-            session.execute(
-                delete(getattr(models, model)).where(
-                    getattr(models, model).character_id == character.id
-                )
-            )
+#         for model in ("BaseTTSConfig", "Effects"):
+#             # wipe any existing entries for this character
+#             session.execute(
+#                 delete(getattr(models, model)).where(
+#                     getattr(models, model).character_id == character.id
+#                 )
+#             )
         
-        # This is wrong.  we're only setting config for the fields that have values.
-        for key in preset['BaseTTSConfig']:
-            log.info(f'key: {key}, value: {preset["BaseTTSConfig"][key]}')
-            value = preset['BaseTTSConfig'][key]
+#         # This is wrong.  we're only setting config for the fields that have values.
+#         for key in preset['BaseTTSConfig']:
+#             log.info(f'key: {key}, value: {preset["BaseTTSConfig"][key]}')
+#             value = preset['BaseTTSConfig'][key]
 
-            if key == "voice_name" and len(value) == 2:
-                # I know, sloppy.  what happens if there is a two character
-                # voice installed and used as a preset?
-                if gender:
-                    # we have a gender override, probably from
-                    # all_npcs.json
-                    choice, default_gender = preset['BaseTTSConfig'][key]
-                    if "FEMALE" in gender.upper():
-                        gender="Female"
-                    elif "MALE" in gender.upper():
-                        gender="Male"
-                    else:
-                        gender = default_gender
+#             if key == "voice_name" and len(value) == 2:
+#                 # I know, sloppy.  what happens if there is a two character
+#                 # voice installed and used as a preset?
+#                 if gender:
+#                     # we have a gender override, probably from
+#                     # all_npcs.json
+#                     choice, default_gender = preset['BaseTTSConfig'][key]
+#                     if "FEMALE" in gender.upper():
+#                         gender="Female"
+#                     elif "MALE" in gender.upper():
+#                         gender="Male"
+#                     else:
+#                         gender = default_gender
                     
-                else:
-                    choice, gender = preset['BaseTTSConfig'][key]
+#                 else:
+#                     choice, gender = preset['BaseTTSConfig'][key]
 
-                if choice == "random":
-                    if gender == "any":
-                        gender = None
+#                 if choice == "random":
+#                     if gender == "any":
+#                         gender = None
                     
-                    all_available_names = engines.get_engine(
-                        character.engine,
-                        session
-                    ).get_voice_names(
-                        gender=gender
-                    )
-                    log.info(f'Choosing a random voice from {all_available_names}')
-                    value = random.choice(all_available_names)
-                    log.info(f'Selected voice: {value}')
-                else:
-                    log.error(f'Unknown variable preset setting: {choice}')   
+#                     all_available_names = engines.get_engine(
+#                         character.engine,
+#                         session
+#                     ).get_voice_names(
+#                         gender=gender
+#                     )
+#                     log.info(f'Choosing a random voice from {all_available_names}')
+#                     value = random.choice(all_available_names)
+#                     log.info(f'Selected voice: {value}')
+#                 else:
+#                     log.error(f'Unknown variable preset setting: {choice}')   
 
-            log.info(f'Adding new BaseTTSConfig for {key} => {value}')
-            session.add(
-                models.BaseTTSConfig(
-                    character_id=character.id,
-                    key=key,
-                    value=value
-                )
-            )
+#             log.info(f'Adding new BaseTTSConfig for {key} => {value}')
+#             session.add(
+#                 models.BaseTTSConfig(
+#                     character_id=character.id,
+#                     key=key,
+#                     value=value
+#                 )
+#             )
         
-        # TODO
-        # we aren't cleaning up old effectsettings, so they database is going to
-        # very gradually bloat with unreachable objects.
-        if 'Effects' in preset:
-            # wipe any existing effects
-            session.execute(
-                delete(models.Effects).where(
-                    models.Effects.character_id == character.id
-                )
-            )
+#         # TODO
+#         # we aren't cleaning up old effectsettings, so they database is going to
+#         # very gradually bloat with unreachable objects.
+#         if 'Effects' in preset:
+#             # wipe any existing effects
+#             session.execute(
+#                 delete(models.Effects).where(
+#                     models.Effects.character_id == character.id
+#                 )
+#             )
 
-        for effect_name in preset.get('Effects', []):
-            effect = models.Effects(
-                character_id=character.id,
-                effect_name=effect_name
-            )
-            session.add(effect)
+#         for effect_name in preset.get('Effects', []):
+#             effect = models.Effects(
+#                 character_id=character.id,
+#                 effect_name=effect_name
+#             )
+#             session.add(effect)
 
-            # we need the effect.id
-            session.commit()
-            session.refresh(effect)
+#             # we need the effect.id
+#             session.commit()
+#             session.refresh(effect)
 
-            for effect_setting_key in preset['Effects'][effect_name]:
-                value = preset['Effects'][effect_name][effect_setting_key]
+#             for effect_setting_key in preset['Effects'][effect_name]:
+#                 value = preset['Effects'][effect_name][effect_setting_key]
                 
-                session.add(
-                    models.EffectSetting(
-                        effect_id=effect.id,
-                        key=effect_setting_key,
-                        value=str(value)
-                    )
-                )
+#                 session.add(
+#                     models.EffectSetting(
+#                         effect_id=effect.id,
+#                         key=effect_setting_key,
+#                         value=str(value)
+#                     )
+#                 )
 
-        session.commit()
+#         session.commit()
 
 # I'm actually a little curious to see exactly how this will behave.  From npcChatter this is being called in
 # a subprocess, but when the editor triggers it we are in a thread.  The thread dies, the new thread doesn't know
@@ -228,7 +228,9 @@ def create(character, message, cachefile, session):
         ])
         save = False 
     
-    selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
+    # selected_name = tkvar_ish(f"{character.cat_str()} {character.name}")
+    name = character.name
+    category = character.category
     
     rank = 'primary'
     if ENGINE_OVERRIDE.get(character.engine, False):
@@ -243,7 +245,7 @@ def create(character, message, cachefile, session):
             raise engines.USE_SECONDARY
         
         log.info(f'Using engine: {character.engine}')
-        engines.get_engine(character.engine)(None, 'primary', selected_name).say(message, effect_list, sink=sink)
+        engines.get_engine(character.engine)(None, 'primary', name, category).say(message, effect_list, sink=sink)
     except engines.USE_SECONDARY:
         # our chosen engine for this character isn't working.  So we're going to switch
         # to the secondary and use that for the rest of this session.
@@ -257,12 +259,12 @@ def create(character, message, cachefile, session):
         if character.engine_secondary:
             # use the secondary engine config defined for this character
             engine_instance = engines.get_engine(character.engine_secondary)
-            engine_instance(None, 'secondary', selected_name).say(message, effect_list, sink=sink)
+            engine_instance(None, 'secondary', name, category).say(message, effect_list, sink=sink)
         else:
             # use the global default secondary engine
             engine_name = settings.get_config_key(f"{character.category}_engine_secondary")
             engine_instance = engines.get_engine(engine_name)
-            engine_instance(None, 'secondary', selected_name).say(message, effect_list, sink=sink)
+            engine_instance(None, 'secondary', name, category).say(message, effect_list, sink=sink)
      
     if save:
         # it is already saved as a wav file, this converts it to an mp3 then
