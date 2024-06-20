@@ -1075,17 +1075,20 @@ class ListSide(ttk.Frame):
 
         listarea = ttk.Frame(self)
         columns = ('name', )
-        self.listbox = ttk.Treeview(listarea, selectmode="browse", columns=columns)
-        #self.listbox.column('name', width=200, stretch=tk.NO)
-        self.listbox.heading('name', text='Name')
-
-        self.listbox.column('#0', width=25, stretch=tk.NO)
-        self.listbox.column('name', width=200, stretch=tk.NO)
+        self.listbox = ttk.Treeview(
+            listarea, selectmode="browse", columns=columns, show=''
+        )
+        # self.listbox.heading('name', text='Name')
+        # self.listbox['displaycolumns'] = (0, )
+        
+        # self.listbox.column('#0', width=0, minwidth=0, stretch=tk.NO)
+        self.listbox.column('name', width=200, stretch=tk.YES)
+        
         #self.listbox.heading('category', text='Category')            
         
         self.refresh_character_list()
 
-        self.listbox.pack(side="left", fill=tk.Y)
+        self.listbox.pack(side="left", expand=True, fill=tk.BOTH)
 
         vsb = tk.Scrollbar(
             listarea,
@@ -1098,7 +1101,7 @@ class ListSide(ttk.Frame):
         self.bind('<Leave>', self._unbound_to_mousewheel)
 
         vsb.pack(side='right', fill=tk.Y)
-        listarea.pack(side="top", expand=True, fill=tk.Y)
+        listarea.pack(side="top", expand=True, fill=tk.BOTH)
 
         action_frame = ttk.Frame(self)
         ttk.Button(
