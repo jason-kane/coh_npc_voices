@@ -349,14 +349,20 @@ class EngineSelection(ttk.Frame):
     def __init__(self, parent, selected_engine, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.selected_engine = selected_engine
-        ttk.Label(self, text="Text to Speech Engine", anchor="e").pack(
-            side="left", fill="x", expand=True
+        
+        self.columnconfigure(0, minsize=125, uniform="ttsengine")
+        self.columnconfigure(1, weight=2, uniform="ttsengine")
+        ttk.Label(self, text="Text to Speech Engine", anchor="e").grid(
+            column=0, row=0, sticky="e"
         )
 
         base_tts = ttk.Combobox(self, textvariable=self.selected_engine)
         base_tts["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
         base_tts["state"] = "readonly"
-        base_tts.pack(side="left", fill="x", expand=True)
+
+        base_tts.grid(
+            column=1, row=0, sticky="ew"
+        )
 
 
 class EngineSelectAndConfigure(ttk.LabelFrame):

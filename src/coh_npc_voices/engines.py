@@ -266,8 +266,10 @@ class TTSEngine(ttk.Frame):
         # now we build it.
         for m in self.get_config_meta():
             frame = ttk.Frame(self)
-            ttk.Label(frame, text=m.cosmetic, anchor="e").pack(
-                side="left", fill="x", expand=True
+            frame.columnconfigure(0, minsize=125, uniform="ttsengine")
+            frame.columnconfigure(1, weight=2, uniform="ttsengine")
+            ttk.Label(frame, text=m.cosmetic, anchor="e").grid(
+                row=0, column=0, sticky="e", padx=10
             )
 
             # create the tk.var for the value of this widget
@@ -297,7 +299,7 @@ class TTSEngine(ttk.Frame):
             textvariable=self.config_vars[key],
         )
         self.widget[key]["state"] = "readonly"
-        self.widget[key].pack(side="left", fill="x", expand=True)
+        self.widget[key].grid(row=0, column=1, sticky="ew")
 
     def _tkDoubleVar(self, key, frame, cfg):
         # doubles get a scale widget.  I haven't been able to get the ttk.Scale
@@ -313,7 +315,7 @@ class TTSEngine(ttk.Frame):
             digits=cfg.get('digits', 2),
             resolution=cfg.get('resolution', 1)
         )
-        self.widget[key].pack(side="left", fill="x", expand=True)
+        self.widget[key].grid(row=0, column=1, sticky="ew")
 
     def _tkBooleanVar(self, key, frame):
         """
@@ -329,7 +331,8 @@ class TTSEngine(ttk.Frame):
             onvalue=True,
             offvalue=False
         )
-        self.widget[key].pack(side="left", fill="x", expand=True)
+        self.widget[key].grid(row=0, column=1, sticky="ew")
+        #.pack(side="left", fill="x", expand=True)
 
     def reconfig(self, *args, **kwargs):
         """

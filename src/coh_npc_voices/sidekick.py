@@ -112,9 +112,11 @@ class ChartFrame(ttk.Frame):
                 figsize = (5, 2), 
                 dpi = 100
             ) 
-               
+            fig.tight_layout(pad=0.01)
+
             # adding the subplot 
             ax = fig.add_subplot(111)
+            ax.margins(x=0, y=0)
             ax.tick_params(axis='x', rotation=60)
         
             self.category = "xp"
@@ -283,47 +285,8 @@ class ChartFrame(ttk.Frame):
                 log.error(err)
                 log.error("ERROR!!! %s/%s/%s", data_timestamp, data_xp, rolling_data_xp)
         
-            ## Set time format and the interval of ticks
-            # start at starttime, rounded down to nearest 5 minute multiple
-            # marker = datetime(
-            #     start_time.year, 
-            #     start_time.month, start_time.day, start_time.hour, 
-            #     5 * int(start_time.minute / 5), 0, 0
-            # )
-            # ticks = []
-            # while marker < end_time:
-            #     ticks.append(marker)
-            #     marker += timedelta(minutes=5)
-
-            # ax.set_xticks(
-            #     ticks=ticks, minor=False
-            # )
-            # ax2.set_xticks(
-            #     ticks=ticks, minor=False
-            # )
-
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%I:%M'))
             ax.xaxis.set_major_locator(md.MinuteLocator(interval=10))
-
-            ## Set xtick labels to appear
-            #ax.xaxis.set_major_locator(xlocator)
-
-            ## Format xtick labels as HH:MM
-            # pyplot.gcf().axes[0].xaxis.set_major_formatter(xformatter)
-
-            #start, end = ax.get_xlim()
-            #ax.xaxis.set_ticks(np.arange(start, end, 1))
-
-            # why?  glad you asked.  rewards tend to be both xp and inf, and the
-            # ratio of xp to inf is pretty steady.  Since each has its own
-            # scale, and they autoscale, the graphs end up overlapping.  a LOT.
-            # this 90% scaling on the inf graph should have it track xp, but a little below.
-            # ax2.set(
-            #     xlim=ax2.get_xlim(), 
-            #     ylim=(ax2.get_ylim()[0], 
-            #           ax2.get_ylim()[0] * 0.95
-            #     )
-            # )
 
             # creating the Tkinter canvas 
             # containing the Matplotlib figure 
@@ -342,7 +305,7 @@ class CharacterTab(ttk.Frame):
         
         self.name = tk.StringVar()
         self.chatter = voice_editor.Chatter(self, event_queue)
-        self.chatter.pack(side="top", fill="x")
+        self.chatter.pack(side="top", fill=tk.X)
 
         self.total_exp = tk.IntVar(value=0)
         self.total_inf = tk.IntVar(value=0)
@@ -354,6 +317,9 @@ class CharacterTab(ttk.Frame):
         self.set_hero()
 
     def totals_frame(self):
+        """
+        Frame for displaying xp and influence totals
+        """
         frame = ttk.Frame(self)
         ttk.Label(frame, text="Experience").pack(side="left")
         ttk.Label(frame, textvariable=self.total_exp).pack(side="left")
