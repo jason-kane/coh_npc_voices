@@ -151,7 +151,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         if self.visualize_wav is None:
             # our widget hasn't been rendered.  Do be a sweetie and take
             # care of that for me.
-            self.visualize_wav = ttk.Frame(self, padding = 8)
+            self.visualize_wav = ttk.Frame(self, padding = 0)
             self.fig = Figure(
                 figsize=(3, 2), # (width, height) figsize in inches (not kidding)
                 dpi=100, # but we get dpi too so... sane?
@@ -792,6 +792,9 @@ class DetailSide(ttk.Frame):
             (0, 0), window=self.frame, anchor="nw",
             tags="self.frame"
         )
+        # if you pack it, it won't scroll.
+        # self.frame.pack(side='top')
+
         # TODO: get rid of this shite
         self.frame.get_selected_character = parent.get_selected_character
 
@@ -806,7 +809,10 @@ class DetailSide(ttk.Frame):
             name_frame,
             textvariable=self.character_name,
             anchor="center",
-            font=font.Font(weight="bold"),
+            font=font.Font(
+                size=24,
+                weight="bold"
+            )
         ).pack(side="left", fill="x", expand=True)
 
         style = ttk.Style()
@@ -820,11 +826,13 @@ class DetailSide(ttk.Frame):
             image=self.trashcan.icon,
             style="RemoveCharacter.TButton",
             command=self.remove_character
-        ).pack(side="right")
+        ).place(relx=1, rely=0, anchor='ne')
 
         name_frame.pack(side="top", fill="x", expand=True)
 
         self.group_name = tk.StringVar()
+        # which group is this npc a member of.  this will
+        # frequently not have a value
         ttk.Label(
             self.frame,
             textvariable=self.group_name,
@@ -834,10 +842,11 @@ class DetailSide(ttk.Frame):
         ).pack(side="top", fill="x")
 
         self.character_description = tk.StringVar()
+        # description of the character (if there is one)
         ttk.Label(
             self.frame,
             textvariable=self.character_description,
-            wraplength=300,
+            wraplength=350,
             anchor="nw",
             justify="left"
         ).pack(side="top", fill="x")
@@ -885,7 +894,9 @@ class DetailSide(ttk.Frame):
         self.canvas.unbind_all("<MouseWheel>")
 
     def _on_mousewheel(self, event):
-        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        top, bottom = self.vsb.get()
+        if top > 0.0 or bottom < 1.0:
+            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
     def remove_character(self):
         if self.listside:

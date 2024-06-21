@@ -11,9 +11,12 @@ from tkfeather import Feather
 
 log = logging.getLogger(__name__)
 
-WRAPLENGTH=250
+WRAPLENGTH=350
 
 class LScale(ttk.Frame):
+    """
+    Labeled choose-a-number
+    """
     def __init__(
         self,
         parent,
@@ -27,6 +30,9 @@ class LScale(ttk.Frame):
         *args, digits=None, resolution=0, **kwargs
     ):
         super().__init__(parent, *args, **kwargs)
+        self.columnconfigure(0, minsize=125, uniform="effect")
+        self.columnconfigure(1, weight=2, uniform="effect")
+        
         if _type == int:
             variable = tk.IntVar(
                 name=f"{parent.label.lower()}_{pname}",
@@ -38,14 +44,15 @@ class LScale(ttk.Frame):
                 value=default
             )
 
+        # label for the setting
         ttk.Label(
             self,
             text=label,
             anchor="e",
-            wraplength=WRAPLENGTH,
-            justify='left'
-        ).pack(side='left', fill='x')
+            justify='right'
+        ).grid(row=0, column=0, sticky='e')
 
+        # widget for viewing/changing the value
         tk.Scale(
             self,
             from_=from_,
@@ -56,14 +63,16 @@ class LScale(ttk.Frame):
             digits=digits,
             resolution=resolution,
             **kwargs
-        ).pack(side='left', fill='x', expand=True)
+        ).grid(row=0, column=1, sticky='ew')
 
         setattr(parent, pname, variable)
         parent.parameters.append(pname)
 
 
 class LCombo(ttk.Frame):
-
+    """
+    Combo widget to select a string from a set of possible values
+    """
     def __init__(self,
         parent,
         pname,
@@ -77,14 +86,15 @@ class LCombo(ttk.Frame):
 
         variable = tk.StringVar(value=default)
 
+        # label for the setting
         ttk.Label(
             self,
             text=label,
             anchor="e",
-            wraplength=WRAPLENGTH,
-            justify='left'
-        ).pack(side='left', fill='x')
+            justify='right'
+        ).grid(row=0, column=0, sticky='e')
 
+        # widget for viewing/changing the value
         options = ttk.Combobox(
             self, 
             textvariable=variable
@@ -92,7 +102,7 @@ class LCombo(ttk.Frame):
         options['values'] = list(choices)
         options['state'] = 'readonly'
             
-        options.pack(side='left', fill='x', expand=True)
+        options.grid(row=0, column=1, sticky='ew')
 
         setattr(parent, pname, variable)
         parent.parameters.append(pname)        
@@ -115,21 +125,22 @@ class LBoolean(ttk.Frame):
             value=default
         )
 
+        # label for the setting
         ttk.Label(
             self,
             text=label,
             anchor="e",
-            wraplength=WRAPLENGTH,
-            justify='left'
-        ).pack(side='left', fill='x')  
+            justify='right'
+        ).grid(row=0, column=0, sticky='e')
 
+        # widget for viewing/changing the value
         ttk.Checkbutton(
             self, 
             text="",
             variable=variable,
             onvalue=True,
             offvalue=False
-        ).pack(side='left', fill='x', expand=True)
+        ).grid(row=0, column=0, sticky='ew')
 
         setattr(parent, pname, variable)
         parent.parameters.append(pname)  
@@ -148,13 +159,15 @@ class EffectParameterEditor(ttk.Frame):
         self.trashcan = Feather("trash-2", size=24)
 
         topbar = ttk.Frame(self)
+        # the name of this effect
         ttk.Label(
             topbar,
-            text=self.label,
+            text=self.label.title(),
             anchor="n",
-            font=font.Font(weight="bold"),
-            wraplength=WRAPLENGTH,
-            justify='left'
+            font=font.Font(
+                size=18,
+                weight="bold"
+            )
         ).pack(side='left', fill='x', expand=True)
     
         ttk.Style().configure(
@@ -164,14 +177,17 @@ class EffectParameterEditor(ttk.Frame):
             height=1
         )
 
+        # delete button
         ttk.Button(
             topbar,
             image=self.trashcan.icon,
             style="CloseFrame.TButton",
             command=self.remove_effect
-        ).pack(side="right")
+        ).place(relx=1, rely=0, anchor='ne')
+
         topbar.pack(side="top", fill='x', expand=True)
 
+        # the descriptive text for this effect
         ttk.Label(
             self,
             text=self.desc,
@@ -196,9 +212,7 @@ class EffectParameterEditor(ttk.Frame):
         log.info("EffectParamaterEngine.remove_effect()")
         # remove any variable traces
         self.clear_traces()
-
         self.parent.remove_effect(self)
-        # self.pack_forget()
         return
 
     def reconfig(self, varname, lindex, operation):
@@ -209,7 +223,6 @@ class EffectParameterEditor(ttk.Frame):
         """
         log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
-        # key = "_".join(varname.split('_')[1:])  # I know, I feel dirty.
 
         with models.Session(models.engine) as session:
             # fragile, varname is what is coming off the trace trigger
@@ -217,7 +230,6 @@ class EffectParameterEditor(ttk.Frame):
             effect_settings = session.scalars(
                 select(models.EffectSetting).where(
                     models.EffectSetting.effect_id==effect_id
-                    # models.EffectSetting.key==key
                 )
             ).all()
 
@@ -266,8 +278,6 @@ class EffectParameterEditor(ttk.Frame):
         to the tk.Variable tied to the widget for that
         setting.
         """
-        #if session is None:
-        #    session = models.Session(models.engine)
 
         effect_id = self.effect_id.get()
         log.info(f'Loading {effect_id=}')

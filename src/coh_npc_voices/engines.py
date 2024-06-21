@@ -332,7 +332,6 @@ class TTSEngine(ttk.Frame):
             offvalue=False
         )
         self.widget[key].grid(row=0, column=1, sticky="ew")
-        #.pack(side="left", fill="x", expand=True)
 
     def reconfig(self, *args, **kwargs):
         """
