@@ -114,9 +114,8 @@ class ChartFrame(ttk.Frame):
             ) 
                
             # adding the subplot 
-            ax = fig.add_subplot(111) 
+            ax = fig.add_subplot(111)
             ax.tick_params(axis='x', rotation=60)
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%H-%M'))
         
             self.category = "xp"
             log.debug(f'Retrieving {self.category} data')
@@ -161,7 +160,6 @@ class ChartFrame(ttk.Frame):
                     log.error('Error gathering data samples')
                     log.error(err)
                     raise
-
 
                 # do some binning in per-minute buckets in the database.
                 log.debug('Gathering binned samples')
@@ -239,30 +237,13 @@ class ChartFrame(ttk.Frame):
                 rolling_data_xp.append(rolling_average_value)
                 log.debug(f'{rolling_data_xp=}')
 
-                # log.info(f'{data_xp=}')
-                # log.info(f'{data_inf=}')
-                # log.info(f'{rolling_xp_list=}')
-                # log.info(f'{rolling_data_xp=}')
-                # log.info(f'{rolling_average_value=}')
-
-                #try:
-                
-                # except Exception as err:
-                #     log.error(err)
-                #     log.error(f'rolling_xp_list: {rolling_xp_list[-1 * roll_size:]}')
-                #     raise
-
-                # while len(rolling_xp_list) > roll_size:
-                #     log.debug(f"clipping {len(rolling_xp_list)} is too many.  {rolling_xp_list}")
-                #     rolling_xp_list.pop(0)
-
                 previous_event = event_time
 
             samples_timestamp = []
             samples_xp = []
             samples_inf = []
             for row in raw_samples:
-                log.debug(f"{row=}")
+                # log.debug(f"{row=}")
                 #event, xp, inf = row
                 samples_timestamp.append(row.event_time)
                 samples_xp.append(row.xp_gain)
@@ -283,11 +264,12 @@ class ChartFrame(ttk.Frame):
             # shifting to per minute should push it up to where its
             # visible/interesting (it doesn't)
             # ax.axhline(y=avg_xp_per_minute, color='blue')
-
             ax.scatter(samples_timestamp, samples_xp, c="darkblue", marker='*')
 
+            ax.set_ylabel('Experience')
             # samples
-            ax2 = ax.twinx()            
+            ax2 = ax.twinx()
+            ax2.set_ylabel('Influence')
             ax2.scatter(samples_timestamp, samples_inf, c="darkgreen", marker=r'$\$$', s=75)
             #ax2.axhline(y=avg_inf_per_minute, color='green')
 
@@ -301,12 +283,30 @@ class ChartFrame(ttk.Frame):
                 log.error(err)
                 log.error("ERROR!!! %s/%s/%s", data_timestamp, data_xp, rolling_data_xp)
         
-            ## Set time format and the interval of ticks (every 15 minutes)
-            xformatter = md.DateFormatter('%H:%M')
-            xlocator = md.MinuteLocator(interval = 1)
+            ## Set time format and the interval of ticks
+            # start at starttime, rounded down to nearest 5 minute multiple
+            # marker = datetime(
+            #     start_time.year, 
+            #     start_time.month, start_time.day, start_time.hour, 
+            #     5 * int(start_time.minute / 5), 0, 0
+            # )
+            # ticks = []
+            # while marker < end_time:
+            #     ticks.append(marker)
+            #     marker += timedelta(minutes=5)
 
-            ## Set xtick labels to appear every 15 minutes
-            ax.xaxis.set_major_locator(xlocator)
+            # ax.set_xticks(
+            #     ticks=ticks, minor=False
+            # )
+            # ax2.set_xticks(
+            #     ticks=ticks, minor=False
+            # )
+
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%I:%M'))
+            ax.xaxis.set_major_locator(md.MinuteLocator(interval=10))
+
+            ## Set xtick labels to appear
+            #ax.xaxis.set_major_locator(xlocator)
 
             ## Format xtick labels as HH:MM
             # pyplot.gcf().axes[0].xaxis.set_major_formatter(xformatter)
@@ -344,33 +344,55 @@ class CharacterTab(ttk.Frame):
         self.chatter = voice_editor.Chatter(self, event_queue)
         self.chatter.pack(side="top", fill="x")
 
-        self.set_hero()
-        # self.xp_chart = ChartFrame(self, self.chatter.hero, 'xp')
-        # self.xp_chart.pack(side="top", fill="both", expand=True)
+        self.total_exp = tk.IntVar(value=0)
+        self.total_inf = tk.IntVar(value=0)
+        
+        totals_frame = self.totals_frame()
+        totals_frame.pack(side="top", fill=tk.X, expand=False)
 
-        #self.inf_chart = ChartFrame(self, self.chatter.hero, 'inf')
-        #self.inf_chart.pack(side="top", fill="both", expand=True)
+        self.start_time = datetime.now()
+        self.set_hero()
+
+    def totals_frame(self):
+        frame = ttk.Frame(self)
+        ttk.Label(frame, text="Experience").pack(side="left")
+        ttk.Label(frame, textvariable=self.total_exp).pack(side="left")
+        ttk.Label(frame, text="Influence").pack(side="left")
+        ttk.Label(frame, textvariable=self.total_inf).pack(side="left")
+        return frame
+
+    def update_xpinf(self):
+        with models.db() as session:
+            total_exp, total_inf = session.query(
+                func.sum(models.HeroStatEvent.xp_gain),
+                func.sum(models.HeroStatEvent.inf_gain)
+                ).where(
+                    models.HeroStatEvent.hero_id == self.chatter.hero.id,
+                    models.HeroStatEvent.event_time >= self.start_time
+            ).all()[0]  # first (only) row
+            
+            self.total_exp.set(total_exp)
+            self.total_inf.set(total_inf)
+
 
     def set_hero(self, *args, **kwargs):
-        log.debug(f'set_hero({self.chatter.hero})')
-        if hasattr(self, "xp_chart"):
-            self.xp_chart.pack_forget()
+        """
+        Invoked at init(), but also whenever the character changes (logout to character select)
+        and more critically, every N seconds to refresh the graph.
+        """
+        log.info(f'{self.chatter=}')
+        log.info(f'set_hero({self.chatter.hero})')
 
+        if hasattr(self, "progress_chart"):
+            self.progress_chart.pack_forget()
+            self.total_exp.set(0)
+            self.total_inf.set(0)
         try:
-            self.xp_chart = ChartFrame(self, self.chatter.hero)
-            self.xp_chart.pack(side="top", fill="both", expand=True)
+            self.update_xpinf()
+            self.progress_chart = ChartFrame(self, self.chatter.hero)
+            self.progress_chart.pack(side="top", fill="both", expand=True)
         except Exception as err:
             log.error(err)
-
-        # if hasattr(self, "inf_chart"):
-        #     self.inf_chart.pack_forget()
-
-        # self.inf_chart = ChartFrame(self, self.chatter.hero, 'inf')
-        # self.inf_chart.pack(side="top", fill="x", expand=True)
-
-        # character.pack(side="top", fill="both", expand=True)
-
-    # character.name.trace_add('write', set_hero)
   
 
 class VoicesTab(ttk.Frame):
@@ -383,10 +405,10 @@ class VoicesTab(ttk.Frame):
         if (self.detailside is None or self.listside is None):
             for child in self.winfo_children():
                 if child.winfo_name() == "!detailside":
-                    log.info('Found detailside')
+                    # log.info('Found detailside')
                     self.detailside = child
                 elif child.winfo_name() == "!listside":
-                    log.info('Found listside')
+                    # log.info('Found listside')
                     self.listside = child
                 else:
                     log.info(f'{child.winfo_name()=}')

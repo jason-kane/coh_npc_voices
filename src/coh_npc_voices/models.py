@@ -327,7 +327,7 @@ class Character(Base):
 
         Return value is a Character() object.
         """
-        log.info(f'/-- models.get_character({name=}, {category=}, {session=})')
+        log.info(f'/-- Character.get({name=}, {category=}, session=...)')
         
         try:
             category=int(category)
@@ -346,7 +346,7 @@ class Character(Base):
                 name, category, session
             )
 
-        log.info(f'\\-- get_character() returning {character}')
+        log.info(f'\\-- Character.get() returning {character}')
         return character
 
 
@@ -397,7 +397,7 @@ def diskcache(key, value=None):
     key must be valid as a base filename
     value must be None or a json-able object
     """
-    log.info(f'diskcache({key=}, {value=})')
+    log.debug(f'diskcache({key=}, {value=})')
     filename = os.path.join(CACHE_DIR, key + ".json")
     if value is None:
         if os.path.exists(filename):

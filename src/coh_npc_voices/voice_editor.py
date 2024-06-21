@@ -396,7 +396,7 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         # No problem.
         # clear the old engine configuration
         # show the selected engine configuration
-        log.info('EngineSelectAndConfigure.change_selected_engine()')
+        log.debug('EngineSelectAndConfigure.change_selected_engine()')
 
         character = self.parent.get_selected_character()
         clear = False
@@ -458,7 +458,7 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         """
         save this engine selection to the database
         """
-        log.info('EngineSelectAndConfig.save_character()')
+        log.debug('EngineSelectAndConfig.save_character()')
         character = self.parent.get_selected_character()
 
         #raw_name = self.selected_character
@@ -947,12 +947,12 @@ class DetailSide(ttk.Frame):
         self.phrase_selector.populate_phrases()
 
         # set the engines itself
-        log.info('b character: %s | %s | %s', character, character.engine, character.engine_secondary)
+        # log.info('b character: %s | %s | %s', character, character.engine, character.engine_secondary)
         self.primary_tab.set_engine(character.engine)
         self.secondary_tab.set_engine(character.engine_secondary)
 
         # set engine and parameters
-        log.debug(f'{dir(self.primary_tab)=}')
+        # log.debug(f'{dir(self.primary_tab)=}')
         if self.primary_tab.engine_parameters:
             self.primary_tab.engine_parameters.load_character(category, name)
         
@@ -1075,27 +1075,20 @@ class ListSide(ttk.Frame):
 
         listarea = ttk.Frame(self)
         columns = ('name', )
-        self.listbox = ttk.Treeview(
+        self.character_tree = ttk.Treeview(
             listarea, selectmode="browse", columns=columns, show=''
         )
-        # self.listbox.heading('name', text='Name')
-        # self.listbox['displaycolumns'] = (0, )
-        
-        # self.listbox.column('#0', width=0, minwidth=0, stretch=tk.NO)
-        self.listbox.column('name', width=200, stretch=tk.YES)
-        
-        #self.listbox.heading('category', text='Category')            
-        
-        self.refresh_character_list()
 
-        self.listbox.pack(side="left", expand=True, fill=tk.BOTH)
+        self.character_tree.column('name', width=200, stretch=tk.YES)       
+        self.refresh_character_list()
+        self.character_tree.pack(side="left", expand=True, fill=tk.BOTH)
 
         vsb = tk.Scrollbar(
             listarea,
             orient='vertical',
-            command=self.listbox.yview
+            command=self.character_tree.yview
         )
-        self.listbox.configure(yscrollcommand=vsb.set)
+        self.character_tree.configure(yscrollcommand=vsb.set)
 
         self.bind('<Enter>', self._bound_to_mousewheel)
         self.bind('<Leave>', self._unbound_to_mousewheel)
@@ -1113,17 +1106,16 @@ class ListSide(ttk.Frame):
         )
 
         action_frame.pack(side="top", expand=False, fill=tk.X)
-        #self.listbox.bind("<<ListboxSelect>>", self.character_selected)
-        self.listbox.bind("<<TreeviewSelect>>", self.character_selected)
+        self.character_tree.bind("<<TreeviewSelect>>", self.character_selected)
 
     def _bound_to_mousewheel(self, event):
-        self.listbox.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.character_tree.bind_all("<MouseWheel>", self._on_mousewheel)
 
     def _unbound_to_mousewheel(self, event):
-        self.listbox.unbind_all("<MouseWheel>")
+        self.character_tree.unbind_all("<MouseWheel>")
 
     def _on_mousewheel(self, event):
-        self.listbox.yview_scroll(int(-1*(event.delta/120)), "units")
+        self.character_tree.yview_scroll(int(-1*(event.delta/120)), "units")
 
     def apply_list_filter(self, a, b, c):
         self.refresh_character_list()
@@ -1155,13 +1147,13 @@ class ListSide(ttk.Frame):
         else:
             # click group row to open/close that group
             if item['open']:
-                self.listbox.item(
-                    self.listbox.selection()[0], 
+                self.character_tree.item(
+                    self.character_tree.selection()[0], 
                     open=False
                 )
             else:
-                self.listbox.item(
-                    self.listbox.selection()[0], 
+                self.character_tree.item(
+                    self.character_tree.selection()[0], 
                     open=True
                 )
 
@@ -1189,11 +1181,8 @@ class ListSide(ttk.Frame):
                 ]
 
         if all_characters:
-            #self.list_items.set(
-            #    [f"{character.cat_str()} {character.name}" for character in all_characters]
-            #)
-            self.listbox.delete(*self.listbox.get_children())
-            self.listbox["columns"] = ("Name", )
+            self.character_tree.delete(*self.character_tree.get_children())
+            self.character_tree["columns"] = ("Name", )
             
             groups = {}
             first = None
@@ -1203,10 +1192,9 @@ class ListSide(ttk.Frame):
                     parent = groups.get(c.group_name)
                     if parent is None:
                         log.debug(f'Creating new group for {c.group_name!r}')
-                        parent = self.listbox.insert(
+                        parent = self.character_tree.insert(
                             "", 
                             'end', 
-                            # text=c.group_name, 
                             values=(c.group_name, ),
                             tags=('grouprow')
                         )
@@ -1216,24 +1204,22 @@ class ListSide(ttk.Frame):
                     parent = groups.get("Players")
                     if parent is None:
                         log.debug('Creating new group for Players')
-                        parent = self.listbox.insert(
+                        parent = self.character_tree.insert(
                             "", 
                             'end', 
-                            # text=c.group_name, 
                             values=("Players", ),
                             tags=('grouprow')
                         )
                         groups["Players"] = parent
                     tag = "member"
                 else:
-                    log.info(f'Not a player or group member {c=}')
+                    # log.info(f'Not a player or group member {c=}')
                     parent = ""
                     tag = "base"
 
-                node = self.listbox.insert(
+                node = self.character_tree.insert(
                     parent, 
                     'end', 
-                    # text=c.name, 
                     values=(c.name, ),
                     tags=(models.category_int2str(c.category), tag)
                 )
@@ -1242,12 +1228,12 @@ class ListSide(ttk.Frame):
                     first = node
 
             # resetting to the first entry is obviously wrong
-            self.listbox.selection_set(
+            self.character_tree.selection_set(
                 [first, ]
             )
             
-            self.listbox.tag_configure('grouprow', background='grey28', foreground='white')
-            self.listbox.tag_configure('member', background='grey60', foreground='black')
+            self.character_tree.tag_configure('grouprow', background='grey28', foreground='white')
+            self.character_tree.tag_configure('member', background='grey60', foreground='black')
     
     def delete_selected_character(self):
         category, name, item = self.selected_category_and_name()
@@ -1317,19 +1303,19 @@ class ListSide(ttk.Frame):
 
         self.refresh_character_list()
 
-        for item in self.listbox.selection():
-            self.listbox.selection_remove(item)
+        for item in self.character_tree.selection():
+            self.character_tree.selection_remove(item)
         
-        self.listbox.event_generate("<<ListboxSelect>>")
+        self.character_tree.event_generate("<<ListboxSelect>>")
 
     def get_selected_character_item(self):
-        if len(self.listbox.selection()) == 0:
+        if len(self.character_tree.selection()) == 0:
             # we de-selected everything
             # TODO: wipe the detail side?
             return
 
-        item = self.listbox.item(
-            self.listbox.selection()[0]
+        item = self.character_tree.item(
+            self.character_tree.selection()[0]
         )
        
         return item

@@ -65,7 +65,7 @@ def get_config_key(key, default=None):
 ALL_NPC = {}
 def get_npc_data(character_name):
     global ALL_NPC
-    log.info(f'get_npc_data({character_name=})')
+    log.debug(f'get_npc_data({character_name=})')
     if not ALL_NPC:
         with open("all_npcs.json", "r") as h:
             ALL_NPC = json.loads(h.read())

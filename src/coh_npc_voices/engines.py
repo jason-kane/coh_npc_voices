@@ -119,7 +119,7 @@ class TTSEngine(ttk.Frame):
 
         with models.db() as session:
             for row in rows[0]:
-                log.info(f"{row=}")
+                # log.info(f"{row=}")
                 cosmetic, key, varfunc, default, cfg, fn = row
                 field = models.EngineConfigMeta(
                     engine_key=self.key,
@@ -144,7 +144,7 @@ class TTSEngine(ttk.Frame):
         )
 
         if message:
-            log.info(f"say.message: {message}")
+            # log.info(f"say.message: {message}")
             try:
                 vb.say(message)
             except Exception as err:
@@ -175,7 +175,7 @@ class TTSEngine(ttk.Frame):
         self.loading = True
         self.name = name
         self.category = category
-        log.info(f"TTSEngine.load_character({category=}, {name=})")
+        # log.info(f"TTSEngine.load_character({category=}, {name=})")
         
         with models.db() as session:
             character = models.Character.get(name, category, session)
@@ -184,37 +184,37 @@ class TTSEngine(ttk.Frame):
         
         engine_config = models.get_engine_config(character.id, self.rank)
 
-        log.info(f"{engine_config=}")
+        # log.info(f"{engine_config=}")
 
         for key, value in engine_config.items():
-            log.info(f'Setting config {key} to {value}')
+            log.debug(f'Setting config {key} to {value}')
             
             # log.info(f"{dir(self)}")
             if hasattr(self, 'config_vars'):
                 # the polly way
-                log.info(f'PolyConfig[{key}] = {value}')
-                log.info(f'{self.config_vars=}')
+                log.debug(f'PolyConfig[{key}] = {value}')
+                # log.info(f'{self.config_vars=}')
                 self.config_vars[key].set(value)
             else:
-                log.info(f'oldstyle config[{key}] = {value}')
+                log.error(f'OBSOLETE config[{key}] = {value}')
                 # everything else
                 getattr(self, key).set(value)
                 setattr(self, key + "_base", value)
 
-        log.info("TTSEngine.load_character complete")
+        # log.info("TTSEngine.load_character complete")
         self.loading = False
         return character
 
     def save_character(self, name, category):
         # Retrieve configuration settings from widgets
         # and persist them to the DB
-        log.info(f"save_character({name}, {category})")
+        # log.info(f"save_character({name}, {category})")
 
         character = models.Character.get(name, category)
 
         if character is None:
             # new character?  This is not typical.
-            log.info(f'Creating new character {name}`')
+            # log.info(f'Creating new character {name}`')
             
             with models.db() as session:
                 character = models.Character(
@@ -229,9 +229,9 @@ class TTSEngine(ttk.Frame):
                 session.commit()
                 session.refresh(character)
 
-            log.info("character: %s", character)
+            # log.info("character: %s", character)
             for key in self.parameters:
-                log.info(f"Processing attribute {key}...")
+                # log.info(f"Processing attribute {key}...")
                 # do we already have a value for this key?
                 value = str(getattr(self, key).get())
 
@@ -246,12 +246,12 @@ class TTSEngine(ttk.Frame):
                     ).scalar_one_or_none()
 
                     if config_setting and config_setting.value != value:
-                        log.info('Updating existing setting')
+                        log.debug('Updating existing setting')
                         config_setting.value = value
                         session.commit()
 
                     elif not config_setting:
-                        log.info('Saving new BaseTTSConfig')
+                        log.debug('Saving new BaseTTSConfig')
                         with models.db() as session:
                             new_config_setting = models.BaseTTSConfig(
                                 character_id=character.id, 
@@ -346,7 +346,7 @@ class TTSEngine(ttk.Frame):
         if self.loading:
             return
         
-        log.info(f'reconfig({args=}, {kwargs=})')
+        # log.info(f'reconfig({args=}, {kwargs=})')
         with models.db() as session:
             character = models.Character.get(
                 name=self.name, 
@@ -367,12 +367,12 @@ class TTSEngine(ttk.Frame):
             # our change may filter the other widgets, possibly
             # rendering the previous value invalid.
             if m.varfunc == "StringVar":
-                log.info(f"{m.cosmetic=} {m.key=} {m.default=} {m.gatherfunc=}")
+                # log.info(f"{m.cosmetic=} {m.key=} {m.default=} {m.gatherfunc=}")
                 all_options = getattr(self, m.gatherfunc)()
                 self.widget[m.key]["values"] = all_options
             
                 if self.config_vars[m.key].get() not in all_options:
-                    log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')
+                    # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')
                     self.config_vars[m.key].set(all_options[0])
             
     def _gender_filter(self, voice):
@@ -534,12 +534,12 @@ class GoogleCloud(TTSEngine):
             resp = client.list_voices(req)
             all_voices = []
             for voice in resp.voices:
-                log.info(f'{voice.language_codes=}')
-                log.info(dir(voice.language_codes))
+                # log.info(f'{voice.language_codes=}')
+                # log.info(dir(voice.language_codes))
 
                 language_codes = []
                 for code in voice.language_codes:
-                    log.info(f'{code=}')
+                    # log.info(f'{code=}')
                     language_codes.append(code)
                 row = {
                     'voice_name': voice.name,
@@ -547,9 +547,9 @@ class GoogleCloud(TTSEngine):
                     'gender': {1: 'Female', 2: 'Male'}[voice.ssml_gender.value],
                     'language_codes': language_codes
                 }
-                log.info(f'{row=}')
-                for key in row:
-                    log.info(f'{key} == {json.dumps(row[key])}')
+                # log.info(f'{row=}')
+                # for key in row:
+                #    log.info(f'{key} == {json.dumps(row[key])}')
 
                 all_voices.append(row)
             
@@ -653,7 +653,7 @@ class ElevenLabs(TTSEngine):
         if gender and not hasattr(self, 'gender'):
             self.gender = gender
         
-        log.info(f'ElevenLabs get_voice_name({gender=}) ({self.gender})')
+        # log.info(f'ElevenLabs get_voice_name({gender=}) ({self.gender})')
         out = set()
         for voice in all_voices:
             if self._gender_filter(voice):
@@ -679,7 +679,7 @@ class ElevenLabs(TTSEngine):
 
             all_voices = []
             for voice in all_raw_voices.voices:
-                log.info(f"{voice=}")
+                # log.info(f"{voice=}")
                 all_voices.append({
                     'id': voice.voice_id,
                     'voice_name': voice.name,
@@ -731,7 +731,7 @@ class ElevenLabs(TTSEngine):
         # model = elevenlabs.Model()
         model = None
         
-        log.info(f'Creating ttsElevenLab(<api_key>, voice={voice_name}, model={model})')
+        # log.info(f'Creating ttsElevenLab(<api_key>, voice={voice_name}, model={model})')
         return ttsElevenLabs(
             api_key=self.api_key, 
             stability=stability,
@@ -845,7 +845,7 @@ class AmazonPolly(TTSEngine):
         all_language_codes = models.diskcache(f'{self.key}_language_code')
 
         if all_language_codes is None:
-            log.info('Building AmazonPolly language_code cache')
+            # log.info('Building AmazonPolly language_code cache')
             all_voices = self.get_voices()
             out = set()
             
