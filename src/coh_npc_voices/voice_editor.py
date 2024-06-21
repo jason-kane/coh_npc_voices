@@ -35,7 +35,7 @@ ENGINE_OVERRIDE = {}
 
 #class ChoosePhrase(ttk.Frame):
 class WavfileMajorFrame(ttk.LabelFrame):    
-    ALL_PHRASES = "< Rebuild all phrases >"
+    ALL_PHRASES = "⪡  Rebuild all phrases  ⪢"
     def __init__(self, parent, detailside, *args, **kwargs):
         kwargs['text'] = 'Wavefile(s)'
         super().__init__(parent, *args, **kwargs)
@@ -718,7 +718,7 @@ class AddEffect(ttk.Frame):
     # hell buddy.  This is the shit that causing errors when people
     # use an app at different resolutions.  This will center at one spot
     # and all the other entries will be different.
-    add_an_effect = f"{'< Add an Effect >': ^70}"  # pad to center
+    add_an_effect = "⪡  Add an Effect  ⪢"
 
     def __init__(self, parent, effect_list, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)

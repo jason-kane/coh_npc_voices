@@ -631,7 +631,7 @@ def main():
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.iconbitmap("sidekick.ico")
 
-    root.geometry("640x640+200+200")
+    root.geometry("680x640+200+200")
     root.resizable(True, True)
     root.title("City of Heroes Sidekick")
 
