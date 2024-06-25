@@ -14,6 +14,7 @@ sys.path.append(
 
 import ctypes
 import logging
+import queue
 import win32process
 import win32con
 import win32api
@@ -674,19 +675,31 @@ def main():
         try:
             # the event queue is how messages are sent up
             # from children.
-            event_action = event_queue.get(block=False)
+            try:
+                event_action = event_queue.get(block=False)
+            except queue.Empty:
+                event_action = None, None
+
             # we got an action (no exception)
-            log.info('Event Received: %s', event_action)
+            # log.info('Event Received: %s', event_action)
             key, value = event_action
             
             if key == "SET_CHARACTER":
+                # if this chatter hasn't been started this 
+                # will fail.
+                if hasattr(character.chatter.cs, 'speaking_queue'):
+                    character.chatter.cs.speaking_queue.put(
+                        (None, f"Welcome back {value}", "system")
+                    )
+                
                 log.info('path set_chraracter')
                 character.chatter.hero = npc_chatter.Hero(value)
                 log.info('Calling set_hero()...')
                 character.set_hero()
                 last_character_update = datetime.now()
             elif key == "SPOKE":
-                # character named value just spoke
+                # name, category = value
+                log.info('Refreshing character list...')
                 listside.refresh_character_list()
             elif key == "RECHARGED":
                 log.info(f'Power {value} has recharged.')
@@ -711,20 +724,23 @@ def main():
                     else:
                         log.info(f'auto_{value.lower()} is disabled')
 
-                # /powexec_name "hasten"
-            else:
-                log.error('Unknown event_queue key: %s', key)
+            # else:
+            #     log.error('Unknown event_queue key: %s', key)
 
-        except Exception:
-            pass
+        except Exception as err:
+            log.info(f"{err=}")
+            raise
         
         if last_character_update:
-            if (datetime.now() - last_character_update) > update_frequency:
+            elapsed = datetime.now() - last_character_update
+            if elapsed > update_frequency:
                 character.set_hero()
                 last_character_update = datetime.now()
 
         root.update_idletasks()
         root.update()
+
+        # log.info('Primary loop')
 
 
 if __name__ == '__main__':
