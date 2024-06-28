@@ -1,15 +1,15 @@
-import os
-import logging
-import sys
-import re
 import hashlib
+import logging
+import os
+import re
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import create_engine
-from sqlalchemy_utils import database_exists, create_database
-import models
 import alembic.config
+import database.models as models
+from sqlalchemy import create_engine
+from sqlalchemy_utils import create_database, database_exists
 
 engine = create_engine("sqlite:///voices.db", echo=True)
 
@@ -22,9 +22,17 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
+alembic_ini = os.path.abspath(
+    os.path.join(
+        os.path.dirname(
+            os.path.realpath(__file__)
+        ), 
+    '..', 'alembic.ini')
+)
+
 alembicArgs = [
     '-c',
-    'alembic.ini',
+    alembic_ini,
     '--raiseerr',
     'upgrade', 
     'head',
@@ -70,16 +78,7 @@ if not database_exists(engine.url):
         session.add(default)
         session.commit()
 
-
-with set_directory(
-    os.path.abspath(
-        os.path.join(
-            os.path.dirname(
-                os.path.realpath(__file__)
-            ), 
-        '..', '..')
-    )):
-    alembic.config.main(argv=alembicArgs)
+alembic.config.main(argv=alembicArgs)
 
 
 def clean_customer_name(in_name):

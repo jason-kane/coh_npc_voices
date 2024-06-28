@@ -2,7 +2,7 @@ import logging
 import tkinter as tk
 from tkinter import font, ttk
 
-import models
+import cnv.database.models as models
 import numpy as np
 import pedalboard
 import voicebox

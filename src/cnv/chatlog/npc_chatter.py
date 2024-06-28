@@ -1,23 +1,23 @@
 import argparse
+import concurrent.futures
 import glob
 import io
 import logging
-import audio
-from datetime import datetime
 import os
 import queue
 import re
 import sys
 import threading
 import time
-import concurrent.futures
-import settings
+from datetime import datetime
 
-import db
-import models
+import database.db as db
+import database.models as models
+import lib.audio as audio
+import lib.settings as settings
 import pythoncom
-import voice_builder
 import voicebox
+import voices.voice_builder as voice_builder
 from pedalboard.io import AudioFile
 from voicebox.tts.utils import get_audio_from_wav_file
 
@@ -105,8 +105,9 @@ class ParallelTTS(threading.Thread):
                 self.makefile(cachefile, character, message, session)
 
             models.update_character_last_spoke(character, session)
-            if self.event_queue:
-                self.event_queue.put(("SPOKE", character))
+        self.event_queue.put(
+            ("SPOKE", (character.name, character.category))
+        )
 
         self.speaking_queue.task_done()
 

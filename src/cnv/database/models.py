@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import random
 import re
 import sys
@@ -9,8 +8,8 @@ from datetime import datetime
 from typing import Optional, Self
 
 import pyfiglet
-from src.coh_npc_voices import settings
-from src.coh_npc_voices.npc import GROUP_ALIASES, PRESETS, add_group_alias_stub
+from cnv.lib import settings
+from cnv.lib.settings import diskcache
 from sqlalchemy import (
     JSON,
     DateTime,
@@ -56,35 +55,8 @@ def db():
 
 Base = declarative_base()
 
-class Settings(Base):
-    __tablename__ = "settings"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    logdir: Mapped[Optional[str]] = orm.mapped_column(String(256))
-
-
 class InvalidPreset(Exception):
     """Error in the preset"""
-
-def get_settings():
-    with Session(engine) as session:
-        settings = session.scalars(
-            select(Settings)
-        ).first()
-    
-        if settings is None:
-            log.warning('Settings not found!')
-            settings = Settings(
-                logdir = ""
-            )
-            session.add(settings)
-            session.commit()
-
-            settings = session.scalars(
-                select(Settings)
-            ).first()
-
-        log.debug(dir(settings))
-        return settings
 
 def category_str2int(instr):
     try:
@@ -152,10 +124,10 @@ class Character(Base):
                 gender = None
                 group_name = None
             
-            if group_name and group_name in GROUP_ALIASES:
-                group_name = GROUP_ALIASES[group_name]
+            if group_name:
+                group_name = settings.get_alias(group_name)               
             
-            preset = PRESETS.get(group_name, {})
+            preset = settings.get_preset(group_name)
 
         # based on the preset, and some random choices
         # where the preset does not specify, create a voice
@@ -190,7 +162,12 @@ class Character(Base):
             # changes the default if all_npcs doesn't say otherwise.
             #
             # fall back to a random choice.
-            gender = preset.get('gender', random.choice(['Male', 'Female']))
+            gender = preset.get('gender', None)
+            if gender is None:
+                if name in ["Celestine", "Alessandra", ]:
+                    gender = 'Female'
+                else:
+                    gender = random.choice(['Male', 'Female'])
 
         # all of the available _engine_ configuration values
         engine_config_meta = session.scalars(
@@ -389,29 +366,6 @@ class EngineConfigMeta(Base):
 
     def __str__(self):
         return f"<EngineConfigMeta {self.engine_key=}, {self.cosmetic=}, {self.key=}, {self.varfunc=}, {self.default=}, {self.cfgdict=}, {self.gatherfunc=}/>"
-
-
-CACHE_DIR = 'cache'
-def diskcache(key, value=None):
-    """
-    key must be valid as a base filename
-    value must be None or a json-able object
-    """
-    log.debug(f'diskcache({key=}, {value=})')
-    filename = os.path.join(CACHE_DIR, key + ".json")
-    if value is None:
-        if os.path.exists(filename):
-            with open(filename, 'rb') as h:
-                content =json.loads(h.read())
-            return content
-    else:
-        if not os.path.exists(CACHE_DIR):
-            os.mkdir(CACHE_DIR)
-
-        with open(filename, 'w') as h:
-            h.write(json.dumps(value, indent=2))
-        
-        return value
 
 
 def get_engine_config(character_id, rank):

@@ -7,16 +7,15 @@ import sys
 import tkinter as tk
 from tkinter import font, ttk
 
-import db
-import effects
-import engines
-import models
-import npc_chatter
-import settings
+import chatlog.npc_chatter as npc_chatter
+import database.db as db
+import database.models as models
+import effects.effects as effects
+import engines.engines as engines
+import lib.settings as settings
 import voicebox
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-from npc import PRESETS
 from pedalboard.io import AudioFile
 from scipy.io import wavfile
 from sqlalchemy import delete, desc, select, update
@@ -1340,10 +1339,10 @@ class ListSide(ttk.Frame):
 
 class ChatterService:
     def start(self, event_queue):
-        speaking_queue = queue.Queue()
+        self.speaking_queue = queue.Queue()
 
-        npc_chatter.TightTTS(speaking_queue, event_queue)
-        speaking_queue.put((None, "Attaching to most recent log...", 'system'))
+        npc_chatter.TightTTS(self.speaking_queue, event_queue)
+        self.speaking_queue.put((None, "Attaching to most recent log...", 'system'))
 
         logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
         #logdir = "g:/CoH/homecoming/accounts/VVonder/Logs"
@@ -1352,7 +1351,7 @@ class ChatterService:
         npc = True
 
         ls = npc_chatter.LogStream(
-            logdir, speaking_queue, event_queue, badges, npc, team
+            logdir, self.speaking_queue, event_queue, badges, npc, team
         )
         while True:
             ls.tail()
@@ -1368,10 +1367,10 @@ class Chatter(ttk.Frame):
         self.button_text = tk.StringVar(value=self.attach_label)
         self.attached = False
         self.hero = None
-
-        settings = models.get_settings()
         
-        self.logdir = tk.StringVar(value=settings.logdir)
+        self.logdir = tk.StringVar(
+            value=settings.get_config_key('logdir', default='')
+        )
         self.logdir.trace_add('write', self.save_logdir)
 
         ttk.Button(
@@ -1400,14 +1399,8 @@ class Chatter(ttk.Frame):
 
     def save_logdir(self, *args):
         logdir = self.logdir.get()
-        log.info(f'Persisting setting logdir={logdir} to the database...')
-        with models.db() as session:
-            session.execute(
-                update(models.Settings).values(
-                    logdir=logdir
-                )
-            )
-            session.commit()
+        log.info(f'Persisting setting logdir={logdir}')
+        settings.set_config_key('logdir', logdir)
 
     def ask_directory(self):
         dirname = tk.filedialog.askdirectory()

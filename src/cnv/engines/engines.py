@@ -3,19 +3,19 @@ import logging
 import os
 import sys
 import tempfile
-import numpy as np
 import time
-from io import BytesIO
 import tkinter as tk
 from dataclasses import dataclass, field
+from io import BytesIO
 from tkinter import ttk
 from typing import Union
 
-import audio
 import boto3
+import cnv.database.models as models
+import cnv.lib.audio as audio
+import cnv.lib.settings as settings
 import elevenlabs
-import models
-import settings
+import numpy as np
 import tts.sapi
 import voicebox
 from elevenlabs.client import ElevenLabs as ELABS
