@@ -25,8 +25,9 @@ class ConfigurationTab(ttk.Frame):
         ).pack(side="left", fill="x", expand=True)
         current = settings.get_config_key('language', "English")
         self.language = tk.StringVar(value=current)
+
         default_engine_combo = ttk.Combobox(frame, textvariable=self.language)
-        default_engine_combo["values"] = ["English", "Spanish", "French"]
+        default_engine_combo["values"] = list(settings.LANGUAGES.keys())
         default_engine_combo["state"] = "readonly"
         default_engine_combo.pack(side="left", fill="x")
 

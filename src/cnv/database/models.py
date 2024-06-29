@@ -24,6 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.engine.interfaces import Connectable
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, Session, mapped_column, scoped_session, sessionmaker
+from translate import Translator
 
 logging.basicConfig(
     level=settings.LOGLEVEL,
@@ -491,6 +492,57 @@ class Translation(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     phrase_id: Mapped[int] = mapped_column(ForeignKey("phrases.id"))
     language_code: Mapped[Optional[str]] = mapped_column(String(2))
+    text: Mapped[str] = mapped_column(String(256))
+
+
+def get_translated(phrase_id):
+    log.info(f'Retrieving translation of {phrase_id=}')
+    language = settings.get_language_code()
+    is_translated = False
+    with db() as session:
+        phrase = session.execute(
+            select(Phrases).where(
+                Phrases.id == phrase_id
+            )
+        ).first()[0]
+    
+    log.info(f"{phrase=}")
+    message = phrase.text
+
+    if language != "en":
+        is_translated = True
+
+        # do we already have a translation?
+        with db() as session:
+            translated = session.execute(
+                select(Translation).where(
+                    Translation.phrase_id == phrase.id,
+                    Translation.language_code == language
+                )
+            ).first()
+        
+        if translated:
+            # we do?  perfect. use that.
+            message = translated[0].text
+        else:
+            # we don't.  make a new translation and cache it.
+            translator = Translator(to_lang=language)
+
+            log.info(f'Original: {message}')
+            message = translator.translate(message)
+            log.info(f'Translated: {message}')
+
+            with db() as session:
+                translated = Translation(
+                    phrase_id=phrase.id,
+                    language_code=language,
+                    text=message
+                )
+                session.add(translated)
+                session.commit()  
+            
+    return message, is_translated
+
 
 class Effects(Base):
     __tablename__ = "effects"

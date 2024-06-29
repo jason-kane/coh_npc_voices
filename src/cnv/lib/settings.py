@@ -14,6 +14,29 @@ DEFAULT_NORMALIZE = False
 PRESETS = "presets.json"
 ALIASES = "aliases.json"
 
+# want to include a new language?  
+# It needs to be supported by https://mymemory.translated.net/ And whatever TTS
+# engine you want to use 
+#
+#   https://cloud.google.com/text-to-speech/docs/voices
+#   https://docs.aws.amazon.com/polly/latest/dg/supported-languages.html
+#
+#  If it satisfies those two requirements.. add it to this list. that is all it
+#  takes.
+#
+# (translation, (voice)) any voice that has any of the the indicated prefixes
+# are considered acceptable
+# 
+LANGUAGES = {
+    "Chinese": ("zh", ("cmn", )),  # simplified
+    "English": ("en", ("en", )),
+    "French": ("fr", ("fr", )),
+    "German": ("de", ("de", )),
+    "Japanese": ("ja", ("ja", )),
+    "Korean": ("ko", ("ko", )),
+    "Spanish": ("es", ("es", ))
+}
+
 # by default, don't save things players say.  It's not likely
 # to cache hit anyway.
 PERSIST_PLAYER_CHAT = True
@@ -85,15 +108,20 @@ def get_alias(group):
 def get_preset(group):
     return get_config_key(key=group, default={}, cf="presets.json")
 
-
 def get_language_code():
+    """
+    Returns the two character language code for feeding the translator
+    """
     language = get_config_key('language')
-    
-    return {
-        "English": "en",
-        "Spanish": "es",
-        "French": "fr"
-    }[language]  
+    return LANGUAGES[language][0]
+
+def get_voice_language_codes():
+    """
+    Returns a list of language codes that would be acceptable for allow-list
+    filtering voices in any engine.
+    """
+    language = get_config_key('language')
+    return LANGUAGES[language][1]
 
 CACHE_DIR = "cache"
 
@@ -118,7 +146,7 @@ def cache_filename(name, message):
 
 def get_cachefile(name, message, category):
     name, clean_name = clean_customer_name(name)
-    log.debug(f"{name} -- {clean_name}")
+    log.info(f"{name=} {clean_name=} {message=}")
 
     # ie: abcde_timetodan.mp3
     # this should be unique to this messags, it's only

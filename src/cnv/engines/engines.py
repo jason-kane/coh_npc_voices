@@ -372,15 +372,18 @@ class TTSEngine(ttk.Frame):
             if m.varfunc == "StringVar":
                 # log.info(f"{m.cosmetic=} {m.key=} {m.default=} {m.gatherfunc=}")
                 all_options = getattr(self, m.gatherfunc)()
+                if not all_options:
+                    log.error(f'{m.gatherfunc=} returned no options ({self.cosmetic})')
+
                 self.widget[m.key]["values"] = all_options
             
                 if self.config_vars[m.key].get() not in all_options:
-                    # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')
+                    # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')                    
                     self.config_vars[m.key].set(all_options[0])
             
     def _gender_filter(self, voice):
         if hasattr(self, 'gender') and self.gender:
-            # log.debug(f'{self.gender.title()} ?= {voice["gender"].title()}')
+            log.debug(f'{self.gender.title()} ?= {voice["gender"].title()}')
             try:
                 return self.gender.title() == voice["gender"].title()
             except KeyError:
@@ -392,6 +395,313 @@ class TTSEngine(ttk.Frame):
 class WindowsTTS(TTSEngine):
     cosmetic = "Windows TTS"
     key = "windowstts"
+
+    VOICE_SUPERSET = {
+        'Hoda': {
+            'gender': 'Female',
+            'language_code': 'arb' # arabic
+        },
+        'Naayf': {
+            'gender': 'Male',
+            'language_code': 'ar-SA' # arabic (saudi)
+        }, 
+        'Ivan': {
+            'gender': 'Male',
+            'language_code': 'bg-BG' # Bulgarian
+        },
+        'Herena': {
+            'gender': 'Female',
+            'language_code': 'ca-ES' # Catalan
+        },
+        'Kangkang': {
+            'gender': 'Male',
+            'language_code': 'cmn-CN' # Chinese (simplified)
+        },
+        'Huihui': {
+            'gender': 'Female',
+            'language_code': 'cmn-CN' # Chinese (simplified)
+        },
+        "Yaoyao": {
+            'gender': 'Female',
+            'language_code': 'cmn-CN' # Chinese (simplified)
+        },
+        'Danny': {
+            'gender': 'Male',
+            'language_code': 'yue-CN' # Cantonese (Traditional, Hong Kong SAR)
+        },
+        'Tracy': {
+            'gender': 'Female',
+            'language_code': 'yue-CN' # Cantonese (Traditional, Hong Kong SAR)
+        },
+        'Zhiwei': {
+            'gender': 'Male',
+            'language_code': 'yue-CN' # Chinese (Traditional, Taiwan)
+        },
+        'Matej': {
+            'gender': 'Male',
+            'language_code': 'hr-HR' # Croatian
+        },
+        'Jakub': {
+            'gender': 'Male',
+            'language_code': 'cs-CZ' # Czech
+        },
+        "Helle": {
+            'gender': 'Female',
+            'language_code': 'da-DK' # Danish
+        }, 
+        "Frank": {
+            'gender': 'Male',
+            'language_code': 'nl-NL' # Dutch
+        }, 
+        "James": {
+            'gender': 'Male',
+            'language_code': 'en-AU' # English (Australia)
+        },
+        "Catherine": {
+            'gender': 'Female',
+            'language_code': 'en-AU' # English (Australia)
+        },
+        "Richard": {
+            'gender': 'Male',
+            'language_code': 'en-CA' # English (Canada)
+        },
+        "Linda": {
+            'gender': 'Female',
+            'language_code': 'en-CA' # English (Canada)
+        },
+        "Nathalie": {
+            'gender': 'Female',
+            'language_code': 'en-CA' # English (Canada) (this might be french, idk)
+        },        
+        "George": {
+            'gender': 'Male',
+            'language_code': 'en-GB' # English (GB)
+        },
+        "Hazel": {
+            'gender': 'Female',
+            'language_code': 'en-GB' # English (GB)
+        },
+        "Susan": {
+            'gender': 'Female',
+            'language_code': 'en-GB' # English (GB)
+        },
+        "Ravi": {
+            'gender': 'Male',
+            'language_code': 'en-IN' # English (India)
+        },
+        "Heera": {
+            'gender': 'Female',
+            'language_code': 'en-IN' # English (India)
+        },
+        "Sean": {
+            'gender': 'Male',
+            'language_code': 'en-IE' # English (Ireland)
+        },
+        "David": {
+            'gender': 'Male',
+            'language_code': 'en-US' # English (US)
+        },
+        "Mark": {
+            'gender': 'Male',
+            'language_code': 'en-US' # English (US)
+        },
+        "Zira": {
+            'gender': 'Female',
+            'language_code': 'en-US' # English (US)
+        },
+        "Heidi": {
+            'gender': 'Female',
+            'language_code': 'fi-FL' # Finnish
+        },
+        "Bart": {
+            'gender': 'Male',
+            'language_code': 'nl-BE' # Flemish (Belgian Dutch)
+        },
+        "Claude": {
+            'gender': 'Male',
+            'language_code': 'fr-CA' # French (Canadian)
+        },
+        "Caroline": {
+            'gender': 'Female',
+            'language_code': 'fr-CA' # French (Canadian)
+        },
+        "Paul": {
+            'gender': 'Male',
+            'language_code': 'fr-FR' # French
+        },
+        "Hortense": {
+            'gender': 'Female',
+            'language_code': 'fr-FR' # French
+        },
+        "Julie": {
+            'gender': 'Female',
+            'language_code': 'fr-FR' # French
+        },
+        "Guillaume": {
+            'gender': 'Male',
+            'language_code': 'fr-CH' # French (Switzerland)
+        },
+        "Michael": {
+            'gender': 'Male',
+            'language_code': 'de-AT' # German (Austria)
+        },
+        "Stefan": {
+            'gender': 'Male',
+            'language_code': 'de-DE' # German
+        },
+        "Hedda": {
+            'gender': 'Female',
+            'language_code': 'de-DE' # German
+        },
+        "Katja": {
+            'gender': 'Female',
+            'language_code': 'de-DE' # German
+        },
+        "Karsten": {
+            'gender': 'Male',
+            'language_code': 'de-CH' # German (Switzerland)
+        },
+        "Stefanos": {
+            'gender': 'Male',
+            'language_code': 'el-GR' # Greek
+        },
+        "Asaf": {
+            'gender': 'Male',
+            'language_code': 'he-IL' # Hebrew
+        },
+        "Hemant": {
+            'gender': 'Male',
+            'language_code': 'hi-IN' # Hindi (India)
+        },
+        "Kalpana": {
+            'gender': 'Female',
+            'language_code': 'hi-IN' # Hindi (India)
+        },
+        "Szabolcs": {
+            'gender': 'Male',
+            'language_code': 'hu-HU' # Hungarian
+        },
+        "Andika": {
+            'gender': 'Male',
+            'language_code': 'id-ID' # Indonesian
+        },
+        "Cosimo": {
+            'gender': 'Male',
+            'language_code': 'it-IT' # Italian
+        },
+        "Elsa": {
+            'gender': 'Female',
+            'language_code': 'it-IT' # Italian
+        },
+        "Ichiro": {
+            'gender': 'Male',
+            'language_code': 'ja-JP' # Japanese
+        },
+        "Sayaka": {
+            'gender': 'Male',
+            'language_code': 'ja-JP' # Japanese
+        },
+        "Ayumi": {
+            'gender': 'Female',
+            'language_code': 'ja-JP' # Japanese
+        },
+        "Haruka": {
+            'gender': 'Female',
+            'language_code': 'ja-JP' # Japanese
+        },
+        "Rizwan": {
+            'gender': 'Male',
+            'language_code': 'ms-MY' # Malay
+        },
+        "Jon": {
+            'gender': 'Male',
+            'language_code': 'nb-NO' # Norwegian
+        },
+        "Adam": {
+            'gender': 'Male',
+            'language_code': 'pl-PL' # Polish
+        },
+        "Paulina": {
+            'gender': 'Female',
+            'language_code': 'pl-PL' # Polish
+        },
+        "Daniel": {
+            'gender': 'Male',
+            'language_code': 'pt-BR' # Portuguese (Brazil)
+        },
+        "Maria": {
+            'gender': 'Female',
+            'language_code': 'pt-BR' # Portuguese (Brazil)
+        },
+        "Helia": {
+            'gender': 'Female',
+            'language_code': 'pt-PT' # Portuguese
+        },
+        "Andrei": {
+            'gender': 'Male',
+            'language_code': 'ro-RO' # Romanian
+        },
+        "Pavel": {
+            'gender': 'Male',
+            'language_code': 'ru-RU' # Russian
+        },
+        "Irina": {
+            'gender': 'Female',
+            'language_code': 'ru-RU' # Russian
+        },
+        "Filip": {
+            'gender': 'Male',
+            'language_code': 'sk-SK' # Slovak
+        },
+        "Lado": {
+            'gender': 'Male',
+            'language_code': 'hu-SL' # Slovenian
+        },
+        "Heami": {
+            'gender': 'Female',
+            'language_code': 'ko-KR' # Korean
+        },
+        "Pablo": {
+            'gender': 'Male',
+            'language_code': 'es-ES' # Spanish (Spain)
+        },
+        "Helena": {
+            'gender': 'Female',
+            'language_code': 'es-ES' # Spanish (Spain)
+        },        
+        "Laura": {
+            'gender': 'Female',
+            'language_code': 'es-ES' # Spanish (Spain)
+        },        
+        "Raul": {
+            'gender': 'Male',
+            'language_code': 'es-MX' # Spanish (Mexico)
+        },
+        "Sabina": {
+            'gender': 'Female',
+            'language_code': 'es-MX' # Spanish (Mexico)
+        },        
+        "Bengt": {
+            'gender': 'Male',
+            'language_code': 'sv-SE' # Swedish
+        },
+        "Valluvar": {
+            'gender': 'Male',
+            'language_code': 'ta-IN' # Tamil
+        },
+        "Pattara": {
+            'gender': 'Male',
+            'language_code': 'th-TH' # Thai
+        },
+        "Tolga": {
+            'gender': 'Male',
+            'language_code': 'tr-TR' # Turkish
+        },
+        "An": {
+            'gender': 'Male',
+            'language_code': 'vi-VN' # Vietnamese
+        },
+    }
 
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
@@ -407,29 +717,8 @@ class WindowsTTS(TTSEngine):
         return WindowsSapi(rate=rate, voice=voice_name)
 
     def name_to_gender(self, name):
-        if name in [
-            "Catherine",
-            "Hazel",
-            "Hazel Desktop",
-            "Heera",
-            "Linda",
-            "Susan",
-            "Zira",
-            "Zira Desktop"
-        ]: 
-            return 'Female'
-
-        elif name in [
-            "David",
-            "David Desktop",
-            "George",
-            "James",
-            "Mark",
-            "Ravi",
-            "Richard",
-            "Sean"
-        ]:
-            return 'Male'
+        if name in self.VOICE_SUPERSET:
+            return self.VOICE_SUPERSET[name]["gender"]        
         return 'Neutral'
 
     def get_voice_names(self, gender=None):
@@ -440,25 +729,50 @@ class WindowsTTS(TTSEngine):
         machine to machine.
         """
         log.info(f'Retrieving TTS voice names filtered to only show gender {self.gender}')
-        
-        all_voices = models.diskcache(f"{self.key}_voice_name")
+        # all_voices = models.diskcache(f"{self.key}_voice_name")
+        all_voices = None
+
         if all_voices is None:
             all_voices = []
             wintts = tts.sapi.Sapi()
             voices = wintts.get_voice_names()
             for v in voices:
+                if "Desktop" in v:
+                    continue
+
                 name = " ".join(v.split("-")[0].split()[1:])
-                all_voices.append({
-                    'voice_name': name,
-                    'gender': self.name_to_gender(name)
-                })
+                if name in self.VOICE_SUPERSET:
+                    all_voices.append({
+                        'voice_name': name,
+                        'gender': self.name_to_gender(name),
+                        'language_code': self.VOICE_SUPERSET[name]['language_code']
+                    })
+                else:
+                    all_voices.append({
+                        'voice_name': name,
+                        'gender': self.name_to_gender(name)
+                    })
             
             models.diskcache(f"{self.key}_voice_name", all_voices)
       
+        allowed_language_codes = settings.get_voice_language_codes()
         nice_names = []
+
         for voice in all_voices:
             if gender and voice['gender'] != gender:
                 continue
+            
+            # filter out voices that are not compatible with our language
+            if 'language_code' in voice:
+                found = False
+                for code in allowed_language_codes:
+                    if f"{code}-" in voice['language_code']:
+                        found = True
+                    else:
+                        log.debug(f"{code}- not found in {voice['language_code']}")
+
+                if not found:
+                    continue
             
             nice_names.append(voice["voice_name"])
 
@@ -479,21 +793,29 @@ class GoogleCloud(TTSEngine):
         """
         True if this voice is able to speak this language_code.
         """
-        selected_language_code = settings.get_language_code()
+        allowed_language_codes = settings.get_voice_language_codes()           
+
         # two letter code ala: en, and matches against en-whatever
-        
-        return any(f"{selected_language_code}-" in code for code in voice["language_codes"])
+        for allowed_code in allowed_language_codes:
+            if any(f"{allowed_code}-" in code for code in voice["language_codes"]):
+                log.info(f'{allowed_code=} matches with {voice["language_codes"]=}')
+                return True
+        return False
 
     def get_voice_names(self, gender=None):
         all_voices = self.get_voices()
 
         if gender and not hasattr(self, 'gender'):
             self.gender = gender
-
+        
         out = set()
         for voice in all_voices:
-            if self._language_code_filter(voice) and self._gender_filter(voice):
-                out.add(voice['voice_name'])
+            if self._language_code_filter(voice):
+                if self._gender_filter(voice):
+                    out.add(voice['voice_name'])
+        
+        if not out:
+            log.error(f'There are no voices available with language={self.language_code} and gender={self.gender}')
         
         out = sorted(list(out))
 
@@ -553,14 +875,15 @@ class GoogleCloud(TTSEngine):
         """
         first compatible language code
         """
-        selected_language_code = settings.get_language_code()
+        allowed_language_codes = settings.get_voice_language_codes()
 
         all_voices = self.get_voices()
         for voice in all_voices:
             if voice["voice_name"] == voice_name:
                 for code in voice['language_codes']:
-                    if f"{selected_language_code}-" in code:
-                        return code
+                    for allowed in allowed_language_codes:
+                        if f"{allowed}-" in code:
+                            return code
         return None
 
     def get_tts(self):
@@ -613,11 +936,13 @@ def as_gender(in_gender):
 
 
 class ElevenLabs(TTSEngine):
+    """
+    Elevenlabs detects the incoming language; so in theory every voice works with every language.  I have doubts.
+    """
     cosmetic = "Eleven Labs"
     key = "elevenlabs"
     api_key = None
-    language_code = ""
-    
+
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Stability', 'stability', "DoubleVar", 0.5, {'min': 0, 'max': 1, 'resolution': 0.025}, None),
@@ -812,7 +1137,6 @@ class AmazonPolly(TTSEngine):
     key = "amazonpolly"
 
     config = (
-        ('Language Code', 'language_code', "StringVar", 'en-US', {}, "get_language_codes"),
         ('Engine', 'engine', "StringVar", 'standard', {}, "get_engine_names"),
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Sample Rate', 'sample_rate', "StringVar", '16000', {}, "get_sample_rates")
@@ -831,12 +1155,18 @@ class AmazonPolly(TTSEngine):
         """
         True if this voice is able to speak this language_code.
         """
-        selected_language_code = self.config_vars["language_code"].get()
-        return (
-            selected_language_code == voice["LanguageCode"]
-        or
-            selected_language_code in voice.get("AdditionalLanguageCodes", [])
-        )
+        allowed_language_codes = settings.get_voice_language_codes()     
+        
+        for allowed_code in allowed_language_codes:
+            if (
+                f"{allowed_code}-" in voice["LanguageCode"]
+            ):
+                #or
+                #f"{allowed_code}-" in code for code in voice.get("AdditionalLanguageCodes", [])
+            #):
+                log.debug(f'{voice["LanguageCode"]=}/{voice.get('AdditionalLanguageCodes', [])} is allowed for {allowed_code=}')
+                return True
+        return False
 
     def get_language_codes(self):
         all_language_codes = models.diskcache(f'{self.key}_language_code')
@@ -869,12 +1199,21 @@ class AmazonPolly(TTSEngine):
             all_voices = self.get_voices()
 
             out = set()
+            secondary = set()
             # is this going to be intuitive or just weird?
             for voice in all_voices:
 
-                if self._language_code_filter(voice) and self._gender_filter(voice):
-                    for code in voice.get('SupportedEngines', []):
-                        out.add(code)
+                if self._language_code_filter(voice):
+                    if self._gender_filter(voice):
+                        for code in voice.get('SupportedEngines', []):
+                            out.add(code)
+                    else:
+                        for code in voice.get('SupportedEngines', []):
+                            secondary.add(code)
+            
+            if not out:
+                log.info('No engines exist that support this language/gender.  Ignoring gender.')
+                out = secondary
 
             all_engines = [ {'engine': engine_name} for engine_name in out ]
             models.diskcache(f'{self.key}_engine', all_engines)
@@ -888,14 +1227,20 @@ class AmazonPolly(TTSEngine):
             self.gender = gender
 
         out = set()
-        # log.info(f'filtering to include only language_code == {self.config_vars["language_code"].get()}')
-        # log.info(f'filtering to include only gender == {self.gender}')
+        secondary = set()
         for voice in all_voices:
-            if self._language_code_filter(voice) and self._gender_filter(voice):
-                log.debug(f'Including voice {voice["Name"]}')
-                out.add(voice["Name"])
+            if self._language_code_filter(voice):
+                if self._gender_filter(voice):
+                    log.debug(f'Including voice {voice["Name"]}')
+                    out.add(voice["Name"])
+                else:
+                    secondary.add(voice["Name"])
             else:
                 log.debug(f'Excluding {voice["Name"]}')
+
+        if not out:
+            log.info('No voices exist that support this language/gender.  Ignoring gender.')
+            out = secondary
 
         out = sorted(list(out))
         
@@ -970,7 +1315,7 @@ class AmazonPolly(TTSEngine):
         # for the language name-ISO 3166 country code) for filtering the list of
         # voices returned. If you don’t specify this optional parameter, all
         # available voices are returned.
-        language_code=self.override.get('language_code', self.config_vars["language_code"].get())
+        # language_code=self.override.get('language_code', self.config_vars["language_code"].get())
         lexicon_names=[]
         sample_rate = self.override.get('sample_rate', self.config_vars["sample_rate"].get())
         
@@ -978,7 +1323,7 @@ class AmazonPolly(TTSEngine):
             client=self.get_client(),
             voice_id=voice_id.strip(),
             engine=engine,
-            language_code=language_code,
+            # language_code=language_code,
             lexicon_names=lexicon_names,
             sample_rate=int(sample_rate)
         )

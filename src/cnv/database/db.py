@@ -1,7 +1,6 @@
-import hashlib
+
 import logging
 import os
-import re
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -78,21 +77,5 @@ if not database_exists(engine.url):
         session.add(default)
         session.commit()
 
+log.info('Checking for database migration...')
 alembic.config.main(argv=alembicArgs)
-
-
-def clean_customer_name(in_name):
-    if in_name:
-        clean_name = re.sub(r'[^\w]', '', in_name)
-    else:
-        clean_name = "GREAT_NAMELESS_ONE"
-
-    if in_name is None:
-        in_name = "GREAT NAMELESS ONE"
-
-    return in_name, clean_name
-
-def cache_filename(name, message):
-    clean_message = re.sub(r'[^\w]', '', message)
-    clean_message = hashlib.sha256(message.encode()).hexdigest()[:5] + f"_{clean_message[:10]}"
-    return clean_message + ".mp3"

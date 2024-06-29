@@ -13,7 +13,7 @@ from cnv.chatlog import npc_chatter
 from cnv.database import db, models
 from cnv.effects import effects
 from cnv.engines import engines
-from cnv.lib import settings
+from cnv.lib import settings, audio
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from pedalboard.io import AudioFile
@@ -35,19 +35,24 @@ ENGINE_OVERRIDE = {}
 #class ChoosePhrase(ttk.Frame):
 class WavfileMajorFrame(ttk.LabelFrame):    
     ALL_PHRASES = "⪡  Rebuild all phrases  ⪢"
+    
     def __init__(self, parent, detailside, *args, **kwargs):
         kwargs['text'] = 'Wavefile(s)'
         super().__init__(parent, *args, **kwargs)
-        topline = ttk.Frame(self)
+        self.phrase_id = []
+
+        frame = ttk.Frame(self)
         
         self.detailside = detailside
+
+        self.translated = tk.StringVar(value="")
 
         self.chosen_phrase = tk.StringVar(
             value="<Choose or type a phrase>"
         )
         self.chosen_phrase.trace_add('write', self.chose_phrase)
         self.options = ttk.Combobox(
-            topline, 
+            frame, 
             textvariable=self.chosen_phrase
         )
         self.options["values"] = []
@@ -55,48 +60,71 @@ class WavfileMajorFrame(ttk.LabelFrame):
         self.populate_phrases()
         self.options.pack(side="left", fill="x", expand=True)
 
-        # TODO:  there should be two buttons, one to regenerate
-        # the file and another to play the file.  The play button
-        # is greyed out unless the file exists.  Big UI change: you
-        # can regenerate everything for someone that talks a lot
-        # without having to wait and listen to them all.  You can
-        # also listen to everything a character says, back to back
-        # without spending any TTS credits (presuming cached).
-        self.play_btn = ttk.Button(topline, text="Play", command=self.play_cache)
+        self.play_btn = ttk.Button(frame, text="Play", command=self.play_cache)
 
-        regen_btn = ttk.Button(topline, text="Regen", command=self.say_it)
+        regen_btn = ttk.Button(frame, text="Regen", command=self.say_it)
         regen_btn.pack(side="left")
         self.play_btn.pack(side="left")        
 
-        topline.pack(side="top", expand=True, fill="x")
+        frame.pack(side="top", expand=True, fill="x")
+
+        # NOT inside the frame
+        ttk.Label(
+            self,
+            textvariable=self.translated,
+            wraplength=350,
+            anchor="nw",
+            justify="left"
+        ).pack(side="top", fill="x")    
 
         self.visualize_wav = None
 
-    def chose_phrase(self, *args, **kwargs):
-        # a phrase was chosen.
-        character = self.detailside.parent.get_selected_character()
-        phrase = self.chosen_phrase.get()
-        cachefile = self.get_cachefile(character, phrase)
-
-        if os.path.exists(cachefile):
-            self.play_btn["state"] = "normal"
-            # convert mp3 to wav file
-            with AudioFile(cachefile) as input:
-                with AudioFile(
-                    filename=cachefile + ".wav",
-                    samplerate=input.samplerate,
-                    num_channels=input.num_channels,
-                ) as output:
-                    while input.tell() < input.frames:
-                        output.write(input.read(1024))
-
-            # and display it
-            self.show_wave(cachefile + ".wav")
-        else:
-            log.info(f'Cached mp3 {cachefile} does not exist.')
-            self.clear_wave()
-            self.play_btn["state"] = "disabled"
+    def set_translated(self, *args, **kwargs):
+        """
+        The translated string has changed, display it in
+        the user interface.
+        """
         return
+
+    def chose_phrase(self, *args, **kwargs):
+        """
+        a phrase was chosen.
+        """
+        # make sure this characters is the one selected in the charcter list
+        character = self.detailside.parent.get_selected_character()
+        
+        # retrieve the selected phrase
+        selected_index = self.options.current()
+        
+        if selected_index >= 0:
+            log.info(f'Retrieving phrase at index {selected_index}')
+            phrase_id = self.phrase_id[selected_index]
+
+            # we want to work with the translated string
+            message, is_translated = models.get_translated(phrase_id)                
+
+            if is_translated:
+                self.translated.set(message)
+            else:
+                self.translated.set("")
+
+            # find the file associated with this phrase
+            cachefile = self.get_cachefile(character, message)
+
+            if os.path.exists(cachefile):
+                wavfilename = audio.mp3file_to_wavfile(
+                    mp3filename=cachefile
+                )
+                self.play_btn["state"] = "normal"
+                # and display the wav
+                self.show_wave(wavfilename)
+                return
+        
+            log.info(f'Cached mp3 {cachefile} does not exist.')
+
+        self.clear_wave()
+        self.play_btn["state"] = "disabled"
+
 
     def populate_phrases(self):
         log.info('** populate_phrases() called **')
@@ -119,17 +147,22 @@ class WavfileMajorFrame(ttk.LabelFrame):
                     models.Phrases.character_id == character.id
                 )
             ).all()
-       
+
         if character_phrases:
             # default to the first phrase
             self.chosen_phrase.set(character_phrases[0].text)
         else:
             self.chosen_phrase.set(
                 f'I have no record of what {character.name} says.')
-            
-        self.options["values"] = [
-            p.text for p in character_phrases
-        ] + [ self.ALL_PHRASES ]
+        
+        values = []
+        self.phrase_id = []
+        for phrase in character_phrases:
+            self.phrase_id.append(phrase.id)
+            values.append(phrase.text)
+        
+        values.append(self.ALL_PHRASES)
+        self.options["values"] = values
 
     def clear_wave(self):
         if hasattr(self, 'canvas'):
@@ -195,42 +228,43 @@ class WavfileMajorFrame(ttk.LabelFrame):
         """
         global ENGINE_OVERRIDE
         message = self.chosen_phrase.get()
-        log.debug(f"Speak: {message}")
-
+        
         character = self.detailside.parent.get_selected_character()
-       
-        if message == self.ALL_PHRASES:
-            # we want to re-speak _every_ phrase, one at a time
-            message = self.options["values"]
-        else:
-            message = [ message ]
 
-        for msg in message:
-            # skip the all_phrases placeholder if we see it.
-            if msg == self.ALL_PHRASES:
-                continue
-            
+        if message == self.ALL_PHRASES:
+            with models.db() as session:
+                # every phrase this character has ever said previously.  These make it
+                # easy to tune the voice with the same dialog.
+                all_phrases = session.scalars(
+                    select(models.Phrases).where(
+                        models.Phrases.character_id == character.id
+                    )
+                ).all()
+        else:
+            phrase_id = self.phrase_id[self.options.current()]
+            with models.db() as session:
+                all_phrases = session.scalars(
+                        select(models.Phrases).where(
+                            models.Phrases.id == phrase_id
+                        )
+                    ).all()
+
+        for phrase in all_phrases:
+            msg, is_translated = models.get_translated(phrase.id)
             cachefile = self.get_cachefile(character, msg)
 
-            with AudioFile(cachefile) as input:
-                # convert the mp3 to a wav
-                with AudioFile(
-                    filename=cachefile + ".wav",
-                    samplerate=input.samplerate,
-                    num_channels=input.num_channels,
-                ) as output:
-                    while input.tell() < input.frames:
-                        output.write(input.read(1024))
+            wavfilename = audio.mp3file_to_wavfile(
+                mp3filename=cachefile
+            )
 
-                self.show_wave(cachefile + ".wav")
+            self.show_wave(wavfilename)
 
-                # wrap the wav as an Audio()
-                audio = get_audio_from_wav_file(cachefile + ".wav")
-                os.unlink(cachefile + ".wav")
-                
-                # play the Audio()
-                voicebox.sinks.SoundDevice().play(audio)            
-                        
+            # wrap the wav as an Audio()
+            audio_obj = get_audio_from_wav_file(wavfilename)
+            #os.unlink(cachefile + ".wav")
+            
+            # play the Audio()
+            voicebox.sinks.SoundDevice().play(audio_obj)
             
     def say_it(self, use_secondary=False):
         """
@@ -258,126 +292,82 @@ class WavfileMajorFrame(ttk.LabelFrame):
 
         character = self.detailside.parent.get_selected_character()
         
-        with models.db() as session:
-            # every phrase this character has ever said previously.  These make it
-            # easy to tune the voice with the same dialog.
-            all_phrases = session.scalars(
-                    select(models.Phrases).where(
-                        models.Phrases.character_id == character.id
-                    )
-                ).all()
-
         if message == self.ALL_PHRASES:
-            # we want to re-speak _every_ phrase, one at a time to populate the 
-            # entire disk cache with the current voice..
-            message = self.options["values"]
+            with models.db() as session:
+                # every phrase this character has ever said previously.  These make it
+                # easy to tune the voice with the same dialog.
+                all_phrases = session.scalars(
+                        select(models.Phrases).where(
+                            models.Phrases.character_id == character.id
+                        )
+                    ).all()
         else:
-            message = [ message ]
+            phrase_id = self.phrase_id[self.options.current()]
+            with models.db() as session:
+                all_phrases = session.scalars(
+                        select(models.Phrases).where(
+                            models.Phrases.id == phrase_id
+                        )
+                    ).all()
 
-        for msg in message:
-            # skip the all_phrases placeholder if we see it.
-            if msg == self.ALL_PHRASES:
-                continue
+        for phrase in all_phrases:           
+            log.info(f'{phrase=}')
 
-            _, clean_name = settings.clean_customer_name(character.name)
+            # this is an existing phrase
+            # is there an existing translation?
+            msg, is_translated = models.get_translated(phrase.id)
             
-            log.debug(f'all_phrases: {all_phrases}')
+            cachefile = settings.get_cachefile(
+                character.name,
+                msg,
+                character.cat_str()
+            )
 
+            sink = Distributor([
+                SoundDevice(),
+                WaveFile(cachefile + '.wav')
+            ])
+
+            log.debug(f'effect_list: {effect_list}')
+            log.info(f"Creating ttsengine for {character.name}")
+
+            # None because we aren't attaching any widgets
+            try:
+                rank = 'primary'
+                if use_secondary or ENGINE_OVERRIDE.get(character.engine, False):
+                    rank = 'secondary'
+                
+                ttsengine(None, rank, name=character.name, category=character.category).say(msg, effect_list, sink=sink)
+            except engines.USE_SECONDARY:
+                ENGINE_OVERRIDE[character.engine] = True
+                return self.say_it(use_secondary=True)
+                    
+            self.show_wave(cachefile + ".wav")
+
+            cachefile = audio.wavfile_to_mp3file(
+                cachefile + ".wav",
+                mp3filename=cachefile
+            )
+            # unlink the wav file?
+
+        if not all_phrases:
+            # this isn't an existing phrase
+            # No Cache
+            log.info(f'Bypassing filesystem caching ({msg})')
             language = settings.get_language_code()
 
-            for phrase in all_phrases:
-                if phrase.text == message:
-                    break
-                phrase = None
+            if language != "en":
+                log.info(f'Translating "{msg}" into {language}')
+                translator = Translator(to_lang=language)
+                msg = translator.translate(msg)
 
-            if phrase:
-                # this is an existing phrase
-                # is there an existing translation?
-                if language != "en":
-                    with models.db() as session:
-                        translated = session.execute(
-                            select(models.Translation).where(
-                                models.Translations.phrase_id == phrase.id,
-                                models.Translations.language_code == language
-                            )
-                        ).first()
-                    
-                    if translated:
-                        # use the existing translation if we have one
-                        message = translated.text
-                    else:
-                        # otherwise create a new one
-                        translator = Translator(to_lang=language)
-                        msg = translator.translate(msg)
-                        with models.db() as session:
-                            translated = models.Translation(
-                                phrase_id=phrase.id,
-                                langauge_code=language,
-                                text=message
-                            )
-                            session.add(translated)
-                            session.commit()  
-
-                filename = settings.cache_filename(character.name, msg)
-
-                cachefile = os.path.abspath(
-                    os.path.join(
-                        "clip_library",
-                        character.cat_str(),
-                        clean_name,
-                        filename
-                    )
-                )
-
-                sink = Distributor([
-                    SoundDevice(),
-                    WaveFile(cachefile + '.wav')
-                ])
-
-                log.debug(f'effect_list: {effect_list}')
-                log.info(f"Creating ttsengine for {character.name}")
-
-                # None because we aren't attaching any widgets
-                try:
-                    rank = 'primary'
-                    if use_secondary or ENGINE_OVERRIDE.get(character.engine, False):
-                        rank = 'secondary'
-                    
-                    ttsengine(None, rank, name=character.name, category=character.category).say(msg, effect_list, sink=sink)
-                except engines.USE_SECONDARY:
-                    ENGINE_OVERRIDE[character.engine] = True
-                    return self.say_it(use_secondary=True)
-                        
-                self.show_wave(cachefile + ".wav")
-
-                log.info('Converting to mp3...')
-                with AudioFile(cachefile + ".wav") as input:
-                    with AudioFile(
-                        filename=cachefile, 
-                        samplerate=input.samplerate,
-                        num_channels=input.num_channels
-                    ) as output:
-                        while input.tell() < input.frames:
-                            output.write(input.read(1024))
-                        log.info(f'Wrote {cachefile}')
-                # unlink the wav file?
-            else:
-                # this isn't an existing phrase
-                # No Cache
-                log.info(f'Bypassing filesystem caching ({msg})')
-                
-                if language != "en":
-                    log.info(f'Translating "{msg}" into {language}')
-                    translator = Translator(to_lang=language)
-                    msg = translator.translate(msg)
-
-                try:
-                    ttsengine(None, rank, character.name, character.category).say(msg, effect_list)
-                except engines.DISABLE_ENGINES:
-                    # I'm not even sure what we want to do.  The user clicked 'play' but
-                    # we don't have any quota left for the selected engine.
-                    # lets go dumb-simple.
-                    tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
+            try:
+                ttsengine(None, rank, character.name, character.category).say(msg, effect_list)
+            except engines.DISABLE_ENGINES:
+                # I'm not even sure what we want to do.  The user clicked 'play' but
+                # we don't have any quota left for the selected engine.
+                # lets go dumb-simple.
+                tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
 
 
 class EngineSelection(ttk.Frame):
