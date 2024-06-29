@@ -201,11 +201,11 @@ class EffectParameterEditor(ttk.Frame):
         return None
     
     def clear_traces(self):
-        log.info('Clearing traces...')
+        log.debug('Clearing traces...')
         for trace_var in self.traces:
-            log.info(f'{trace_var=}')
+            log.debug(f'{trace_var=}')
             for trace in self.traces[trace_var].trace_info():
-                log.info(f"trace: {trace!r}")
+                log.debug(f"trace: {trace!r}")
                 self.traces[trace_var].trace_remove(trace[0], trace[1])
 
     def remove_effect(self):

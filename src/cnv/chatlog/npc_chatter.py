@@ -11,13 +11,13 @@ import threading
 import time
 from datetime import datetime
 
-import database.db as db
-import database.models as models
+import cnv.database.db as db
+import cnv.database.models as models
+import cnv.voices.voice_builder as voice_builder
 import lib.audio as audio
 import lib.settings as settings
 import pythoncom
 import voicebox
-import voices.voice_builder as voice_builder
 from pedalboard.io import AudioFile
 from voicebox.tts.utils import get_audio_from_wav_file
 
@@ -74,24 +74,13 @@ class ParallelTTS(threading.Thread):
     def makefile(self, cachefile, character, message, session):
         log.info(f"(makefile) Cache Miss -- {cachefile} not found")
         # ok, what kind of voice do we need for this NPC?
-        voice_builder.create(character, message, cachefile, session)
+        voice_builder.create(character, message, session)
 
     def pluck_and_speak(self, name, message, category):
-        name, clean_name = db.clean_customer_name(name)
-        filename = db.cache_filename(name, message)
-
+        cachefile = settings.get_cachefile(name, message, category)
+        
         try:
-            cachefile = os.path.abspath(
-                os.path.join("clip_library", category, clean_name, filename)
-            )
-        except Exception:
-            log.error(
-                f'invalid os.path.join("clip_library", {category}, {clean_name}, {filename})'
-            )
-            raise
-
-        try:
-            os.mkdir(os.path.join("clip_library", category, clean_name))
+            os.mkdir(os.path.dirname(cachefile))
         except OSError:
             # the directory already exists.  This is not a problem.
             pass
@@ -173,25 +162,7 @@ class TightTTS(threading.Thread):
 
             log.info(f"Speaking thread received {category} {name}:{message}")
 
-            name, clean_name = db.clean_customer_name(name)
-            log.debug(f"{name} -- {clean_name}")
-
-            # ie: abcde_timetodan.mp3
-            # this should be unique to this messags, it's only
-            # a 5 character hash, collisions are possible.
-            filename = db.cache_filename(name, message)
-
-            # do we already have this NPC/Message rendered to an audio file?
-            # first we need the path the file ought to have
-            try:
-                cachefile = os.path.abspath(
-                    os.path.join("clip_library", category, clean_name, filename)
-                )
-            except Exception:
-                log.error(
-                    f'invalid os.path.join("clip_library", {category}, {clean_name}, {filename})'
-                )
-                raise
+            cachefile = settings.get_cachefile(name, message, category)
             
             if os.path.exists(cachefile):
                 log.info(f"Cache Hit: {cachefile}")
@@ -212,7 +183,7 @@ class TightTTS(threading.Thread):
             else:
                 # make sure the diretory exists
                 try:
-                    os.mkdir(os.path.join("clip_library", category, clean_name))
+                    os.mkdir(os.path.dirname(cachefile))
                 except OSError:
                     # the directory already exists.  This is not a problem.
                     pass
@@ -227,7 +198,7 @@ class TightTTS(threading.Thread):
                     models.update_character_last_spoke(character, session)
                     # it isn't very well named, but this will speak "message" as
                     # character and cache a copy into cachefile.
-                    voice_builder.create(character, message, cachefile, session)
+                    voice_builder.create(character, message, session)
 
             # we've said our piece.
             self.speaking_queue.task_done()

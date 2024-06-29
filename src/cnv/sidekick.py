@@ -14,7 +14,6 @@ There is more awesome to be had.
 import ctypes
 import logging
 import multiprocessing
-import os
 import queue
 import sys
 import tkinter as tk
@@ -93,7 +92,7 @@ def main():
         EXIT = True
         log.info('Exiting...')
         root.destroy()
-        
+
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.iconbitmap("sidekick.ico")
 

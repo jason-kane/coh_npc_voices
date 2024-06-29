@@ -27,10 +27,12 @@ dependencies = [
     "setuptools",
     "sqlalchemy-utils",
     "sqlalchemy",
+    "translate",
     "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8",
     "voicebox-tts",
     "voicebox-tts[elevenlabs]",
     "voicebox-tts[google-cloud-tts]",
+    "watchdog",
     "wheel",
 ]
 

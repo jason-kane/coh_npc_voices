@@ -104,7 +104,7 @@ class Character(Base):
         str_category = category_int2str(category)
 
         log.info("\n" + pyfiglet.figlet_format(f'New {str_category}', font="3d_diagonal", width=120))
-        log.info("\n" + pyfiglet.figlet_format(name, font="3d_diagonal", width=120))
+        log.debug("\n" + pyfiglet.figlet_format(name, font="3d_diagonal", width=120))
         log.info(f'|- Creating new {str_category} character {name} in database...')
         # this is the first time we've gotten a message from this
         # NPC, so they don't have a voice yet.
@@ -138,8 +138,8 @@ class Character(Base):
         skey = f'{str_category}_engine_secondary'
         primary_engine_name = settings.get_config_key(pkey)
         secondary_engine_name = settings.get_config_key(skey)
-        log.info(f"Primary engine ({pkey}): {primary_engine_name}")
-        log.info(f"Secondary engine ({skey}): {secondary_engine_name}")
+        log.debug(f"Primary engine ({pkey}): {primary_engine_name}")
+        log.debug(f"Secondary engine ({skey}): {secondary_engine_name}")
 
         # default to the primary voice engine for this category of character
         character = cls(
@@ -176,10 +176,10 @@ class Character(Base):
             )
         ).all()
 
-        log.info(f'|-  The configuration fields relevant to the {engine_key} TTS Engine are:')
+        log.debug(f'|-  The configuration fields relevant to the {engine_key} TTS Engine are:')
         # loop through the availabe configuration settings
         for config_meta in engine_config_meta:
-            log.info(f"|-    {config_meta}")
+            log.debug(f"|-    {config_meta}")
             # we want sensible defaults with some jitter
             # for each voice engine config setting.
             value = None
@@ -220,13 +220,13 @@ class Character(Base):
                     # does the preset have any more guidance?
                     # use the preset if there is one.  Otherwise
                     # choose randomly from the available options.
-                    log.info(f"{all_values=}")
+                    log.debug(f"{all_values=}")
 
                     if config_meta.key in preset:
                         value = preset[config_meta.key]
                     else:
                         chosen_row = random.choice(list(all_values))
-                        log.info(f'Random selection: {chosen_row}')
+                        log.debug(f'Random selection: {chosen_row}')
                         value = chosen_row[config_meta.key]
 
             # do we have a numeric value, with a min/max and some
@@ -304,7 +304,7 @@ class Character(Base):
 
         Return value is a Character() object.
         """
-        log.info(f'/-- Character.get({name=}, {category=}, session=...)')
+        log.debug(f'/-- Character.get({name=}, {category=}, session=...)')
         
         try:
             category=int(category)
@@ -323,7 +323,7 @@ class Character(Base):
                 name, category, session
             )
 
-        log.info(f'\\-- Character.get() returning {character}')
+        log.debug(f'\\-- Character.get() returning {character}')
         return character
 
 
@@ -377,18 +377,22 @@ def get_engine_config(character_id, rank):
                 BaseTTSConfig.rank == rank
             )
         ).all()
+        
+        if items is None:
+            log.info(f'Did not find any engine configuration for {character_id=} {rank=}')
 
         for row in items:
             out[row.key] = row.value
 
+    log.info(f"{character_id=} {rank=} {out=}")
     return out
 
 def set_engine_config(character_id, rank, new_config):
     """
     """
     old_config = get_engine_config(character_id, rank)
-    log.info(pyfiglet.figlet_format("Engine Edit", font="3d_diagonal", width=120))
-    log.info(f"{character_id=} {old_config=} {new_config=}")
+    # log.info(pyfiglet.figlet_format("Engine Edit", font="3d_diagonal", width=120))
+    log.info(f"Setting Engine Config: {character_id=} {old_config=} {new_config=}")
     with Session(engine) as session:
         for key in new_config:   
             if key in old_config:
@@ -478,10 +482,15 @@ class Phrases(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     character_id: Mapped[int] = mapped_column(ForeignKey("character.id"))
     text: Mapped[str] = mapped_column(String(256))
-    ssml: Mapped[str] = mapped_column(String(512))
 
     def __repr__(self):
         return json.dumps({'id': self.id, 'character_id': self.character_id, 'text': self.text})
+
+class Translation(Base):
+    __tablename__ = "translations"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    phrase_id: Mapped[int] = mapped_column(ForeignKey("phrases.id"))
+    language_code: Mapped[Optional[str]] = mapped_column(String(2))
 
 class Effects(Base):
     __tablename__ = "effects"

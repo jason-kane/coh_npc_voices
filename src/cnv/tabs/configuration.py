@@ -13,7 +13,42 @@ log = logging.getLogger(__name__)
 class ConfigurationTab(ttk.Frame):
     tkdict = {}
 
-    def elevenlabs_token_frame(self):
+    def language_selection(self) -> ttk.Frame:
+        frame = ttk.Frame(
+            self
+        )
+
+        ttk.Label(
+            frame,
+            text="Spoken Language",
+            anchor="e",   
+        ).pack(side="left", fill="x", expand=True)
+        current = settings.get_config_key('language', "English")
+        self.language = tk.StringVar(value=current)
+        default_engine_combo = ttk.Combobox(frame, textvariable=self.language)
+        default_engine_combo["values"] = ["English", "Spanish", "French"]
+        default_engine_combo["state"] = "readonly"
+        default_engine_combo.pack(side="left", fill="x")
+
+        self.language.trace_add('write', self.change_language)
+
+        return frame
+
+    def change_language(self, a, b, c):
+        newvalue = self.language.get()
+        prior = settings.get_config_key('language', "English")
+        settings.set_config_key('language', newvalue)
+        # tempting to just restart
+        if prior and newvalue != prior:
+            log.info(f'Changing language to {newvalue}')
+            # we should immediately translate and localize the UI
+            
+
+    def elevenlabs_token_frame(self) -> ttk.Frame:
+        """
+        Returns a frame holding any/all authentication configuration needed for
+        ElevenLabs
+        """
         elevenlabs = ttk.Frame(
             self, 
             borderwidth=1, 
@@ -38,7 +73,6 @@ class ConfigurationTab(ttk.Frame):
         """
         Given a config change through the UI, persist it.  Easy.
         """
-        log.warning('Polymorph is a dangerous and powerful thing')
         for key in self.tkdict:
             value = self.tkdict[key].get()
             # settings is smart enough to only write to disk when there is
@@ -119,6 +153,8 @@ class ConfigurationTab(ttk.Frame):
 
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+
+        self.language_selection().pack(side="top", fill="x")
 
         self.elevenlabs_token_frame().pack(side="top", fill="x")
        

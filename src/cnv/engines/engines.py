@@ -79,6 +79,7 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 # Base Class for engines
 class TTSEngine(ttk.Frame):
     def __init__(self, parent, rank, name, category, *args, **kwargs):
+        log.info(f'Initializing TTSEngine {parent=} {rank=} {name=} {category=}')
         super().__init__(parent, *args, **kwargs)
         self.rank = rank
         self.parent = parent
@@ -144,7 +145,7 @@ class TTSEngine(ttk.Frame):
         )
 
         if message:
-            # log.info(f"say.message: {message}")
+
             try:
                 vb.say(message)
             except Exception as err:
@@ -172,10 +173,11 @@ class TTSEngine(ttk.Frame):
     def load_character(self, category, name):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
+        # settings.how_did_i_get_here()
+
         self.loading = True
         self.name = name
         self.category = category
-        # log.info(f"TTSEngine.load_character({category=}, {name=})")
         
         with models.db() as session:
             character = models.Character.get(name, category, session)
@@ -183,8 +185,6 @@ class TTSEngine(ttk.Frame):
         self.gender = settings.get_npc_gender(character.name)
         
         engine_config = models.get_engine_config(character.id, self.rank)
-
-        # log.info(f"{engine_config=}")
 
         for key, value in engine_config.items():
             log.debug(f'Setting config {key} to {value}')
@@ -194,7 +194,8 @@ class TTSEngine(ttk.Frame):
                 # the polly way
                 log.debug(f'PolyConfig[{key}] = {value}')
                 # log.info(f'{self.config_vars=}')
-                self.config_vars[key].set(value)
+                if key in self.config_vars:
+                    self.config_vars[key].set(value)
             else:
                 log.error(f'OBSOLETE config[{key}] = {value}')
                 # everything else
@@ -469,40 +470,19 @@ class GoogleCloud(TTSEngine):
     key = 'googletts'
     
     config = (
-        ('Language Code', 'language_code', "StringVar", 'en-US', {}, "get_language_codes"),
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Speakin Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.5, 'max': 1.75, 'digits': 3, 'resolution': 0.25}, None),
         ('Voice Pitch', 'voice_pitch', "DoubleVar", 1, {'min': -10, 'max': 10, 'resolution': 0.5}, None)
-    )
-
-    def get_language_codes(self):
-        all_language_codes = models.diskcache(f'{self.key}_language_code')
-
-        if all_language_codes is None:
-            all_voices = self.get_voices()
-
-            out = set()
-            for voice_dict in all_voices:
-                if self._gender_filter(voice_dict):
-                    for code in voice_dict["language_codes"]:
-                        out.add(code)
-
-            all_language_codes = [
-                {'language_code': code} for code in sorted(list(out))
-            ]
-
-            models.diskcache(f'{self.key}_language_code', all_language_codes)
-
-        return [ code['language_code'] for code in all_language_codes ]
+    )   
 
     def _language_code_filter(self, voice):
         """
         True if this voice is able to speak this language_code.
         """
-        selected_language_code = self.config_vars["language_code"].get()
-        return (
-            selected_language_code in voice["language_codes"]
-        )
+        selected_language_code = settings.get_language_code()
+        # two letter code ala: en, and matches against en-whatever
+        
+        return any(f"{selected_language_code}-" in code for code in voice["language_codes"])
 
     def get_voice_names(self, gender=None):
         all_voices = self.get_voices()
@@ -569,11 +549,25 @@ class GoogleCloud(TTSEngine):
             ).first()
         return ssml_gender
 
+    def get_voice_language(self, voice_name):
+        """
+        first compatible language code
+        """
+        selected_language_code = settings.get_language_code()
+
+        all_voices = self.get_voices()
+        for voice in all_voices:
+            if voice["voice_name"] == voice_name:
+                for code in voice['language_codes']:
+                    if f"{selected_language_code}-" in code:
+                        return code
+        return None
+
     def get_tts(self):
-        language_code = self.override.get('language_code', self.config_vars["language_code"].get())
         voice_name = self.override.get('voice_name', self.config_vars["voice_name"].get())
         speaking_rate = self.override.get('speaking_rate', self.config_vars["speaking_rate"].get())
         voice_pitch = self.override.get('voice_pitch', self.config_vars["voice_pitch"].get())
+        language_code = self.get_voice_language(voice_name)
 
         client = texttospeech.TextToSpeechClient()
 
@@ -586,6 +580,7 @@ class GoogleCloud(TTSEngine):
             language_code=language_code,
             name=voice_name,
         )
+
         return voicebox.tts.GoogleCloudTTS(
             client=client, 
             voice_params=voice_params, 

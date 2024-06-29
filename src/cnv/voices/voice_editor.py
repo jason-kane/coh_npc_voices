@@ -6,14 +6,14 @@ import queue
 import sys
 import tkinter as tk
 from tkinter import font, ttk
+from translate import Translator
 
-import chatlog.npc_chatter as npc_chatter
-import database.db as db
-import database.models as models
-import effects.effects as effects
-import engines.engines as engines
-import lib.settings as settings
 import voicebox
+from cnv.chatlog import npc_chatter
+from cnv.database import db, models
+from cnv.effects import effects
+from cnv.engines import engines
+from cnv.lib import settings
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from pedalboard.io import AudioFile
@@ -107,7 +107,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
             return 
 
         # pull phrases for this character from the database
-        with models.db() as session:            
+        with models.db() as session:
             # character = models.get_character_from_rawname(raw_name, session)
         
             #if character is None:
@@ -177,8 +177,8 @@ class WavfileMajorFrame(ttk.LabelFrame):
         self.visualize_wav.pack(side='top', fill=tk.BOTH, expand=1)
 
     def get_cachefile(self, character, msg):
-        _, clean_name = db.clean_customer_name(character.name)
-        filename = db.cache_filename(character.name, msg)
+        _, clean_name = settings.clean_customer_name(character.name)
+        filename = settings.cache_filename(character.name, msg)
         
         return os.path.abspath(
             os.path.join(
@@ -238,7 +238,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         TTS engine is selected.
         """
         global ENGINE_OVERRIDE
-        message = self.chosen_phrase.get()
+        message = self.chosen_phrase.get()    
 
         log.debug(f"Speak: {message}")
         # parent is the frame inside DetailSide
@@ -261,13 +261,11 @@ class WavfileMajorFrame(ttk.LabelFrame):
         with models.db() as session:
             # every phrase this character has ever said previously.  These make it
             # easy to tune the voice with the same dialog.
-            all_phrases = [ 
-                n.text for n in session.scalars(
+            all_phrases = session.scalars(
                     select(models.Phrases).where(
                         models.Phrases.character_id == character.id
                     )
                 ).all()
-            ]
 
         if message == self.ALL_PHRASES:
             # we want to re-speak _every_ phrase, one at a time to populate the 
@@ -281,10 +279,47 @@ class WavfileMajorFrame(ttk.LabelFrame):
             if msg == self.ALL_PHRASES:
                 continue
 
-            _, clean_name = db.clean_customer_name(character.name)
-            filename = db.cache_filename(character.name, msg)
+            _, clean_name = settings.clean_customer_name(character.name)
+            
             log.debug(f'all_phrases: {all_phrases}')
-            if msg in all_phrases:
+
+            language = settings.get_language_code()
+
+            for phrase in all_phrases:
+                if phrase.text == message:
+                    break
+                phrase = None
+
+            if phrase:
+                # this is an existing phrase
+                # is there an existing translation?
+                if language != "en":
+                    with models.db() as session:
+                        translated = session.execute(
+                            select(models.Translation).where(
+                                models.Translations.phrase_id == phrase.id,
+                                models.Translations.language_code == language
+                            )
+                        ).first()
+                    
+                    if translated:
+                        # use the existing translation if we have one
+                        message = translated.text
+                    else:
+                        # otherwise create a new one
+                        translator = Translator(to_lang=language)
+                        msg = translator.translate(msg)
+                        with models.db() as session:
+                            translated = models.Translation(
+                                phrase_id=phrase.id,
+                                langauge_code=language,
+                                text=message
+                            )
+                            session.add(translated)
+                            session.commit()  
+
+                filename = settings.cache_filename(character.name, msg)
+
                 cachefile = os.path.abspath(
                     os.path.join(
                         "clip_library",
@@ -327,10 +362,17 @@ class WavfileMajorFrame(ttk.LabelFrame):
                         log.info(f'Wrote {cachefile}')
                 # unlink the wav file?
             else:
+                # this isn't an existing phrase
                 # No Cache
                 log.info(f'Bypassing filesystem caching ({msg})')
+                
+                if language != "en":
+                    log.info(f'Translating "{msg}" into {language}')
+                    translator = Translator(to_lang=language)
+                    msg = translator.translate(msg)
+
                 try:
-                    ttsengine(None, rank, self.selected_character).say(msg, effect_list)
+                    ttsengine(None, rank, character.name, character.category).say(msg, effect_list)
                 except engines.DISABLE_ENGINES:
                     # I'm not even sure what we want to do.  The user clicked 'play' but
                     # we don't have any quota left for the selected engine.

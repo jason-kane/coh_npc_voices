@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import alembic.config
-import database.models as models
+import cnv.database.models as models
 from sqlalchemy import create_engine
 from sqlalchemy_utils import create_database, database_exists
 

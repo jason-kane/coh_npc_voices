@@ -9,6 +9,7 @@ import cnv.lib.settings as settings
 import pyfiglet
 from pedalboard.io import AudioFile
 from sqlalchemy import select
+from translate import Translator
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 
 log = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ PLAYER_CATEGORY = models.category_str2int("player")
 
 ENGINE_OVERRIDE = {}
 
-def create(character, message, cachefile, session):
+def create(character, message, session):
     """
     This NPC exists in our database but we don't
     have this particular message rendered.
@@ -35,7 +36,7 @@ def create(character, message, cachefile, session):
     3. persist as an mp3 in cachefile
     """
     global ENGINE_OVERRIDE
-    log.info(f'voice_builder.create({character=}, {message=}, {cachefile=})')
+    log.info(f'voice_builder.create({character=}, {message=})')
     
     voice_effects = session.scalars(
         select(models.Effects).where(
@@ -64,7 +65,8 @@ def create(character, message, cachefile, session):
                 models.Phrases.text == message
             )
         ).first()
-            
+
+
         log.debug(phrase)
 
         if phrase is None:
@@ -73,10 +75,40 @@ def create(character, message, cachefile, session):
             phrase = models.Phrases(
                 character_id=character.id,
                 text=message,
-                ssml=""
             )
             session.add(phrase)
             session.commit()
+
+        language = settings.get_language_code()
+        if language != "en":
+            # look for an existing translation
+            translated = session.execute(
+                select(models.Translation).where(
+                    models.Translations.phrase_id == phrase.id,
+                    models.Translations.language_code == language
+                )
+            ).first()
+
+            if translated:
+                message = translated.text
+            else:
+                translator = Translator(to_lang=language)
+
+                log.info(f'Original: {message}')
+                message = translator.translate(message)
+                log.info(f'Translated: {message}')
+
+                translated = models.Translation(
+                    phrase_id=phrase.id,
+                    langauge_code=language,
+                    text=message
+                )
+                session.add(translated)
+                session.commit()
+            
+        cachefile = settings.get_cachefile(
+            character.name, message, character.category
+        )
 
         try:
             clean_name = re.sub(r'[^\w]', '',character.name)

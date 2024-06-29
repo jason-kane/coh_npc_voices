@@ -101,6 +101,7 @@ twine==5.0.0
 typing_extensions==4.11.0
 urllib3==2.2.1
 voicebox-tts==0.0.7
+watchdog==4.0.1
 wcwidth==0.2.13
 websockets==12.0
 zipp==3.18.1

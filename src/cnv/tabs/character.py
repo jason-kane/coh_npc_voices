@@ -4,10 +4,10 @@ import tkinter as tk
 from datetime import datetime, timedelta
 from tkinter import ttk
 
-import database.models as models
+import cnv.database.models as models
+import cnv.voices.voice_editor as voice_editor
 import matplotlib.dates as mdates
 import numpy as np
-import voices.voice_editor as voice_editor
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from sqlalchemy import func, select
