@@ -6,10 +6,9 @@ import cnv.database.models as models
 import cnv.effects.effects as effects
 import cnv.engines.engines as engines
 import cnv.lib.settings as settings
+import cnv.lib.audio as audio
 import pyfiglet
-from pedalboard.io import AudioFile
 from sqlalchemy import select
-from translate import Translator
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 
 log = logging.getLogger(__name__)
@@ -36,7 +35,7 @@ def create(character, message, session):
     3. persist as an mp3 in cachefile
     """
     global ENGINE_OVERRIDE
-    log.info(f'voice_builder.create({character=}, {message=})')
+    log.debug(f'voice_builder.create({character=}, {message=})')
     
     voice_effects = session.scalars(
         select(models.Effects).where(
@@ -46,7 +45,7 @@ def create(character, message, session):
     
     effect_list = []
     for effect in voice_effects:
-        log.info(f'Adding effect {effect} found in the database')
+        log.debug(f'Adding effect {effect} found in the database')
         effect_class = effects.EFFECTS[effect.effect_name]
         effect_instance = effect_class(None)
 
@@ -57,57 +56,16 @@ def create(character, message, session):
 
     # have we seen this particular phrase before?
     if character.category != PLAYER_CATEGORY or settings.PERSIST_PLAYER_CHAT:
-        # we want to collect and persist these to enable the editor to
-        # rebuild them, replacing the mp3 in cache.
-        phrase = session.execute(
-            select(models.Phrases).where(
-                models.Phrases.character_id == character.id,
-                models.Phrases.text == message
-            )
-        ).first()
-
-
-        log.debug(phrase)
-
-        if phrase is None:
-            log.info('Phrase not found.  Creating...')
-            # it does not exist, now it does.
-            phrase = models.Phrases(
-                character_id=character.id,
-                text=message,
-            )
-            session.add(phrase)
-            session.commit()
-
-        language = settings.get_language_code()
-        if language != "en":
-            # look for an existing translation
-            translated = session.execute(
-                select(models.Translation).where(
-                    models.Translations.phrase_id == phrase.id,
-                    models.Translations.language_code == language
-                )
-            ).first()
-
-            if translated:
-                message = translated.text
-            else:
-                translator = Translator(to_lang=language)
-
-                log.info(f'Original: {message}')
-                message = translator.translate(message)
-                log.info(f'Translated: {message}')
-
-                translated = models.Translation(
-                    phrase_id=phrase.id,
-                    langauge_code=language,
-                    text=message
-                )
-                session.add(translated)
-                session.commit()
-            
+        # phrase_id = models.get_or_create_phrase_id(
+        #     name=character.name,
+        #     category=character.category,
+        #     message=message
+        # )
+        
+        # message = models.get_translated(phrase_id)
+                    
         cachefile = settings.get_cachefile(
-            character.name, message, character.category
+            character.name, message, character.cat_str()
         )
 
         try:
@@ -143,13 +101,13 @@ def create(character, message, session):
         if rank == 'secondary':
             raise engines.USE_SECONDARY
         
-        log.info(f'Using engine: {character.engine}')
+        log.debug(f'Using engine: {character.engine}')
         engines.get_engine(character.engine)(None, 'primary', name, category).say(message, effect_list, sink=sink)
     except engines.USE_SECONDARY:
         # our chosen engine for this character isn't working.  So we're going to switch
         # to the secondary and use that for the rest of this session.
         ENGINE_OVERRIDE[character.engine] = True
-        log.info("\n" + pyfiglet.figlet_format(
+        log.debug("\n" + pyfiglet.figlet_format(
                 "Engaging\nSecondary\nEngine", 
                 font="3d_diagonal", width=120
             )
@@ -169,24 +127,10 @@ def create(character, message, session):
         # it is already saved as a wav file, this converts it to an mp3 then
         # erases the wav file.
         if settings.get_config_key('save_as_mp3', True):
-            with AudioFile(cachefile + ".wav") as input:
-                with AudioFile(
-                    filename=cachefile,
-                    samplerate=input.samplerate,
-                    num_channels=input.num_channels
-                ) as output:
-                    while input.tell() < input.frames:
-                        retries = 5
-                        success = False
-                        while not success and retries > 0:
-                            try:
-                                output.write(input.read(1024))
-                                success = True
-                            except RuntimeError as err:
-                                log.errror(err)
-                            retries -= 1
-                        
-                log.info(f'Created {cachefile}')
+            audio.wavfile_to_mp3file(
+                wavfilename=cachefile + ".wav",
+                mp3filename=cachefile
+            )
 
         if not settings.get_config_key('save_as_wav', True):
             os.unlink(cachefile + ".wav")

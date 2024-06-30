@@ -46,7 +46,7 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 
     def get_speech(self, text: StrOrSSML) -> Audio:
         voice = tts.sapi.Sapi()
-        log.info(f"Saying {text!r} as {self.voice} at rate {self.rate}")
+        log.debug(f"Saying {text!r} as {self.voice} at rate {self.rate}")
         voice.set_rate(self.rate)
         voice.set_voice(self.voice)
 
@@ -79,7 +79,7 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 # Base Class for engines
 class TTSEngine(ttk.Frame):
     def __init__(self, parent, rank, name, category, *args, **kwargs):
-        log.info(f'Initializing TTSEngine {parent=} {rank=} {name=} {category=}')
+        log.debug(f'Initializing TTSEngine {parent=} {rank=} {name=} {category=}')
         super().__init__(parent, *args, **kwargs)
         self.rank = rank
         self.parent = parent
@@ -387,8 +387,8 @@ class TTSEngine(ttk.Frame):
             try:
                 return self.gender.title() == voice["gender"].title()
             except KeyError:
-                log.info('Failed to find "gender" in:')
-                log.info(f"{voice=}")
+                log.warning('Failed to find "gender" in:')
+                log.debug(f"{voice=}")
         return True
 
 
@@ -728,7 +728,7 @@ class WindowsTTS(TTSEngine):
         from windows version to version and from
         machine to machine.
         """
-        log.info(f'Retrieving TTS voice names filtered to only show gender {self.gender}')
+        log.debug(f'Retrieving TTS voice names filtered to only show gender {self.gender}')
         # all_voices = models.diskcache(f"{self.key}_voice_name")
         all_voices = None
 
@@ -798,7 +798,7 @@ class GoogleCloud(TTSEngine):
         # two letter code ala: en, and matches against en-whatever
         for allowed_code in allowed_language_codes:
             if any(f"{allowed_code}-" in code for code in voice["language_codes"]):
-                log.info(f'{allowed_code=} matches with {voice["language_codes"]=}')
+                log.debug(f'{allowed_code=} matches with {voice["language_codes"]=}')
                 return True
         return False
 
@@ -921,7 +921,7 @@ def get_elevenlabs_client():
         client = ELABS(api_key=elvenlabs_api_key)
         return client
     else:
-        log.info("Elevenlabs Requires valid eleven_labs.key file")
+        log.warning("Elevenlabs Requires valid eleven_labs.key file")
 
 
 def as_gender(in_gender):
@@ -1212,7 +1212,7 @@ class AmazonPolly(TTSEngine):
                             secondary.add(code)
             
             if not out:
-                log.info('No engines exist that support this language/gender.  Ignoring gender.')
+                log.warning('No engines exist that support this language/gender.  Ignoring gender.')
                 out = secondary
 
             all_engines = [ {'engine': engine_name} for engine_name in out ]
@@ -1239,7 +1239,7 @@ class AmazonPolly(TTSEngine):
                 log.debug(f'Excluding {voice["Name"]}')
 
         if not out:
-            log.info('No voices exist that support this language/gender.  Ignoring gender.')
+            log.warning('No voices exist that support this language/gender.  Ignoring gender.')
             out = secondary
 
         out = sorted(list(out))

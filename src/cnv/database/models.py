@@ -102,9 +102,12 @@ class Character(Base):
     @classmethod
     def create_character(cls, name: str, category: int, session: Connectable) -> Self:
         # go big or go home, right?
+        if name is None:
+            return
+        
         str_category = category_int2str(category)
 
-        log.info("\n" + pyfiglet.figlet_format(f'New {str_category}', font="3d_diagonal", width=120))
+        log.debug("\n" + pyfiglet.figlet_format(f'New {str_category}', font="3d_diagonal", width=120))
         log.debug("\n" + pyfiglet.figlet_format(name, font="3d_diagonal", width=120))
         log.info(f'|- Creating new {str_category} character {name} in database...')
         # this is the first time we've gotten a message from this
@@ -259,7 +262,7 @@ class Character(Base):
                 )
 
             # write our value for this configuration setting to the database
-            log.info(f'Configuring {rank} engine {engine_key}:  Setting {config_meta.key} to {value}')
+            log.debug(f'Configuring {rank} engine {engine_key}:  Setting {config_meta.key} to {value}')
             new_config_entry = BaseTTSConfig(
                 character_id=character.id,
                 rank=rank,
@@ -272,7 +275,7 @@ class Character(Base):
         # add effects but only if there is a preset, no random effects.
         for effect_dict in preset.get('Effects', []):
             # create the effect itself
-            log.info(f'Adding effect: {effect_dict}')
+            log.debug(f'Adding effect: {effect_dict}')
             effect = Effects(
                 character_id=character.id,
                 effect_name=effect_dict['name']
@@ -305,6 +308,9 @@ class Character(Base):
 
         Return value is a Character() object.
         """
+        if name is None:
+            name = "Sauron"
+            
         log.debug(f'/-- Character.get({name=}, {category=}, session=...)')
         
         try:
@@ -344,13 +350,13 @@ def get_character_from_rawname(raw_name, session):
     return Character.get(name, category, session)
 
 
-def update_character_last_spoke(character, session):
+def update_character_last_spoke(character_id, session):
     character = session.scalars(
         select(Character).where(
-            Character.id == character.id
+            Character.id == character_id
         )
     ).first()
-    character.last_spoke = datetime.now()       
+    character.last_spoke = datetime.now()
 
 
 class EngineConfigMeta(Base):
@@ -380,25 +386,25 @@ def get_engine_config(character_id, rank):
         ).all()
         
         if items is None:
-            log.info(f'Did not find any engine configuration for {character_id=} {rank=}')
+            log.warning(f'Did not find any engine configuration for {character_id=} {rank=}')
 
         for row in items:
             out[row.key] = row.value
 
-    log.info(f"{character_id=} {rank=} {out=}")
+    log.debug(f"{character_id=} {rank=} {out=}")
     return out
 
 def set_engine_config(character_id, rank, new_config):
     """
     """
     old_config = get_engine_config(character_id, rank)
-    # log.info(pyfiglet.figlet_format("Engine Edit", font="3d_diagonal", width=120))
-    log.info(f"Setting Engine Config: {character_id=} {old_config=} {new_config=}")
+    # log.debug(pyfiglet.figlet_format("Engine Edit", font="3d_diagonal", width=120))
+    log.debug(f"Setting Engine Config: {character_id=} {old_config=} {new_config=}")
     with Session(engine) as session:
         for key in new_config:   
             if key in old_config:
                 if old_config[key] != new_config[key]:
-                    log.info(f'change in {key}: {old_config[key]} != {new_config[key]}')
+                    log.debug(f'change in {key}: {old_config[key]} != {new_config[key]}')
                     # this value has changed
                     row = session.scalar(
                         select(BaseTTSConfig).where(
@@ -407,11 +413,11 @@ def set_engine_config(character_id, rank, new_config):
                             BaseTTSConfig.key == key
                     ))
                     if row:
-                        log.info(f'Changing value of {row} to {new_config[key]}')
+                        log.debug(f'Changing value of {row} to {new_config[key]}')
                         row.value = new_config[key]
                         session.commit()
                     else:
-                        log.info(f'Charactger {character_id} has no previous engine config for {rank} {key}')
+                        log.debug(f'Charactger {character_id} has no previous engine config for {rank} {key}')
                         row = BaseTTSConfig(
                             character_id=character_id,
                             rank=rank,
@@ -424,7 +430,7 @@ def set_engine_config(character_id, rank, new_config):
             else:
                 # we have a new key/value, this will only 
                 # happen when upgrading/downgrading.
-                log.info(f'new key: {key} = {new_config[key]}')
+                log.debug(f'new key: {key} = {new_config[key]}')
                 row = BaseTTSConfig(
                     character_id=character_id,
                     rank=rank,
@@ -495,8 +501,32 @@ class Translation(Base):
     text: Mapped[str] = mapped_column(String(256))
 
 
+def get_or_create_phrase_id(name, category, message):
+    """
+    """
+    with db() as session:
+        character = Character().get(
+            name=name, category=category, session=session)
+
+        phrase = session.scalar(
+            select(Phrases).where(
+                Phrases.character_id == character.id,
+                Phrases.text == message,
+        ))
+
+        if phrase is None:
+            phrase = Phrases(
+                character_id=character.id,
+                text=message
+            )
+            session.add(phrase)
+            session.commit()
+        
+        return phrase.id
+
+
 def get_translated(phrase_id):
-    log.info(f'Retrieving translation of {phrase_id=}')
+    log.debug(f'Retrieving translation of {phrase_id=}')
     language = settings.get_language_code()
     is_translated = False
     with db() as session:
@@ -506,7 +536,7 @@ def get_translated(phrase_id):
             )
         ).first()[0]
     
-    log.info(f"{phrase=}")
+    log.debug(f"{phrase=}")
     message = phrase.text
 
     if language != "en":

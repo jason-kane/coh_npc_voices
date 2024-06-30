@@ -30,7 +30,7 @@ class VoicesTab(ttk.Frame):
                     # log.info('Found listside')
                     self.listside = child
                 else:
-                    log.info(f'{child.winfo_name()=}')
+                    log.debug(f'{child.winfo_name()=}')
         
         #if self.listside:
             #log.info(dir(self.listside))

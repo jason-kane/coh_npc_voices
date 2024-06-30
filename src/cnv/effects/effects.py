@@ -209,7 +209,7 @@ class EffectParameterEditor(ttk.Frame):
                 self.traces[trace_var].trace_remove(trace[0], trace[1])
 
     def remove_effect(self):
-        log.info("EffectParamaterEngine.remove_effect()")
+        log.debug("EffectParamaterEngine.remove_effect()")
         # remove any variable traces
         self.clear_traces()
         self.parent.remove_effect(self)
@@ -221,19 +221,19 @@ class EffectParameterEditor(ttk.Frame):
         persist that change.  Make the database reflect
         the UI.
         """
-        log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
+        log.debug(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
 
         with models.Session(models.engine) as session:
             # fragile, varname is what is coming off the trace trigger
-            log.info(f'Reading effects settings when {effect_id=}')
+            log.debug(f'Reading effects settings when {effect_id=}')
             effect_settings = session.scalars(
                 select(models.EffectSetting).where(
                     models.EffectSetting.effect_id==effect_id
                 )
             ).all()
 
-            log.info(f'Sync to db {effect_settings}')
+            log.debug(f'Sync to db {effect_settings}')
             found = set()
             for effect_setting in effect_settings:
                 found.add(effect_setting.key)
@@ -244,22 +244,22 @@ class EffectParameterEditor(ttk.Frame):
                     continue
 
                 if new_value != effect_setting.value:
-                    log.info(f'Saving changed value {effect_setting.key} {effect_setting.value!r}=>{new_value!r}')
+                    log.debug(f'Saving changed value {effect_setting.key} {effect_setting.value!r}=>{new_value!r}')
                     # this value is different than what
                     # we have in the database
                     effect_setting.value = new_value
                     session.commit()
                 else:
-                    log.info(f'Value for {effect_setting.key} has not changed')
+                    log.debug(f'Value for {effect_setting.key} has not changed')
 
-            log.info(f"{found=}")
+            log.debug(f"{found=}")
             change = False
             for effect_setting_key in self.traces:
                 if effect_setting_key not in found:
                     change = True
-                    log.info(f'Expected key {effect_setting_key} does not exist in the database')
+                    log.debug(f'Expected key {effect_setting_key} does not exist in the database')
                     value = self.traces[effect_setting_key].get()
-                    log.info(f'Creating new EffectSetting({effect_id}, key={effect_setting_key}, value={value})')
+                    log.debug(f'Creating new EffectSetting({effect_id}, key={effect_setting_key}, value={value})')
                     new_setting = models.EffectSetting(
                         effect_id=effect_id,
                         key=effect_setting_key,
@@ -268,7 +268,6 @@ class EffectParameterEditor(ttk.Frame):
                     session.add(new_setting)
 
                 if change:
-                    log.info('commiting db session')
                     session.commit()
 
 
@@ -280,7 +279,7 @@ class EffectParameterEditor(ttk.Frame):
         """
 
         effect_id = self.effect_id.get()
-        log.info(f'Loading {effect_id=}')
+        log.debug(f'Loading {effect_id=}')
 
         with models.db() as session:
             effect_settings = session.scalars(
@@ -291,10 +290,10 @@ class EffectParameterEditor(ttk.Frame):
 
             found = set()
             for setting in effect_settings:
-                log.info(f'Working on {setting}')
+                log.debug(f'Working on {setting}')
                 
                 if setting.key in found:
-                    log.info(f'Duplicate setting for {setting.key=} where {effect_id=}')
+                    log.debug(f'Duplicate setting for {setting.key=} where {effect_id=}')
                     session.delete(setting)
                     continue
 

@@ -11,10 +11,8 @@ import threading
 import time
 from datetime import datetime
 
-import cnv.database.db as db
 import cnv.database.models as models
 import cnv.voices.voice_builder as voice_builder
-import lib.audio as audio
 import lib.settings as settings
 import pythoncom
 import voicebox
@@ -39,83 +37,92 @@ CAPTION_SPEAKER_INDICATORS = (
     ('Positron here', 'Positron'),
 )
 
-class ParallelTTS(threading.Thread):
-    def __init__(self, speaking_queue, event_queue, parallelism=2):
-        """
-        parallelism > 2 seems to be pretty unstable.  This is fun, but essentially wrong.  What
-        happens when the same character says two things one right after the other?  Yes, they talk
-        on top of themselves.
-        """
-        threading.Thread.__init__(self)
-        self.speaking_queue = speaking_queue
-        self.event_queue = event_queue
-        self.daemon = True
-        self.parallelism = parallelism
+# class ParallelTTS(threading.Thread):
+#     def __init__(self, speaking_queue, event_queue, parallelism=2):
+#         """
+#         parallelism > 2 seems to be pretty unstable.  This is fun, but essentially wrong.  What
+#         happens when the same character says two things one right after the other?  Yes, they talk
+#         on top of themselves.
+#         """
+#         threading.Thread.__init__(self)
+#         self.speaking_queue = speaking_queue
+#         self.event_queue = event_queue
+#         self.daemon = True
+#         self.parallelism = parallelism
 
-        # so we can do this much once.
-        for category in ["npc", "player", "system"]:
-            for dir in [
-                os.path.join("clip_library"),
-                os.path.join("clip_library", category),
-            ]:
-                try:
-                    os.mkdir(dir)
-                except OSError:
-                    # the directory already exists.  This is not a problem.
-                    pass
+#         # so we can do this much once.
+#         for category in ["npc", "player", "system"]:
+#             for dir in [
+#                 os.path.join("clip_library"),
+#                 os.path.join("clip_library", category),
+#             ]:
+#                 try:
+#                     os.mkdir(dir)
+#                 except OSError:
+#                     # the directory already exists.  This is not a problem.
+#                     pass
 
-        self.start()
+#         self.start()
 
-    def playfile(self, cachefile):
-        log.info(f"Cache Hit: {cachefile}")
-        audio_obj = audio.mp3file_to_Audio(cachefile)
-        voicebox.sinks.SoundDevice().play(audio_obj)
+#     def playfile(self, cachefile):
+#         log.info(f"Cache Hit: {cachefile}")
+#         audio_obj = audio.mp3file_to_Audio(cachefile)
+#         voicebox.sinks.SoundDevice().play(audio_obj)
 
-    def makefile(self, cachefile, character, message, session):
-        log.info(f"(makefile) Cache Miss -- {cachefile} not found")
-        # ok, what kind of voice do we need for this NPC?
-        voice_builder.create(character, message, session)
+#     def pluck_and_speak(self, name, message, category):
+#         # to get the cachefile, we need the right message.
+#         # to get the right message it needs to be translated
+#         # to be translated it needs to be a phrase; 
+#         phrase_id = models.get_or_create_phrase_id(name, category, message)
 
-    def pluck_and_speak(self, name, message, category):
-        cachefile = settings.get_cachefile(name, message, category)
+#         # translate if it needs to be translated.
+#         message = models.get_translated(phrase_id)
+
+#         # determine its cold storage filename
+#         cachefile = settings.get_cachefile(name, message, category)
         
-        try:
-            os.mkdir(os.path.dirname(cachefile))
-        except OSError:
-            # the directory already exists.  This is not a problem.
-            pass
+#         try:
+#             os.mkdir(os.path.dirname(cachefile))
+#         except OSError:
+#             # the directory already exists.  This is not a problem.
+#             pass
 
-        with models.db() as session:
-            character = models.Character.get(name, category, session)
+#         with models.db() as session:
+#             character = models.Character.get(name, category, session)
 
-            if os.path.exists(cachefile):
-                self.playfile(cachefile)
-            else:
-                self.makefile(cachefile, character, message, session)
+#             if os.path.exists(cachefile):
+#                 self.playfile(cachefile)
+#             else:
+#                 voice_builder.create(
+#                     character=character,
+#                     message=message,
+#                     session=session
+#                 )
 
-            models.update_character_last_spoke(character, session)
-        self.event_queue.put(
-            ("SPOKE", (character.name, character.category))
-        )
+#             models.update_character_last_spoke(character, session)
 
-        self.speaking_queue.task_done()
+#         self.event_queue.put(
+#             ("SPOKE", (character.name, character.category))
+#         )
 
-    def run(self):
-        pythoncom.CoInitialize()
+#         self.speaking_queue.task_done()
 
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.parallelism
-        ) as executor:
-            while True:
-                raw_message = self.speaking_queue.get()
-                try:
-                    name, message, category = raw_message
-                    if category not in ["npc", "player", "system"]:
-                        log.error("invalid category: %s", category)
-                    else:
-                        executor.submit(self.pluck_and_speak, name, message, category)
-                except ValueError:
-                    log.warning("Unexpected queue message: %s", raw_message)
+#     def run(self):
+#         pythoncom.CoInitialize()
+
+#         with concurrent.futures.ThreadPoolExecutor(
+#             max_workers=self.parallelism
+#         ) as executor:
+#             while True:
+#                 raw_message = self.speaking_queue.get()
+#                 try:
+#                     name, message, category = raw_message
+#                     if category not in ["npc", "player", "system"]:
+#                         log.error("invalid category: %s", category)
+#                     else:
+#                         executor.submit(self.pluck_and_speak, name, message, category)
+#                 except ValueError:
+#                     log.warning("Unexpected queue message: %s", raw_message)
 
 
 class TightTTS(threading.Thread):
@@ -160,12 +167,15 @@ class TightTTS(threading.Thread):
                 self.speaking_queue.task_done()
                 continue
 
-            log.info(f"Speaking thread received {category} {name}:{message}")
+            phrase_id = models.get_or_create_phrase_id(name, category, message)
+            message, is_translated = models.get_translated(phrase_id)
+
+            log.debug(f"Speaking thread received {category} {name}:{message}")
 
             cachefile = settings.get_cachefile(name, message, category)
             
             if os.path.exists(cachefile):
-                log.info(f"Cache Hit: {cachefile}")
+                log.info(f"(tighttts) Cache HIT: {cachefile}")
                 # requires pydub?
                 with AudioFile(cachefile) as input:
                     with AudioFile(
@@ -181,21 +191,22 @@ class TightTTS(threading.Thread):
 
                 voicebox.sinks.SoundDevice().play(audio)
             else:
-                # make sure the diretory exists
+                # make sure the directory exists
                 try:
                     os.mkdir(os.path.dirname(cachefile))
                 except OSError:
                     # the directory already exists.  This is not a problem.
                     pass
 
-                log.info(f"(tighttts) Cache Miss -- {cachefile} not found")
+                log.info(f"(tighttts) Cache MISS: {cachefile} not found")
                 
                 # building session out here instead of inside get_character
                 # keeps character alive and properly tied to the database as we
                 # pass it into update_character_last_spoke and voice_builder.
                 with models.db() as session:
                     character = models.Character.get(name, category, session)
-                    models.update_character_last_spoke(character, session)
+
+                    models.update_character_last_spoke(character.id, session)
                     # it isn't very well named, but this will speak "message" as
                     # character and cache a copy into cachefile.
                     voice_builder.create(character, message, session)
@@ -320,7 +331,7 @@ class LogStream:
 
         else:
             self.speaking_queue.put((None, "User name not detected", "system"))
-            log.info("Could NOT find hero name.. good luck.")      
+            log.warning("Could NOT find hero name.. good luck.")      
 
         # now move the file handle to the end, we
         # will starting parsing everything for real this
@@ -404,7 +415,7 @@ class LogStream:
         dialog = " ".join(lstring)
         channel = dialog[1: dialog.find(']')]
 
-        log.info(f'{channel=}')
+        log.info(dialog)
         
         guide = self.channel_guide.get(channel, None)
         if guide and guide['enabled']:
@@ -415,9 +426,9 @@ class LogStream:
             log.debug(f"Adding {speaker}/{dialog} to reading queue")
             self.speaking_queue.put((speaker, dialog, guide['name']))
         elif guide is None:
-            log.info(f'{channel=}')
+            log.debug(f'{channel=}')
         else:
-            log.info(f'{guide=}')
+            log.debug(f'{guide=}')
 
     def tail(self):
         """
@@ -479,7 +490,7 @@ class LogStream:
                         # I'm just going to make the database carry the burden, so much easier.
                         # is this string stable enough to get away with this?  It's friggin'
                         # cheating.
-                        log.info(lstring)
+                        log.debug(lstring)
                         # You gain 250 influence.
 
                         inf_gain = None
@@ -537,7 +548,7 @@ class LogStream:
                     self.event_queue.put(("SET_CHARACTER", self.hero.name))
 
                 elif lstring[-2:] == ["is", "recharged"]:
-                    log.info('Adding RECHARGED event to event_queue...')
+                    log.debug('Adding RECHARGED event to event_queue...')
                     self.event_queue.put(
                         ("RECHARGED", " ".join(lstring[0:lstring.index("is")]))
                     )

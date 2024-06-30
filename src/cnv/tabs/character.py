@@ -59,7 +59,7 @@ class ChartFrame(ttk.Frame):
             if latest_event:
                 end_time = latest_event.event_time
             else:
-                log.info(f'No previous events found for {self.hero.name}')
+                log.debug(f'No previous events found for {self.hero.name}')
                 end_time = datetime.now()
 
             start_time = end_time - timedelta(minutes=120)
@@ -265,8 +265,8 @@ class CharacterTab(ttk.Frame):
         Invoked at init(), but also whenever the character changes (logout to character select)
         and more critically, every N seconds to refresh the graph.
         """
-        log.info(f'{self.chatter=}')
-        log.info(f'set_hero({self.chatter.hero})')
+        log.debug(f'{self.chatter=}')
+        log.debug(f'set_hero({self.chatter.hero})')
 
         if hasattr(self, "progress_chart"):
             self.progress_chart.pack_forget()

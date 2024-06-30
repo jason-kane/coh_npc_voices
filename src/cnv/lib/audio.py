@@ -12,7 +12,7 @@ def replace_extension(pathfn, extension):
     return Path(pathfn).with_suffix(extension)
 
 def wavfile_to_mp3file(wavfilename, mp3filename=None):
-    log.info('Converting to mp3...')
+    log.debug('Converting to mp3...')
     with AudioFile(wavfilename) as input:
         if mp3filename is None:
             mp3filename = replace_extension(
@@ -25,8 +25,17 @@ def wavfile_to_mp3file(wavfilename, mp3filename=None):
             num_channels=input.num_channels
         ) as output:
             while input.tell() < input.frames:
-                output.write(input.read(1024))
-            log.info(f'Wrote {mp3filename}')
+                retries = 5
+                success = False
+                while not success and retries > 0:
+                    try:
+                        output.write(input.read(1024))
+                        success = True
+                    except RuntimeError as err:
+                        log.error(err)
+                    retries -= 1
+
+            log.debug(f'Wrote {mp3filename}')
 
     return mp3filename 
 
@@ -38,7 +47,7 @@ def mp3file_to_wavfile(mp3filename, wavfilename=None):
     This is more or less straight from the README.md for pedalboard.
     Spotify - Props for pedalboard open source.
     """
-    log.info('Converting from mp3 to wav...')
+    log.debug('Converting from mp3 to wav...')
     if wavfilename is None:
         wavfilename = replace_extension(
             mp3filename, ".wav"
@@ -52,7 +61,7 @@ def mp3file_to_wavfile(mp3filename, wavfilename=None):
         ) as output:
             while input.tell() < input.frames:
                 output.write(input.read(1024))
-            log.info(f'Wrote {wavfilename}')
+            log.debug(f'Wrote {wavfilename}')
     
     return wavfilename
 

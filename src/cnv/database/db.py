@@ -10,7 +10,8 @@ import cnv.database.models as models
 from sqlalchemy import create_engine
 from sqlalchemy_utils import create_database, database_exists
 
-engine = create_engine("sqlite:///voices.db", echo=True)
+sqlite_database_filename = "voices.db"
+engine = create_engine(f"sqlite:///{sqlite_database_filename}", echo=True)
 
 
 logging.basicConfig(
@@ -61,11 +62,16 @@ def build_migrate():
     # it really doesn't exist.
     if not database_exists(engine.url):    
         create_database(engine.url)
-        models.Base.metadata.create_all(engine)    
+        # let alembic create the db
+        # models.Base.metadata.create_all(engine)    
     return
 
+NEW_DB = False
+
 if not database_exists(engine.url):
+    NEW_DB = True
     build_migrate()
+    alembic.config.main(argv=alembicArgs)
     # a default character entry makes everything a little easier.
     with models.Session(models.engine) as session:
         default = models.Character(
@@ -76,6 +82,6 @@ if not database_exists(engine.url):
         )
         session.add(default)
         session.commit()
-
-log.info('Checking for database migration...')
-alembic.config.main(argv=alembicArgs)
+else:
+    log.info('Checking for database migration...')
+    alembic.config.main(argv=alembicArgs)

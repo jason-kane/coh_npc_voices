@@ -43,7 +43,6 @@ class ConfigurationTab(ttk.Frame):
         if prior and newvalue != prior:
             log.info(f'Changing language to {newvalue}')
             # we should immediately translate and localize the UI
-            
 
     def elevenlabs_token_frame(self) -> ttk.Frame:
         """

@@ -150,17 +150,17 @@ def main():
                         (None, f"Welcome back {value}", "system")
                     )
                 
-                log.info('path set_chraracter')
+                log.debug('path set_chraracter')
                 char.chatter.hero = npc_chatter.Hero(value)
-                log.info('Calling set_hero()...')
+                log.debug('Calling set_hero()...')
                 char.set_hero()
                 last_character_update = datetime.now()
             elif key == "SPOKE":
                 # name, category = value
-                log.info('Refreshing character list...')
+                log.debug('Refreshing character list...')
                 voice.listside.refresh_character_list()
             elif key == "RECHARGED":
-                log.info(f'Power {value} has recharged.')
+                log.debug(f'Power {value} has recharged.')
                 if value in ["Hasten", "Domination"]:
                     if settings.get_config_key(f'auto_{value.lower()}'):
                         # only send keyboard activity to the city of heroes window
@@ -186,7 +186,7 @@ def main():
             #     log.error('Unknown event_queue key: %s', key)
 
         except Exception as err:
-            log.info(f"{err=}")
+            log.error(f"{err=}")
             raise
         
         if last_character_update:
@@ -197,9 +197,6 @@ def main():
 
         root.update_idletasks()
         root.update()
-
-        # log.info('Primary loop')
-
 
 if __name__ == '__main__':
 

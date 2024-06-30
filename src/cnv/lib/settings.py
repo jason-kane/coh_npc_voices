@@ -146,7 +146,7 @@ def cache_filename(name, message):
 
 def get_cachefile(name, message, category):
     name, clean_name = clean_customer_name(name)
-    log.info(f"{name=} {clean_name=} {message=}")
+    log.debug(f"{name=} {clean_name=} {message=}")
 
     # ie: abcde_timetodan.mp3
     # this should be unique to this messags, it's only
