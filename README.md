@@ -34,7 +34,7 @@ Adding more voices is an easy way to increase the variety and flavor of sounds y
 
 By itself that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script in this git repo 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.
 
-You probably have to logout/login before the extra voices are available.  Only voices that support en- languages will be used automatically; you can choose to use other language voices but the resulting audio is often difficult to understand.
+I think you have to reboot or logout/login before the extra voices are available.  
 
 ### Paid Voice Services
 

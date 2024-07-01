@@ -62,9 +62,9 @@ prompt-toolkit==3.0.43
 proto-plus==1.23.0
 protobuf==4.25.3
 pure-eval==0.2.2
-tkfeather==1.0.0
 pyasn1-modules==0.3.0
 pyasn1==0.5.1
+pyautogui==0.9.54
 pycparser==2.21
 pydantic_core==2.18.1
 pydantic==2.7.0
@@ -84,6 +84,7 @@ requests-toolbelt==1.0.0
 requests==2.31.0
 rfc3986==2.0.0
 rich==13.7.1
+rich==13.7.1
 rsa==4.9
 scipy==1.12.0
 setuptools==69.2.0
@@ -93,13 +94,16 @@ sounddevice==0.4.6
 SQLAlchemy-Utils==0.41.2
 SQLAlchemy==2.0.29
 stack-data==0.6.3
+tkfeather==1.0.0
 tqdm==4.66.2
 traitlets==5.14.3
+translate==3.6.1
 tts @ git+https://github.com/DeepHorizons/tts@11cabe8e2a76bd788e4266e5b5469c118412d7b1
 twine==5.0.0
 typing_extensions==4.11.0
 urllib3==2.2.1
 voicebox-tts==0.0.7
+watchdog==4.0.1
 wcwidth==0.2.13
 websockets==12.0
 zipp==3.18.1

@@ -3,19 +3,19 @@ import logging
 import os
 import sys
 import tempfile
-import numpy as np
 import time
-from io import BytesIO
 import tkinter as tk
 from dataclasses import dataclass, field
+from io import BytesIO
 from tkinter import ttk
 from typing import Union
 
-import audio
 import boto3
+import cnv.database.models as models
+import cnv.lib.audio as audio
+import cnv.lib.settings as settings
 import elevenlabs
-import models
-import settings
+import numpy as np
 import tts.sapi
 import voicebox
 from elevenlabs.client import ElevenLabs as ELABS
@@ -46,7 +46,7 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 
     def get_speech(self, text: StrOrSSML) -> Audio:
         voice = tts.sapi.Sapi()
-        log.info(f"Saying {text!r} as {self.voice} at rate {self.rate}")
+        log.debug(f"Saying {text!r} as {self.voice} at rate {self.rate}")
         voice.set_rate(self.rate)
         voice.set_voice(self.voice)
 
@@ -78,11 +78,13 @@ class WindowsSapi(voicebox.tts.tts.TTS):
 
 # Base Class for engines
 class TTSEngine(ttk.Frame):
-    def __init__(self, parent, rank, selected_character, *args, **kwargs):
+    def __init__(self, parent, rank, name, category, *args, **kwargs):
+        log.debug(f'Initializing TTSEngine {parent=} {rank=} {name=} {category=}')
         super().__init__(parent, *args, **kwargs)
         self.rank = rank
         self.parent = parent
-        self.selected_character = selected_character
+        self.name = name
+        self.category = category
         self.override = {}
         self.parameters = set('voice_name')
         self.config_vars = {}
@@ -91,9 +93,8 @@ class TTSEngine(ttk.Frame):
         self.set_config_meta(self.config)
 
         self.draw_config_meta()
-        self.selected_character = selected_character
-        self.load_character(self.selected_character.get())
-        self.repopulate_options()        
+        self.load_character(category=category, name=name)
+        self.repopulate_options()
 
     def get_config_meta(self):
         with models.db() as session:
@@ -119,7 +120,7 @@ class TTSEngine(ttk.Frame):
 
         with models.db() as session:
             for row in rows[0]:
-                log.info(f"{row=}")
+                # log.info(f"{row=}")
                 cosmetic, key, varfunc, default, cfg, fn = row
                 field = models.EngineConfigMeta(
                     engine_key=self.key,
@@ -144,7 +145,7 @@ class TTSEngine(ttk.Frame):
         )
 
         if message:
-            log.info(f"say.message: {message}")
+
             try:
                 vb.say(message)
             except Exception as err:
@@ -169,51 +170,52 @@ class TTSEngine(ttk.Frame):
     def get_tts(self):
         return voicebox.tts.tts.TTS()
 
-    def load_character(self, raw_name):
+    def load_character(self, category, name):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
+        # settings.how_did_i_get_here()
+
         self.loading = True
-        log.info(f"TTSEngine.load_character({raw_name})")
+        self.name = name
+        self.category = category
         
         with models.db() as session:
-            character = models.get_character_from_rawname(raw_name, session)
+            character = models.Character.get(name, category, session)
 
         self.gender = settings.get_npc_gender(character.name)
         
         engine_config = models.get_engine_config(character.id, self.rank)
 
-        log.info(f"{engine_config=}")
-
         for key, value in engine_config.items():
-            log.info(f'Setting config {key} to {value}')
+            log.debug(f'Setting config {key} to {value}')
             
             # log.info(f"{dir(self)}")
             if hasattr(self, 'config_vars'):
                 # the polly way
-                log.info(f'PolyConfig[{key}] = {value}')
-                log.info(f'{self.config_vars=}')
-                self.config_vars[key].set(value)
+                log.debug(f'PolyConfig[{key}] = {value}')
+                # log.info(f'{self.config_vars=}')
+                if key in self.config_vars:
+                    self.config_vars[key].set(value)
             else:
-                log.info(f'oldstyle config[{key}] = {value}')
+                log.error(f'OBSOLETE config[{key}] = {value}')
                 # everything else
                 getattr(self, key).set(value)
                 setattr(self, key + "_base", value)
 
-        log.info("TTSEngine.load_character complete")
+        # log.info("TTSEngine.load_character complete")
         self.loading = False
         return character
 
-    def save_character(self, raw_name):
+    def save_character(self, name, category):
         # Retrieve configuration settings from widgets
         # and persist them to the DB
-        log.info(f"save_character({raw_name})")
+        # log.info(f"save_character({name}, {category})")
 
-        category, name = raw_name.split(maxsplit=1)
-        character = models.get_character(name, category)
+        character = models.Character.get(name, category)
 
         if character is None:
             # new character?  This is not typical.
-            log.info(f'Creating new character {name}`')
+            # log.info(f'Creating new character {name}`')
             
             with models.db() as session:
                 character = models.Character(
@@ -228,9 +230,9 @@ class TTSEngine(ttk.Frame):
                 session.commit()
                 session.refresh(character)
 
-            log.info("character: %s", character)
+            # log.info("character: %s", character)
             for key in self.parameters:
-                log.info(f"Processing attribute {key}...")
+                # log.info(f"Processing attribute {key}...")
                 # do we already have a value for this key?
                 value = str(getattr(self, key).get())
 
@@ -245,12 +247,12 @@ class TTSEngine(ttk.Frame):
                     ).scalar_one_or_none()
 
                     if config_setting and config_setting.value != value:
-                        log.info('Updating existing setting')
+                        log.debug('Updating existing setting')
                         config_setting.value = value
                         session.commit()
 
                     elif not config_setting:
-                        log.info('Saving new BaseTTSConfig')
+                        log.debug('Saving new BaseTTSConfig')
                         with models.db() as session:
                             new_config_setting = models.BaseTTSConfig(
                                 character_id=character.id, 
@@ -265,8 +267,10 @@ class TTSEngine(ttk.Frame):
         # now we build it.
         for m in self.get_config_meta():
             frame = ttk.Frame(self)
-            ttk.Label(frame, text=m.cosmetic, anchor="e").pack(
-                side="left", fill="x", expand=True
+            frame.columnconfigure(0, minsize=125, uniform="ttsengine")
+            frame.columnconfigure(1, weight=2, uniform="ttsengine")
+            ttk.Label(frame, text=m.cosmetic, anchor="e").grid(
+                row=0, column=0, sticky="e", padx=10
             )
 
             # create the tk.var for the value of this widget
@@ -296,7 +300,7 @@ class TTSEngine(ttk.Frame):
             textvariable=self.config_vars[key],
         )
         self.widget[key]["state"] = "readonly"
-        self.widget[key].pack(side="left", fill="x", expand=True)
+        self.widget[key].grid(row=0, column=1, sticky="ew")
 
     def _tkDoubleVar(self, key, frame, cfg):
         # doubles get a scale widget.  I haven't been able to get the ttk.Scale
@@ -312,7 +316,7 @@ class TTSEngine(ttk.Frame):
             digits=cfg.get('digits', 2),
             resolution=cfg.get('resolution', 1)
         )
-        self.widget[key].pack(side="left", fill="x", expand=True)
+        self.widget[key].grid(row=0, column=1, sticky="ew")
 
     def _tkBooleanVar(self, key, frame):
         """
@@ -328,7 +332,7 @@ class TTSEngine(ttk.Frame):
             onvalue=True,
             offvalue=False
         )
-        self.widget[key].pack(side="left", fill="x", expand=True)
+        self.widget[key].grid(row=0, column=1, sticky="ew")
 
     def reconfig(self, *args, **kwargs):
         """
@@ -345,10 +349,11 @@ class TTSEngine(ttk.Frame):
         if self.loading:
             return
         
-        log.info(f'reconfig({args=}, {kwargs=})')
+        # log.info(f'reconfig({args=}, {kwargs=})')
         with models.db() as session:
-            character = models.get_character_from_rawname(
-                self.selected_character.get(),
+            character = models.Character.get(
+                name=self.name, 
+                category=self.category,
                 session=session
             )
     
@@ -365,28 +370,338 @@ class TTSEngine(ttk.Frame):
             # our change may filter the other widgets, possibly
             # rendering the previous value invalid.
             if m.varfunc == "StringVar":
-                log.info(f"{m.cosmetic=} {m.key=} {m.default=} {m.gatherfunc=}")
+                # log.info(f"{m.cosmetic=} {m.key=} {m.default=} {m.gatherfunc=}")
                 all_options = getattr(self, m.gatherfunc)()
+                if not all_options:
+                    log.error(f'{m.gatherfunc=} returned no options ({self.cosmetic})')
+
                 self.widget[m.key]["values"] = all_options
             
                 if self.config_vars[m.key].get() not in all_options:
-                    log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')
+                    # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')                    
                     self.config_vars[m.key].set(all_options[0])
             
     def _gender_filter(self, voice):
         if hasattr(self, 'gender') and self.gender:
-            # log.debug(f'{self.gender.title()} ?= {voice["gender"].title()}')
+            log.debug(f'{self.gender.title()} ?= {voice["gender"].title()}')
             try:
                 return self.gender.title() == voice["gender"].title()
             except KeyError:
-                log.info('Failed to find "gender" in:')
-                log.info(f"{voice=}")
+                log.warning('Failed to find "gender" in:')
+                log.debug(f"{voice=}")
         return True
 
 
 class WindowsTTS(TTSEngine):
     cosmetic = "Windows TTS"
     key = "windowstts"
+
+    VOICE_SUPERSET = {
+        'Hoda': {
+            'gender': 'Female',
+            'language_code': 'arb' # arabic
+        },
+        'Naayf': {
+            'gender': 'Male',
+            'language_code': 'ar-SA' # arabic (saudi)
+        }, 
+        'Ivan': {
+            'gender': 'Male',
+            'language_code': 'bg-BG' # Bulgarian
+        },
+        'Herena': {
+            'gender': 'Female',
+            'language_code': 'ca-ES' # Catalan
+        },
+        'Kangkang': {
+            'gender': 'Male',
+            'language_code': 'cmn-CN' # Chinese (simplified)
+        },
+        'Huihui': {
+            'gender': 'Female',
+            'language_code': 'cmn-CN' # Chinese (simplified)
+        },
+        "Yaoyao": {
+            'gender': 'Female',
+            'language_code': 'cmn-CN' # Chinese (simplified)
+        },
+        'Danny': {
+            'gender': 'Male',
+            'language_code': 'yue-CN' # Cantonese (Traditional, Hong Kong SAR)
+        },
+        'Tracy': {
+            'gender': 'Female',
+            'language_code': 'yue-CN' # Cantonese (Traditional, Hong Kong SAR)
+        },
+        'Zhiwei': {
+            'gender': 'Male',
+            'language_code': 'yue-CN' # Chinese (Traditional, Taiwan)
+        },
+        'Matej': {
+            'gender': 'Male',
+            'language_code': 'hr-HR' # Croatian
+        },
+        'Jakub': {
+            'gender': 'Male',
+            'language_code': 'cs-CZ' # Czech
+        },
+        "Helle": {
+            'gender': 'Female',
+            'language_code': 'da-DK' # Danish
+        }, 
+        "Frank": {
+            'gender': 'Male',
+            'language_code': 'nl-NL' # Dutch
+        }, 
+        "James": {
+            'gender': 'Male',
+            'language_code': 'en-AU' # English (Australia)
+        },
+        "Catherine": {
+            'gender': 'Female',
+            'language_code': 'en-AU' # English (Australia)
+        },
+        "Richard": {
+            'gender': 'Male',
+            'language_code': 'en-CA' # English (Canada)
+        },
+        "Linda": {
+            'gender': 'Female',
+            'language_code': 'en-CA' # English (Canada)
+        },
+        "Nathalie": {
+            'gender': 'Female',
+            'language_code': 'en-CA' # English (Canada) (this might be french, idk)
+        },        
+        "George": {
+            'gender': 'Male',
+            'language_code': 'en-GB' # English (GB)
+        },
+        "Hazel": {
+            'gender': 'Female',
+            'language_code': 'en-GB' # English (GB)
+        },
+        "Susan": {
+            'gender': 'Female',
+            'language_code': 'en-GB' # English (GB)
+        },
+        "Ravi": {
+            'gender': 'Male',
+            'language_code': 'en-IN' # English (India)
+        },
+        "Heera": {
+            'gender': 'Female',
+            'language_code': 'en-IN' # English (India)
+        },
+        "Sean": {
+            'gender': 'Male',
+            'language_code': 'en-IE' # English (Ireland)
+        },
+        "David": {
+            'gender': 'Male',
+            'language_code': 'en-US' # English (US)
+        },
+        "Mark": {
+            'gender': 'Male',
+            'language_code': 'en-US' # English (US)
+        },
+        "Zira": {
+            'gender': 'Female',
+            'language_code': 'en-US' # English (US)
+        },
+        "Heidi": {
+            'gender': 'Female',
+            'language_code': 'fi-FL' # Finnish
+        },
+        "Bart": {
+            'gender': 'Male',
+            'language_code': 'nl-BE' # Flemish (Belgian Dutch)
+        },
+        "Claude": {
+            'gender': 'Male',
+            'language_code': 'fr-CA' # French (Canadian)
+        },
+        "Caroline": {
+            'gender': 'Female',
+            'language_code': 'fr-CA' # French (Canadian)
+        },
+        "Paul": {
+            'gender': 'Male',
+            'language_code': 'fr-FR' # French
+        },
+        "Hortense": {
+            'gender': 'Female',
+            'language_code': 'fr-FR' # French
+        },
+        "Julie": {
+            'gender': 'Female',
+            'language_code': 'fr-FR' # French
+        },
+        "Guillaume": {
+            'gender': 'Male',
+            'language_code': 'fr-CH' # French (Switzerland)
+        },
+        "Michael": {
+            'gender': 'Male',
+            'language_code': 'de-AT' # German (Austria)
+        },
+        "Stefan": {
+            'gender': 'Male',
+            'language_code': 'de-DE' # German
+        },
+        "Hedda": {
+            'gender': 'Female',
+            'language_code': 'de-DE' # German
+        },
+        "Katja": {
+            'gender': 'Female',
+            'language_code': 'de-DE' # German
+        },
+        "Karsten": {
+            'gender': 'Male',
+            'language_code': 'de-CH' # German (Switzerland)
+        },
+        "Stefanos": {
+            'gender': 'Male',
+            'language_code': 'el-GR' # Greek
+        },
+        "Asaf": {
+            'gender': 'Male',
+            'language_code': 'he-IL' # Hebrew
+        },
+        "Hemant": {
+            'gender': 'Male',
+            'language_code': 'hi-IN' # Hindi (India)
+        },
+        "Kalpana": {
+            'gender': 'Female',
+            'language_code': 'hi-IN' # Hindi (India)
+        },
+        "Szabolcs": {
+            'gender': 'Male',
+            'language_code': 'hu-HU' # Hungarian
+        },
+        "Andika": {
+            'gender': 'Male',
+            'language_code': 'id-ID' # Indonesian
+        },
+        "Cosimo": {
+            'gender': 'Male',
+            'language_code': 'it-IT' # Italian
+        },
+        "Elsa": {
+            'gender': 'Female',
+            'language_code': 'it-IT' # Italian
+        },
+        "Ichiro": {
+            'gender': 'Male',
+            'language_code': 'ja-JP' # Japanese
+        },
+        "Sayaka": {
+            'gender': 'Male',
+            'language_code': 'ja-JP' # Japanese
+        },
+        "Ayumi": {
+            'gender': 'Female',
+            'language_code': 'ja-JP' # Japanese
+        },
+        "Haruka": {
+            'gender': 'Female',
+            'language_code': 'ja-JP' # Japanese
+        },
+        "Rizwan": {
+            'gender': 'Male',
+            'language_code': 'ms-MY' # Malay
+        },
+        "Jon": {
+            'gender': 'Male',
+            'language_code': 'nb-NO' # Norwegian
+        },
+        "Adam": {
+            'gender': 'Male',
+            'language_code': 'pl-PL' # Polish
+        },
+        "Paulina": {
+            'gender': 'Female',
+            'language_code': 'pl-PL' # Polish
+        },
+        "Daniel": {
+            'gender': 'Male',
+            'language_code': 'pt-BR' # Portuguese (Brazil)
+        },
+        "Maria": {
+            'gender': 'Female',
+            'language_code': 'pt-BR' # Portuguese (Brazil)
+        },
+        "Helia": {
+            'gender': 'Female',
+            'language_code': 'pt-PT' # Portuguese
+        },
+        "Andrei": {
+            'gender': 'Male',
+            'language_code': 'ro-RO' # Romanian
+        },
+        "Pavel": {
+            'gender': 'Male',
+            'language_code': 'ru-RU' # Russian
+        },
+        "Irina": {
+            'gender': 'Female',
+            'language_code': 'ru-RU' # Russian
+        },
+        "Filip": {
+            'gender': 'Male',
+            'language_code': 'sk-SK' # Slovak
+        },
+        "Lado": {
+            'gender': 'Male',
+            'language_code': 'hu-SL' # Slovenian
+        },
+        "Heami": {
+            'gender': 'Female',
+            'language_code': 'ko-KR' # Korean
+        },
+        "Pablo": {
+            'gender': 'Male',
+            'language_code': 'es-ES' # Spanish (Spain)
+        },
+        "Helena": {
+            'gender': 'Female',
+            'language_code': 'es-ES' # Spanish (Spain)
+        },        
+        "Laura": {
+            'gender': 'Female',
+            'language_code': 'es-ES' # Spanish (Spain)
+        },        
+        "Raul": {
+            'gender': 'Male',
+            'language_code': 'es-MX' # Spanish (Mexico)
+        },
+        "Sabina": {
+            'gender': 'Female',
+            'language_code': 'es-MX' # Spanish (Mexico)
+        },        
+        "Bengt": {
+            'gender': 'Male',
+            'language_code': 'sv-SE' # Swedish
+        },
+        "Valluvar": {
+            'gender': 'Male',
+            'language_code': 'ta-IN' # Tamil
+        },
+        "Pattara": {
+            'gender': 'Male',
+            'language_code': 'th-TH' # Thai
+        },
+        "Tolga": {
+            'gender': 'Male',
+            'language_code': 'tr-TR' # Turkish
+        },
+        "An": {
+            'gender': 'Male',
+            'language_code': 'vi-VN' # Vietnamese
+        },
+    }
 
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
@@ -402,29 +717,8 @@ class WindowsTTS(TTSEngine):
         return WindowsSapi(rate=rate, voice=voice_name)
 
     def name_to_gender(self, name):
-        if name in [
-            "Catherine",
-            "Hazel",
-            "Hazel Desktop",
-            "Heera",
-            "Linda",
-            "Susan",
-            "Zira",
-            "Zira Desktop"
-        ]: 
-            return 'Female'
-
-        elif name in [
-            "David",
-            "David Desktop",
-            "George",
-            "James",
-            "Mark",
-            "Ravi",
-            "Richard",
-            "Sean"
-        ]:
-            return 'Male'
+        if name in self.VOICE_SUPERSET:
+            return self.VOICE_SUPERSET[name]["gender"]        
         return 'Neutral'
 
     def get_voice_names(self, gender=None):
@@ -434,26 +728,51 @@ class WindowsTTS(TTSEngine):
         from windows version to version and from
         machine to machine.
         """
-        log.info(f'Retrieving TTS voice names filtered to only show gender {self.gender}')
-        
-        all_voices = models.diskcache(f"{self.key}_voice_name")
+        log.debug(f'Retrieving TTS voice names filtered to only show gender {self.gender}')
+        # all_voices = models.diskcache(f"{self.key}_voice_name")
+        all_voices = None
+
         if all_voices is None:
             all_voices = []
             wintts = tts.sapi.Sapi()
             voices = wintts.get_voice_names()
             for v in voices:
+                if "Desktop" in v:
+                    continue
+
                 name = " ".join(v.split("-")[0].split()[1:])
-                all_voices.append({
-                    'voice_name': name,
-                    'gender': self.name_to_gender(name)
-                })
+                if name in self.VOICE_SUPERSET:
+                    all_voices.append({
+                        'voice_name': name,
+                        'gender': self.name_to_gender(name),
+                        'language_code': self.VOICE_SUPERSET[name]['language_code']
+                    })
+                else:
+                    all_voices.append({
+                        'voice_name': name,
+                        'gender': self.name_to_gender(name)
+                    })
             
             models.diskcache(f"{self.key}_voice_name", all_voices)
       
+        allowed_language_codes = settings.get_voice_language_codes()
         nice_names = []
+
         for voice in all_voices:
             if gender and voice['gender'] != gender:
                 continue
+            
+            # filter out voices that are not compatible with our language
+            if 'language_code' in voice:
+                found = False
+                for code in allowed_language_codes:
+                    if f"{code}-" in voice['language_code']:
+                        found = True
+                    else:
+                        log.debug(f"{code}- not found in {voice['language_code']}")
+
+                if not found:
+                    continue
             
             nice_names.append(voice["voice_name"])
 
@@ -465,51 +784,38 @@ class GoogleCloud(TTSEngine):
     key = 'googletts'
     
     config = (
-        ('Language Code', 'language_code', "StringVar", 'en-US', {}, "get_language_codes"),
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Speakin Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.5, 'max': 1.75, 'digits': 3, 'resolution': 0.25}, None),
         ('Voice Pitch', 'voice_pitch', "DoubleVar", 1, {'min': -10, 'max': 10, 'resolution': 0.5}, None)
-    )
-
-    def get_language_codes(self):
-        all_language_codes = models.diskcache(f'{self.key}_language_code')
-
-        if all_language_codes is None:
-            all_voices = self.get_voices()
-
-            out = set()
-            for voice_dict in all_voices:
-                if self._gender_filter(voice_dict):
-                    for code in voice_dict["language_codes"]:
-                        out.add(code)
-
-            all_language_codes = [
-                {'language_code': code} for code in sorted(list(out))
-            ]
-
-            models.diskcache(f'{self.key}_language_code', all_language_codes)
-
-        return [ code['language_code'] for code in all_language_codes ]
+    )   
 
     def _language_code_filter(self, voice):
         """
         True if this voice is able to speak this language_code.
         """
-        selected_language_code = self.config_vars["language_code"].get()
-        return (
-            selected_language_code in voice["language_codes"]
-        )
+        allowed_language_codes = settings.get_voice_language_codes()           
+
+        # two letter code ala: en, and matches against en-whatever
+        for allowed_code in allowed_language_codes:
+            if any(f"{allowed_code}-" in code for code in voice["language_codes"]):
+                log.debug(f'{allowed_code=} matches with {voice["language_codes"]=}')
+                return True
+        return False
 
     def get_voice_names(self, gender=None):
         all_voices = self.get_voices()
 
         if gender and not hasattr(self, 'gender'):
             self.gender = gender
-
+        
         out = set()
         for voice in all_voices:
-            if self._language_code_filter(voice) and self._gender_filter(voice):
-                out.add(voice['voice_name'])
+            if self._language_code_filter(voice):
+                if self._gender_filter(voice):
+                    out.add(voice['voice_name'])
+        
+        if not out:
+            log.error(f'There are no voices available with language={self.language_code} and gender={self.gender}')
         
         out = sorted(list(out))
 
@@ -532,12 +838,12 @@ class GoogleCloud(TTSEngine):
             resp = client.list_voices(req)
             all_voices = []
             for voice in resp.voices:
-                log.info(f'{voice.language_codes=}')
-                log.info(dir(voice.language_codes))
+                # log.info(f'{voice.language_codes=}')
+                # log.info(dir(voice.language_codes))
 
                 language_codes = []
                 for code in voice.language_codes:
-                    log.info(f'{code=}')
+                    # log.info(f'{code=}')
                     language_codes.append(code)
                 row = {
                     'voice_name': voice.name,
@@ -545,9 +851,9 @@ class GoogleCloud(TTSEngine):
                     'gender': {1: 'Female', 2: 'Male'}[voice.ssml_gender.value],
                     'language_codes': language_codes
                 }
-                log.info(f'{row=}')
-                for key in row:
-                    log.info(f'{key} == {json.dumps(row[key])}')
+                # log.info(f'{row=}')
+                # for key in row:
+                #    log.info(f'{key} == {json.dumps(row[key])}')
 
                 all_voices.append(row)
             
@@ -565,11 +871,26 @@ class GoogleCloud(TTSEngine):
             ).first()
         return ssml_gender
 
+    def get_voice_language(self, voice_name):
+        """
+        first compatible language code
+        """
+        allowed_language_codes = settings.get_voice_language_codes()
+
+        all_voices = self.get_voices()
+        for voice in all_voices:
+            if voice["voice_name"] == voice_name:
+                for code in voice['language_codes']:
+                    for allowed in allowed_language_codes:
+                        if f"{allowed}-" in code:
+                            return code
+        return None
+
     def get_tts(self):
-        language_code = self.override.get('language_code', self.config_vars["language_code"].get())
         voice_name = self.override.get('voice_name', self.config_vars["voice_name"].get())
         speaking_rate = self.override.get('speaking_rate', self.config_vars["speaking_rate"].get())
         voice_pitch = self.override.get('voice_pitch', self.config_vars["voice_pitch"].get())
+        language_code = self.get_voice_language(voice_name)
 
         client = texttospeech.TextToSpeechClient()
 
@@ -582,6 +903,7 @@ class GoogleCloud(TTSEngine):
             language_code=language_code,
             name=voice_name,
         )
+
         return voicebox.tts.GoogleCloudTTS(
             client=client, 
             voice_params=voice_params, 
@@ -599,7 +921,7 @@ def get_elevenlabs_client():
         client = ELABS(api_key=elvenlabs_api_key)
         return client
     else:
-        log.info("Elevenlabs Requires valid eleven_labs.key file")
+        log.warning("Elevenlabs Requires valid eleven_labs.key file")
 
 
 def as_gender(in_gender):
@@ -614,11 +936,13 @@ def as_gender(in_gender):
 
 
 class ElevenLabs(TTSEngine):
+    """
+    Elevenlabs detects the incoming language; so in theory every voice works with every language.  I have doubts.
+    """
     cosmetic = "Eleven Labs"
     key = "elevenlabs"
     api_key = None
-    language_code = ""
-    
+
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Stability', 'stability', "DoubleVar", 0.5, {'min': 0, 'max': 1, 'resolution': 0.025}, None),
@@ -651,7 +975,7 @@ class ElevenLabs(TTSEngine):
         if gender and not hasattr(self, 'gender'):
             self.gender = gender
         
-        log.info(f'ElevenLabs get_voice_name({gender=}) ({self.gender})')
+        # log.info(f'ElevenLabs get_voice_name({gender=}) ({self.gender})')
         out = set()
         for voice in all_voices:
             if self._gender_filter(voice):
@@ -677,7 +1001,7 @@ class ElevenLabs(TTSEngine):
 
             all_voices = []
             for voice in all_raw_voices.voices:
-                log.info(f"{voice=}")
+                # log.info(f"{voice=}")
                 all_voices.append({
                     'id': voice.voice_id,
                     'voice_name': voice.name,
@@ -729,7 +1053,7 @@ class ElevenLabs(TTSEngine):
         # model = elevenlabs.Model()
         model = None
         
-        log.info(f'Creating ttsElevenLab(<api_key>, voice={voice_name}, model={model})')
+        # log.info(f'Creating ttsElevenLab(<api_key>, voice={voice_name}, model={model})')
         return ttsElevenLabs(
             api_key=self.api_key, 
             stability=stability,
@@ -813,7 +1137,6 @@ class AmazonPolly(TTSEngine):
     key = "amazonpolly"
 
     config = (
-        ('Language Code', 'language_code', "StringVar", 'en-US', {}, "get_language_codes"),
         ('Engine', 'engine', "StringVar", 'standard', {}, "get_engine_names"),
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Sample Rate', 'sample_rate', "StringVar", '16000', {}, "get_sample_rates")
@@ -832,18 +1155,24 @@ class AmazonPolly(TTSEngine):
         """
         True if this voice is able to speak this language_code.
         """
-        selected_language_code = self.config_vars["language_code"].get()
-        return (
-            selected_language_code == voice["LanguageCode"]
-        or
-            selected_language_code in voice.get("AdditionalLanguageCodes", [])
-        )
+        allowed_language_codes = settings.get_voice_language_codes()     
+        
+        for allowed_code in allowed_language_codes:
+            if (
+                f"{allowed_code}-" in voice["LanguageCode"]
+            ):
+                #or
+                #f"{allowed_code}-" in code for code in voice.get("AdditionalLanguageCodes", [])
+            #):
+                log.debug(f'{voice["LanguageCode"]=}/{voice.get('AdditionalLanguageCodes', [])} is allowed for {allowed_code=}')
+                return True
+        return False
 
     def get_language_codes(self):
         all_language_codes = models.diskcache(f'{self.key}_language_code')
 
         if all_language_codes is None:
-            log.info('Building AmazonPolly language_code cache')
+            # log.info('Building AmazonPolly language_code cache')
             all_voices = self.get_voices()
             out = set()
             
@@ -870,12 +1199,21 @@ class AmazonPolly(TTSEngine):
             all_voices = self.get_voices()
 
             out = set()
+            secondary = set()
             # is this going to be intuitive or just weird?
             for voice in all_voices:
 
-                if self._language_code_filter(voice) and self._gender_filter(voice):
-                    for code in voice.get('SupportedEngines', []):
-                        out.add(code)
+                if self._language_code_filter(voice):
+                    if self._gender_filter(voice):
+                        for code in voice.get('SupportedEngines', []):
+                            out.add(code)
+                    else:
+                        for code in voice.get('SupportedEngines', []):
+                            secondary.add(code)
+            
+            if not out:
+                log.warning('No engines exist that support this language/gender.  Ignoring gender.')
+                out = secondary
 
             all_engines = [ {'engine': engine_name} for engine_name in out ]
             models.diskcache(f'{self.key}_engine', all_engines)
@@ -889,14 +1227,20 @@ class AmazonPolly(TTSEngine):
             self.gender = gender
 
         out = set()
-        # log.info(f'filtering to include only language_code == {self.config_vars["language_code"].get()}')
-        # log.info(f'filtering to include only gender == {self.gender}')
+        secondary = set()
         for voice in all_voices:
-            if self._language_code_filter(voice) and self._gender_filter(voice):
-                log.debug(f'Including voice {voice["Name"]}')
-                out.add(voice["Name"])
+            if self._language_code_filter(voice):
+                if self._gender_filter(voice):
+                    log.debug(f'Including voice {voice["Name"]}')
+                    out.add(voice["Name"])
+                else:
+                    secondary.add(voice["Name"])
             else:
                 log.debug(f'Excluding {voice["Name"]}')
+
+        if not out:
+            log.warning('No voices exist that support this language/gender.  Ignoring gender.')
+            out = secondary
 
         out = sorted(list(out))
         
@@ -971,7 +1315,7 @@ class AmazonPolly(TTSEngine):
         # for the language name-ISO 3166 country code) for filtering the list of
         # voices returned. If you don’t specify this optional parameter, all
         # available voices are returned.
-        language_code=self.override.get('language_code', self.config_vars["language_code"].get())
+        # language_code=self.override.get('language_code', self.config_vars["language_code"].get())
         lexicon_names=[]
         sample_rate = self.override.get('sample_rate', self.config_vars["sample_rate"].get())
         
@@ -979,7 +1323,7 @@ class AmazonPolly(TTSEngine):
             client=self.get_client(),
             voice_id=voice_id.strip(),
             engine=engine,
-            language_code=language_code,
+            # language_code=language_code,
             lexicon_names=lexicon_names,
             sample_rate=int(sample_rate)
         )

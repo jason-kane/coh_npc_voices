@@ -2,7 +2,7 @@ import logging
 import tkinter as tk
 from tkinter import font, ttk
 
-import models
+import cnv.database.models as models
 import numpy as np
 import pedalboard
 import voicebox
@@ -11,9 +11,12 @@ from tkfeather import Feather
 
 log = logging.getLogger(__name__)
 
-WRAPLENGTH=250
+WRAPLENGTH=350
 
 class LScale(ttk.Frame):
+    """
+    Labeled choose-a-number
+    """
     def __init__(
         self,
         parent,
@@ -27,6 +30,9 @@ class LScale(ttk.Frame):
         *args, digits=None, resolution=0, **kwargs
     ):
         super().__init__(parent, *args, **kwargs)
+        self.columnconfigure(0, minsize=125, uniform="effect")
+        self.columnconfigure(1, weight=2, uniform="effect")
+        
         if _type == int:
             variable = tk.IntVar(
                 name=f"{parent.label.lower()}_{pname}",
@@ -38,14 +44,15 @@ class LScale(ttk.Frame):
                 value=default
             )
 
+        # label for the setting
         ttk.Label(
             self,
             text=label,
             anchor="e",
-            wraplength=WRAPLENGTH,
-            justify='left'
-        ).pack(side='left', fill='x')
+            justify='right'
+        ).grid(row=0, column=0, sticky='e')
 
+        # widget for viewing/changing the value
         tk.Scale(
             self,
             from_=from_,
@@ -56,14 +63,16 @@ class LScale(ttk.Frame):
             digits=digits,
             resolution=resolution,
             **kwargs
-        ).pack(side='left', fill='x', expand=True)
+        ).grid(row=0, column=1, sticky='ew')
 
         setattr(parent, pname, variable)
         parent.parameters.append(pname)
 
 
 class LCombo(ttk.Frame):
-
+    """
+    Combo widget to select a string from a set of possible values
+    """
     def __init__(self,
         parent,
         pname,
@@ -77,14 +86,15 @@ class LCombo(ttk.Frame):
 
         variable = tk.StringVar(value=default)
 
+        # label for the setting
         ttk.Label(
             self,
             text=label,
             anchor="e",
-            wraplength=WRAPLENGTH,
-            justify='left'
-        ).pack(side='left', fill='x')
+            justify='right'
+        ).grid(row=0, column=0, sticky='e')
 
+        # widget for viewing/changing the value
         options = ttk.Combobox(
             self, 
             textvariable=variable
@@ -92,7 +102,7 @@ class LCombo(ttk.Frame):
         options['values'] = list(choices)
         options['state'] = 'readonly'
             
-        options.pack(side='left', fill='x', expand=True)
+        options.grid(row=0, column=1, sticky='ew')
 
         setattr(parent, pname, variable)
         parent.parameters.append(pname)        
@@ -115,21 +125,22 @@ class LBoolean(ttk.Frame):
             value=default
         )
 
+        # label for the setting
         ttk.Label(
             self,
             text=label,
             anchor="e",
-            wraplength=WRAPLENGTH,
-            justify='left'
-        ).pack(side='left', fill='x')  
+            justify='right'
+        ).grid(row=0, column=0, sticky='e')
 
+        # widget for viewing/changing the value
         ttk.Checkbutton(
             self, 
             text="",
             variable=variable,
             onvalue=True,
             offvalue=False
-        ).pack(side='left', fill='x', expand=True)
+        ).grid(row=0, column=0, sticky='ew')
 
         setattr(parent, pname, variable)
         parent.parameters.append(pname)  
@@ -148,13 +159,15 @@ class EffectParameterEditor(ttk.Frame):
         self.trashcan = Feather("trash-2", size=24)
 
         topbar = ttk.Frame(self)
+        # the name of this effect
         ttk.Label(
             topbar,
-            text=self.label,
+            text=self.label.title(),
             anchor="n",
-            font=font.Font(weight="bold"),
-            wraplength=WRAPLENGTH,
-            justify='left'
+            font=font.Font(
+                size=18,
+                weight="bold"
+            )
         ).pack(side='left', fill='x', expand=True)
     
         ttk.Style().configure(
@@ -164,14 +177,17 @@ class EffectParameterEditor(ttk.Frame):
             height=1
         )
 
+        # delete button
         ttk.Button(
             topbar,
             image=self.trashcan.icon,
             style="CloseFrame.TButton",
             command=self.remove_effect
-        ).pack(side="right")
+        ).place(relx=1, rely=0, anchor='ne')
+
         topbar.pack(side="top", fill='x', expand=True)
 
+        # the descriptive text for this effect
         ttk.Label(
             self,
             text=self.desc,
@@ -185,20 +201,18 @@ class EffectParameterEditor(ttk.Frame):
         return None
     
     def clear_traces(self):
-        log.info('Clearing traces...')
+        log.debug('Clearing traces...')
         for trace_var in self.traces:
-            log.info(f'{trace_var=}')
+            log.debug(f'{trace_var=}')
             for trace in self.traces[trace_var].trace_info():
-                log.info(f"trace: {trace!r}")
+                log.debug(f"trace: {trace!r}")
                 self.traces[trace_var].trace_remove(trace[0], trace[1])
 
     def remove_effect(self):
-        log.info("EffectParamaterEngine.remove_effect()")
+        log.debug("EffectParamaterEngine.remove_effect()")
         # remove any variable traces
         self.clear_traces()
-
         self.parent.remove_effect(self)
-        # self.pack_forget()
         return
 
     def reconfig(self, varname, lindex, operation):
@@ -207,21 +221,19 @@ class EffectParameterEditor(ttk.Frame):
         persist that change.  Make the database reflect
         the UI.
         """
-        log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
+        log.debug(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
-        # key = "_".join(varname.split('_')[1:])  # I know, I feel dirty.
 
         with models.Session(models.engine) as session:
             # fragile, varname is what is coming off the trace trigger
-            log.info(f'Reading effects settings when {effect_id=}')
+            log.debug(f'Reading effects settings when {effect_id=}')
             effect_settings = session.scalars(
                 select(models.EffectSetting).where(
                     models.EffectSetting.effect_id==effect_id
-                    # models.EffectSetting.key==key
                 )
             ).all()
 
-            log.info(f'Sync to db {effect_settings}')
+            log.debug(f'Sync to db {effect_settings}')
             found = set()
             for effect_setting in effect_settings:
                 found.add(effect_setting.key)
@@ -232,22 +244,22 @@ class EffectParameterEditor(ttk.Frame):
                     continue
 
                 if new_value != effect_setting.value:
-                    log.info(f'Saving changed value {effect_setting.key} {effect_setting.value!r}=>{new_value!r}')
+                    log.debug(f'Saving changed value {effect_setting.key} {effect_setting.value!r}=>{new_value!r}')
                     # this value is different than what
                     # we have in the database
                     effect_setting.value = new_value
                     session.commit()
                 else:
-                    log.info(f'Value for {effect_setting.key} has not changed')
+                    log.debug(f'Value for {effect_setting.key} has not changed')
 
-            log.info(f"{found=}")
+            log.debug(f"{found=}")
             change = False
             for effect_setting_key in self.traces:
                 if effect_setting_key not in found:
                     change = True
-                    log.info(f'Expected key {effect_setting_key} does not exist in the database')
+                    log.debug(f'Expected key {effect_setting_key} does not exist in the database')
                     value = self.traces[effect_setting_key].get()
-                    log.info(f'Creating new EffectSetting({effect_id}, key={effect_setting_key}, value={value})')
+                    log.debug(f'Creating new EffectSetting({effect_id}, key={effect_setting_key}, value={value})')
                     new_setting = models.EffectSetting(
                         effect_id=effect_id,
                         key=effect_setting_key,
@@ -256,7 +268,6 @@ class EffectParameterEditor(ttk.Frame):
                     session.add(new_setting)
 
                 if change:
-                    log.info('commiting db session')
                     session.commit()
 
 
@@ -266,11 +277,9 @@ class EffectParameterEditor(ttk.Frame):
         to the tk.Variable tied to the widget for that
         setting.
         """
-        #if session is None:
-        #    session = models.Session(models.engine)
 
         effect_id = self.effect_id.get()
-        log.info(f'Loading {effect_id=}')
+        log.debug(f'Loading {effect_id=}')
 
         with models.db() as session:
             effect_settings = session.scalars(
@@ -281,10 +290,10 @@ class EffectParameterEditor(ttk.Frame):
 
             found = set()
             for setting in effect_settings:
-                log.info(f'Working on {setting}')
+                log.debug(f'Working on {setting}')
                 
                 if setting.key in found:
-                    log.info(f'Duplicate setting for {setting.key=} where {effect_id=}')
+                    log.debug(f'Duplicate setting for {setting.key=} where {effect_id=}')
                     session.delete(setting)
                     continue
 
@@ -997,9 +1006,9 @@ class Delay(EffectParameterEditor):
             pname="delay_seconds",
             label='Delay (sec)', 
             desc="",
-            default=0.5,
+            default=0.25,
             from_=-0.1,
-            to=1,
+            to=0.5,
             digits=3,
             resolution=0.01
         ).pack(side='top', fill='x', expand=True)
@@ -1061,7 +1070,7 @@ class Distortion(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Distortion(
-                delay_seconds=self.drive_db.get(), 
+                drive_db=self.drive_db.get(), 
             )
         )
         return effect
