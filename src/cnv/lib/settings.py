@@ -112,7 +112,7 @@ def get_language_code():
     """
     Returns the two character language code for feeding the translator
     """
-    language = get_config_key('language')
+    language = get_config_key('language', default="English")
     return LANGUAGES[language][0]
 
 def get_voice_language_codes():
@@ -120,7 +120,7 @@ def get_voice_language_codes():
     Returns a list of language codes that would be acceptable for allow-list
     filtering voices in any engine.
     """
-    language = get_config_key('language')
+    language = get_config_key('language', default="English")
     return LANGUAGES[language][1]
 
 CACHE_DIR = "cache"

@@ -309,7 +309,7 @@ class Character(Base):
         Return value is a Character() object.
         """
         if name is None:
-            name = "Sauron"
+            name = "GREAT_NAMELESS_ONE"
             
         log.debug(f'/-- Character.get({name=}, {category=}, session=...)')
         

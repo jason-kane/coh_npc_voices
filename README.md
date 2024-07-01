@@ -33,9 +33,9 @@ Adding more voices is an easy way to increase the variety and flavor of sounds y
 2. Choose Speech on the left side
 3. Choose "Add voices" under Manage voices
 
-By itselt that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.
+By itselt that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.  You have to run it as administrator.
 
-You probably have to logout/login before the extra voices are available.
+I think you have to reboot or logout/login before the extra voices are available.
 
 ### Google Text-to-Speech
 

@@ -1,5 +1,5 @@
 [project]
-name = "coh_npc_voices"
+name = "cnv"
 version = "2.0.0"
 authors = [
   { name="Jason Kane" },
@@ -17,13 +17,15 @@ classifiers = [
 ]
 dependencies = [
     "alembic",
+    "colorama",
     "elevenlabs",
     "google-cloud-texttospeech",
     "matplotlib",
     "pyautogui",
-    "pyfiglet",
     "pyfeather",
+    "pyfiglet",
     "pypiwin32",
+    "rich",
     "setuptools",
     "sqlalchemy-utils",
     "sqlalchemy",
@@ -45,8 +47,8 @@ Homepage = "https://github.com/jason-kane/coh_npc_voices"
 Issues = "https://github.com/jason-kane/coh_npc_voices/issues"
 
 [project.scripts]
-coh_voices = "coh_npc_voices.voice_editor:main"
-sidekick = "coh_npc_voices.sidekick:main"
+coh_voices = "cnv.voice_editor:main"
+sidekick = "cnv.sidekick:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true

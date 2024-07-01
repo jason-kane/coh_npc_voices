@@ -18,23 +18,24 @@ import pythoncom
 import voicebox
 from pedalboard.io import AudioFile
 from voicebox.tts.utils import get_audio_from_wav_file
+import cnv.logger
 
 REPLAY = settings.REPLAY
 
-logging.basicConfig(
-    level=settings.LOGLEVEL,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
 
+
+cnv.logger.init()
 log = logging.getLogger(__name__)
 
 # so frequently enough to merit this; people will identify themselves in the CAPTION messages.
 # like:
 # 2024-04-26 18:40:13 [Caption] <scale 1.75><color white><bgcolor DarkGreen>Positron here. I'm monitoring your current progress in the sewers.
 # we want to use that voice for captions until we find out otherwise.  This way they can have their own voice.
+#                     INFO     cnv.chatlog.npc_chatter: CAPTION: ['[Caption]', '<scale', '175><color', 'white><bgcolor', 'DarkGreen>Positron', 'here', "I'm",            npc_chatter.py:381                             'monitoring', 'your', 'current', 'progress', 'in', 'the', 'sewers']
 CAPTION_SPEAKER_INDICATORS = (
     ('Positron here', 'Positron'),
+    ('Matthew, is it', 'Dana'),  # Cinderburn mission
+    ("Dana... you're alive?!", 'Matthew'),
 )
 
 # class ParallelTTS(threading.Thread):
@@ -382,6 +383,7 @@ class LogStream:
         # [Caption] <scale 1.75><color white><bgcolor DarkGreen>Positron here. I'm monitoring your current progress in the sewers. 
         log.info(f'CAPTION: {lstring}')
         dialog = plainstring(" ".join(lstring[1:]))
+        dialog = dialog.replace('*', '')  # the stupid TTS engine say "asterisk" and it is tediously dumb.
 
         # make an effort to identify the speaker
         # Positron here. I'm monitoring your current progress in the sewers.
@@ -403,10 +405,12 @@ class LogStream:
                 log.info(f'Caption speaker identified: {speaker}')
                 self.caption_speaker = speaker
                 if color:
+                    #INFO     cnv.chatlog.npc_chatter: Caption speaker identified: Positron                                                                             npc_chatter.py:401
+                    #INFO     cnv.chatlog.npc_chatter: Assigning speaker Positron to color DarkGreen                      
                     log.info(f'Assigning speaker {speaker} to color {color}')
                     self.caption_color_to_speaker[color] = speaker
-            else:
-                log.info(f'{indicator} is not in {dialog}')
+            #else:
+            #    log.info(f'{indicator} is not in {dialog}')
         
         return self.caption_speaker, dialog
 

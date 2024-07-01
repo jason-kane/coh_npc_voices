@@ -18,9 +18,12 @@ import queue
 import sys
 import tkinter as tk
 from datetime import datetime, timedelta
-from logging.config import dictConfig
 from tkinter import ttk
 
+import cnv.chatlog.npc_chatter as npc_chatter
+import cnv.logger
+import colorama
+import lib.settings as settings
 import pyautogui as p
 import win32api
 import win32con
@@ -33,58 +36,18 @@ from tabs import (
 )
 from win32gui import GetForegroundWindow, GetWindowText
 
-import chatlog.npc_chatter as npc_chatter
-import lib.settings as settings
-
 # this unlinks us from python so windows will
 # use our icon instead of the python icon in the
 # taskbar.
 myappid = u'fun.side.projects.sidekick.1.0'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-LOGGING_CONFIG = { 
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': { 
-        'standard': { 
-            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-        },
-    },
-    'handlers': { 
-        'default': { 
-            'level': 'INFO',
-            'formatter': 'standard',
-            'class': 'logging.StreamHandler'
-        },
-        'error_file': { 
-            'level': 'ERROR',
-            'formatter': 'standard',
-            'class': 'logging.FileHandler',
-            'filename': 'error.log',
-            'mode': 'a'
-        },
-    },
-    'loggers': { 
-        '': {  # root logger
-            'handlers': ['default', 'error_file'],
-            'level': 'DEBUG',
-            'propagate': True
-        },
-        # 'coh_npc_voices': {
-        #     'handlers': ['default', 'error_file'],
-        #     'level': 'DEBUG',
-        #     'propagate': True
-        # },
-    } 
-}
-
-dictConfig(LOGGING_CONFIG)
-
-
+cnv.logger.init()
 log = logging.getLogger(__name__)
 EXIT = False
 
 def main():
+    colorama.init()
     root = tk.Tk()  
 
     def on_closing():
