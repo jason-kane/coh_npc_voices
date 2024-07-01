@@ -18,8 +18,7 @@ You'll also start hearing things.  This time the voices in your head are real.  
 
 Don't like what someone sounds like?  That is what the "Voices" tab is for:
 
-![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/17e2d134-a6df-49de-9c9c-b1af4544a85f)
-
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/074f75c5-aa53-4293-b2e3-4c8433f193a4)
 
 ## More/Better Voices (Highly Recommended)
 
@@ -33,40 +32,39 @@ Adding more voices is an easy way to increase the variety and flavor of sounds y
 2. Choose Speech on the left side
 3. Choose "Add voices" under Manage voices
 
-By itselt that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.  You have to run it as administrator.
+By itself that will probably only give you one or two more voices, even if you install a dozen.  There is a powershell script in this git repo 'enable_all_win10_voices.ps' that copies voices from the "only use for windows transcribe" part of the registry out to the "use for anything" part.
 
-I think you have to reboot or logout/login before the extra voices are available.
+I think you have to reboot or logout/login before the extra voices are available.  
 
-### Google Text-to-Speech
+### Paid Voice Services
 
-Paid text-to-speech services are supported.  Right now that includes both google text-to-speech and ElevenLabs.  For google you will need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  I know it is a pain.  The quality and flexibility are much better than windows defaults but it takes a moment to generate.  Responses are cached to keep costs down to near zero.
+#### Google Text-to-Speech
 
-### ElevenLabs
+Paid text-to-speech services are supported.  Right now that includes both google text-to-speech and ElevenLabs.  For google you will need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  
 
-ElevenLabs voices support is just barely getting started.  To use it you will need to place a text file named "eleven_labs.key" containing only your API key in the main sidekick directory.
+I know this is a pain.  The quality and flexibility are much better than Windows TTS but it takes a moment to generate and the delay is annoying.  Responses are cached to keep costs down to near zero.
+
+#### ElevenLabs
+
+ElevenLabs voices require an ElevenLabs API Token.  You can configure it on the "configuration" page.
+
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/d67352a3-7ff2-448c-b2f9-3b5b8883df19)
+
+Very easy.  The quality is really great but the 10,000 characters of text-to-speech you get each month with a free account can easily run out.  How long varies dramatically with how much you play and which parts of the game.  Somewhere between a 5-15 hours of game play.  They have a $5/month plan than gives you 3x more.
 
 # Voice Effects
 
-We have a lot of audio effects.  Currently:
-* Bandpass Filter
-* Bandstop Filter
-* Bitcrush
-* Chorus
-* Clipping
-* Compressor
-* Glitch
-* Highpass Filter
-* Lowpass Filter
-* Normalize
-* RingMod
-* Vocoder
+Every voice can have audio effect layers applied to it.
 
-Voice effects can be configured and layered with some fun results.  For better or worse, the UI for manipulating this is immediate --  Whenever you change something it is automatically saved and if you are in-game you will start to hear the new voice for anything that isn't cached.  You can choose the bottom option in the phrases dropdown to 
-"Rebuild all phrases".  It will... rebuild all the phrases.
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/434ccd8a-8fa2-4f7a-a0c0-a360a4803860)
 
-The voices used by default are the free Windows TTS API voices.  It isn't great.  Install more windows voices first.  Instructions below.
+For better or worse, the UI for manipulating this is immediate --  Whenever you change something it is automatically saved and if you are in-game you will start to hear the new voice/effects for any new speech.  You can choose the bottom option in the phrases dropdown to: 
 
-Players on your team get voices too.  Find them in the list to modify what they sound like.  When players talk it is NOT cached, that tickled by privacy bone and the value of the cache is minimal.
+![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/974c9237-c9eb-480a-ba43-708a3ea08ebd)
+
+"Rebuild all phrases".  It will... rebuild all the phrases with the current voice configuration.
+
+Players on your team get voices too.  Find them in the list to modify what they sound like.  When players talk it is NOT cached, that tickled by privacy bone and the value of the cache is minimal.  Since these aren't cached I suggest just using Windows TTS voices for players.  it's up to you, the settings are on the Configuration page.
 
 # Installation
 
@@ -74,13 +72,13 @@ Go to the releases page:
 
     https://github.com/jason-kane/coh_npc_voices/releases
 
-Download sidekick_setup.exe and run it.  Windows will not want to do it since I'm not paying 300/year for an application certificate.  The setup program is small (5MB-ish) but this thing downloads some heavy packages like numpy.  Just a heads up in case your connection is slow or expensive.
+Download sidekick_setup.exe and run it.  Windows will probably complain since I'm not paying 300/year for an application certificate.  The setup program is small (5MB-ish) but this thing downloads some heavy packages like numpy.  Just a heads up in case your connection is slow or expensive.  After the initial install it will be quick and upgrades to sidekick will not re-download unnecessarily.
 
 # Configuration
 
 You will need to use "Set Log Dir" in the upper right corner and point it at your City of Heroes log directory.
 
-It will vary based on the installer.  Probably something like:
+It will vary based on the coh launcher/installer.  Probably something like:
 
     <COH Install Directory>/accounts/<Account Name>/logs/
     <COH Install Directory>/homecoming/accounts/<Account Name>/Logs/
@@ -91,7 +89,7 @@ You can use this slash command in the chat window:
 
     /logchat
 
-The first time you'll need to quite to char selection, and choose the same character again.  Now you're ready to "Attach to Log".
+It has to be enabled before you start; which probably means quit and login again.  Now you are ready to "Attach to Log".
 
 # Usage
 
@@ -99,24 +97,9 @@ The "Character" tab currently shows a graph of how much XP/minute your character
 
 Any NPC that talks will get a voice.  If you don't like the way it sounds you can use the "Voices" tab, find the character that spoke and fiddle with it.  You'll find a record of the things that NPC says in the dropdown so you can tune it based on their own words.  It all saves itself as you go.
 
-You can choose a "Preset" for any character.  These change the initial voice settings to make it easy for all the characters in a given group (like Vahzilok) to all sound similar.  The "Random" options are nice when you don't really care that much but want some quick variety.
-
 # OSX / Linux?
 
-90% of this is totally compatible, no problem.  The other 10% is the windows sapi stuff; making it platform detect and default to the (good) osx text-to-voice or the (not as good) linux espeak will take some effort but isn't particularly difficult.
-
-# Manual Installation
-
-    pip install git+https://github.com/jason-kane/coh_npc_voices.git
-
-# Manual Upgrade
-
-    pip install --upgrade git+https://github.com/jason-kane/coh_npc_voices.git
-
-# Manual Uninstall
-
-    pip uninstall coh_npc_voices
-
+90% of this is totally compatible, no problem.  The other 10% is the windows sapi stuff; making it platform detect and default to the (good) osx text-to-voice or the (not as good) linux espeak will take some effort but isn't particularly difficult.  Its a longer-term TODO (PR welcome?).
 
 # Manual Installation
 
@@ -136,7 +119,7 @@ Start a cmd terminal and run:
 
     sidekick.exe
 
-Start City of Heroes; any host.  login and pick any character.  Then enable chat logging.
+Start City of Heroes; any launcher, any host.  login and pick any character.  Then enable chat logging.
 
 You can use this slash command in the chat window:
 
@@ -144,7 +127,7 @@ You can use this slash command in the chat window:
 
 It is also in the settings UI somewhere.
 
-This is a per-character thing so if you aren't getting voices double check this first.
+This can be a per-character thing so if you aren't getting voices double check this first.
 
 Next you will need to figure out where your logs are stored.  It will vary based on the installer.
 
