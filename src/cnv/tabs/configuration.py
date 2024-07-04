@@ -10,31 +10,37 @@ from cnv.engines import engines
 log = logging.getLogger(__name__)
 
 
-class ConfigurationTab(ttk.Frame):
-    tkdict = {}
+class MasterVolume(ttk.Frame):
+    """
+    Frame to provide widgets and persistence logic for a global volume control.  
+    This is for playback volume.
+    """
 
-    def language_selection(self) -> ttk.Frame:
-        frame = ttk.Frame(
-            self
-        )
+class SpokenLanguageSelection(ttk.Frame):
+    """
+    The user gets to decide which language they want to hear.  They may also
+    need to decide which translation provider to utilize w/config for that
+    provider.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)        
 
         ttk.Label(
-            frame,
+            self,
             text="Spoken Language",
             anchor="e",   
         ).pack(side="left", fill="x", expand=True)
+
         current = settings.get_config_key('language', "English")
         self.language = tk.StringVar(value=current)
 
-        default_engine_combo = ttk.Combobox(frame, textvariable=self.language)
+        default_engine_combo = ttk.Combobox(self, textvariable=self.language)
         default_engine_combo["values"] = list(settings.LANGUAGES.keys())
         default_engine_combo["state"] = "readonly"
         default_engine_combo.pack(side="left", fill="x")
 
         self.language.trace_add('write', self.change_language)
-
-        return frame
-
+       
     def change_language(self, a, b, c):
         newvalue = self.language.get()
         prior = settings.get_config_key('language', "English")
@@ -42,7 +48,20 @@ class ConfigurationTab(ttk.Frame):
         # tempting to just restart
         if prior and newvalue != prior:
             log.info(f'Changing language to {newvalue}')
-            # we should immediately translate and localize the UI
+            # we should immediately translate and localize the UI       
+
+class EngineAuthentication(ttk.Notebook):
+    """
+    Collects tabs for configuring authentication for each of the TTS engines.  The 
+    actual tab contents are provided by the engine(s).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        elevenlabs = self.elevenlabs_token_frame()
+        elevenlabs.pack(side="top", fill="both", expand=True)
+        self.add(elevenlabs, text="ElevenLabs")
 
     def elevenlabs_token_frame(self) -> ttk.Frame:
         """
@@ -68,6 +87,92 @@ class ConfigurationTab(ttk.Frame):
             show="*"
         ).pack(side="left", fill="x", expand=True)
         return elevenlabs
+
+    def change_elevenlabs_key(self, a, b, c):
+        with open("eleven_labs.key", 'w') as h:
+            h.write(self.elevenlabs_key.get())
+
+    def get_elevenlabs_key(self):
+        keyfile = 'eleven_labs.key'
+        value = None
+
+        if os.path.exists(keyfile):
+            with open(keyfile, 'r') as h:
+                value = h.read()
+        return value
+
+
+class ChannelToEngineMap(ttk.Frame):
+    """
+    Allows the user to choose a primary and secondary for each channel.  _Current_ channels are
+    npc, player and system.
+    """
+    tkdict = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.engine_priorities_header().pack(side="top", fill="x")
+        for channel in ['npc', 'player', 'system']:
+            self.engine_priorities_frame(channel).pack(side="top", fill="x")
+              
+    def engine_priorities_header(self):
+        frame = ttk.Frame(self)
+        frame.columnconfigure(0, minsize=125, uniform="enginemap")
+        frame.columnconfigure(1, weight=2, uniform="enginemap")
+        frame.columnconfigure(2, weight=2, uniform="enginemap")
+        frame.columnconfigure(3, weight=2, uniform="enginemap")
+
+        for index, label in enumerate([
+            '',
+            'Primary Engine',
+            'Secondary Engine',
+            'Normalize Voices',
+        ]):
+            ttk.Label(
+                frame,
+                text=label,
+                anchor="n",
+            ).grid(column=index, row=0, sticky='n')
+        
+        return frame      
+
+    def engine_priorities_frame(self, category):
+        """
+        the whole config frame for a particular category of entity within the game.
+        npc/player/system
+        """
+        frame = ttk.Frame(self)
+
+        frame.columnconfigure(0, minsize=125, uniform="enginemap")
+        frame.columnconfigure(1, weight=2, uniform="enginemap")
+        frame.columnconfigure(2, weight=2, uniform="enginemap")
+        frame.columnconfigure(3, weight=2, uniform="enginemap")
+
+        ttk.Label(
+            frame,
+            text=f"{category}",
+            anchor="e",
+        ).grid(column=0, row=0, sticky='e')
+
+        primary_engine = self.choose_engine(
+            frame,
+            self.get_tkvar(tk.StringVar, category, 'engine', 'primary')
+        )
+        primary_engine.grid(column=1, row=0, sticky='n')
+
+        secondary_engine = self.choose_engine(
+            frame,
+            self.get_tkvar(tk.StringVar, category, 'engine', 'secondary')
+        )
+        secondary_engine.grid(column=2, row=0, sticky='n')
+
+        # tkvar = self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
+        self.normalize_prompt_frame(
+            frame, category
+        ).grid(column=3, row=0, sticky='n')
+
+        return frame
 
     def polymorph(self, a, b, c):
         """
@@ -97,80 +202,9 @@ class ConfigurationTab(ttk.Frame):
             self.tkdict[key] = tkvar
 
         return tkvar
-
-    def normalize_prompt_frame(self, parent, category):
-        """
-        frame with ui for the normalize checkbox
-        """
-        frame = ttk.Frame(parent)
-        ttk.Label(
-            frame,
-            text="Normalize all voices",
-            anchor="e",
-        ).grid(column=0, row=1)
-
-        tk.Checkbutton(
-            frame,
-            variable=self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
-        ).grid(column=1, row=1)
-        return frame
-              
-    def engine_priorities_frame(self, category):
-        """
-        the whole config frame for a particular category of entity within the game.
-        npc/player/system
-        """
-        frame = ttk.Frame(
-            self,
-            borderwidth=1, 
-            relief="groove"
-        )
-
-        ttk.Label(
-            frame,
-            text=f"{category}",
-            anchor="e",
-        ).pack(side="top")
-
-        primary_engine = self.choose_engine(
-            frame,
-            "Primary Engine",
-            self.get_tkvar(tk.StringVar, category, 'engine', 'primary')
-        )
-        primary_engine.pack(side="top")
-
-        secondary_engine = self.choose_engine(
-            frame,
-            "Secondary Engine",
-            self.get_tkvar(tk.StringVar, category, 'engine', 'secondary')
-        )
-        secondary_engine.pack(side="top")
-
-        # tkvar = self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
-        self.normalize_prompt_frame(frame, category).pack(side="top")
-
-        return frame
-
-    def __init__(self, parent, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-
-        self.language_selection().pack(side="top", fill="x")
-
-        self.elevenlabs_token_frame().pack(side="top", fill="x")
-       
-        self.engine_priorities_frame("npc").pack(side="top", fill="x")
-        self.engine_priorities_frame("player").pack(side="top", fill="x")
-        self.engine_priorities_frame("system").pack(side="top", fill="x")
         
-    def choose_engine(self, parent, prompt, engine_var):
-        frame = ttk.Frame(
-            parent, 
-        )
-        ttk.Label(
-            frame,
-            text=prompt,
-            anchor="e",
-        ).grid(column=0, row=0)
+    def choose_engine(self, parent, engine_var):
+        frame = ttk.Frame(parent)
 
         default_engine_combo = ttk.Combobox(frame, textvariable=engine_var)
         default_engine_combo["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
@@ -178,19 +212,6 @@ class ConfigurationTab(ttk.Frame):
         default_engine_combo.grid(column=1, row=0)
 
         return frame
-
-    def change_elevenlabs_key(self, a, b, c):
-        with open("eleven_labs.key", 'w') as h:
-            h.write(self.elevenlabs_key.get())
-
-    def get_elevenlabs_key(self):
-        keyfile = 'eleven_labs.key'
-        value = None
-
-        if os.path.exists(keyfile):
-            with open(keyfile, 'r') as h:
-                value = h.read()
-        return value
 
     def change_default_engine(self, a, b, c):
         settings.set_config_key(
@@ -215,3 +236,26 @@ class ConfigurationTab(ttk.Frame):
             'DEFAULT_PLAYER_ENGINE_NORMALIZE',
             self.default_player_engine_normalize.get()
         )
+
+    def normalize_prompt_frame(self, parent, category):
+        """
+        frame with ui for the normalize checkbox
+        """
+        frame = ttk.Frame(parent)
+
+        tk.Checkbutton(
+            frame,
+            variable=self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
+        ).grid(column=0, row=0, sticky='n')
+        return frame
+
+
+class ConfigurationTab(ttk.Frame):
+  
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        MasterVolume(self).pack(side="top", fill="x")
+        SpokenLanguageSelection(self).pack(side="top", fill="x")
+        EngineAuthentication(self).pack(side="top", fill="x")
+        ChannelToEngineMap(self).pack(side="top", fill="x")
