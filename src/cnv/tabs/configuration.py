@@ -1,6 +1,5 @@
 
 import logging
-import os
 import tkinter as tk
 from tkinter import ttk
 
@@ -25,11 +24,14 @@ class SpokenLanguageSelection(ttk.Frame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)        
 
+        self.columnconfigure(0, minsize=125, uniform="baseconfig")
+        self.columnconfigure(1, weight=2, uniform="baseconfig")
+
         ttk.Label(
             self,
             text="Spoken Language",
             anchor="e",   
-        ).pack(side="left", fill="x", expand=True)
+        ).grid(column=0, row=0, sticky='e')
 
         current = settings.get_config_key('language', "English")
         self.language = tk.StringVar(value=current)
@@ -37,7 +39,7 @@ class SpokenLanguageSelection(ttk.Frame):
         default_engine_combo = ttk.Combobox(self, textvariable=self.language)
         default_engine_combo["values"] = list(settings.LANGUAGES.keys())
         default_engine_combo["state"] = "readonly"
-        default_engine_combo.pack(side="left", fill="x")
+        default_engine_combo.grid(column=1, row=0, sticky='w')
 
         self.language.trace_add('write', self.change_language)
        
@@ -50,6 +52,7 @@ class SpokenLanguageSelection(ttk.Frame):
             log.info(f'Changing language to {newvalue}')
             # we should immediately translate and localize the UI       
 
+
 class EngineAuthentication(ttk.Notebook):
     """
     Collects tabs for configuring authentication for each of the TTS engines.  The 
@@ -59,47 +62,11 @@ class EngineAuthentication(ttk.Notebook):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        elevenlabs = self.elevenlabs_token_frame()
-        elevenlabs.pack(side="top", fill="both", expand=True)
-        self.add(elevenlabs, text="ElevenLabs")
-
-    def elevenlabs_token_frame(self) -> ttk.Frame:
-        """
-        Returns a frame holding any/all authentication configuration needed for
-        ElevenLabs
-        """
-        elevenlabs = ttk.Frame(
-            self, 
-            borderwidth=1, 
-            relief="groove"
-        )
-        ttk.Label(
-            elevenlabs,
-            text="ElevenLabs API Token",
-            anchor="e",
-        ).pack(side="left", fill="x", expand=True)
-        
-        self.elevenlabs_key = tk.StringVar(value=self.get_elevenlabs_key())
-        self.elevenlabs_key.trace_add('write', self.change_elevenlabs_key)
-        ttk.Entry(
-            elevenlabs,
-            textvariable=self.elevenlabs_key,
-            show="*"
-        ).pack(side="left", fill="x", expand=True)
-        return elevenlabs
-
-    def change_elevenlabs_key(self, a, b, c):
-        with open("eleven_labs.key", 'w') as h:
-            h.write(self.elevenlabs_key.get())
-
-    def get_elevenlabs_key(self):
-        keyfile = 'eleven_labs.key'
-        value = None
-
-        if os.path.exists(keyfile):
-            with open(keyfile, 'r') as h:
-                value = h.read()
-        return value
+        for engine_ui in engines.ENGINE_LIST:
+            if engine_ui.auth_ui_class:
+                auth_ui = engine_ui.auth_ui_class()
+                auth_ui.pack(side="top", fill="x")
+                self.add(auth_ui, text=auth_ui.label)
 
 
 class ChannelToEngineMap(ttk.Frame):
