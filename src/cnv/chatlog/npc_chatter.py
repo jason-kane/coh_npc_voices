@@ -176,7 +176,7 @@ class TightTTS(threading.Thread):
             cachefile = settings.get_cachefile(name, message, category)
             
             if os.path.exists(cachefile):
-                log.info(f"(tighttts) Cache HIT: {cachefile}")
+                log.debug(f"(tighttts) Cache HIT: {cachefile}")
                 # requires pydub?
                 with AudioFile(cachefile) as input:
                     with AudioFile(
@@ -199,7 +199,7 @@ class TightTTS(threading.Thread):
                     # the directory already exists.  This is not a problem.
                     pass
 
-                log.info(f"(tighttts) Cache MISS: {cachefile} not found")
+                log.debug(f"(tighttts) Cache MISS: {cachefile} not found")
                 
                 # building session out here instead of inside get_character
                 # keeps character alive and properly tied to the database as we
