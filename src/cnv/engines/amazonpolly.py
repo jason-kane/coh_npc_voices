@@ -1,14 +1,157 @@
-
+import os
 import logging
+import tkinter as tk
+from tkinter import ttk
+import configparser
+
+import webbrowser
+
 
 import boto3
 import cnv.database.models as models
 import cnv.lib.settings as settings
 from voicebox.tts.amazonpolly import AmazonPolly as AmazonPollyTTS
 
-from .base import TTSEngine
+from .base import TTSEngine, MarkdownLabel
 
 log = logging.getLogger(__name__)
+
+class LinkList(ttk.Frame):
+    def __init__(self, parent, links, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
+        self.columnconfigure(1, weight=2, uniform="baseconfig")
+
+        index = 0
+        log.info(links)
+        for text, link, docs in links:           
+            ttk.Button(
+                self,
+                text=text,
+                command=lambda: webbrowser.open(link)
+            ).grid(column=0, row=index)
+            
+            MarkdownLabel(
+                self,
+                text=docs,
+            ).grid(column=1, row=index)
+            index += 1
+
+
+class AmazonPollyAuthUI(ttk.Frame):
+    label = "Amazon Polly"
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.credential_fn = os.path.expanduser('~/.aws/credentials')
+
+        mdlabel = MarkdownLabel(
+            self,
+            text="""[Amazon Polly](https://aws.amazon.com/pm/polly/) is an
+            excellent text-to-speech service in AWS. A free tier account is good
+            for one year and provides 5 million characters of text-to-speech.
+            That is a lot.  After the free year expires, or if you run out it
+            (currently) costs $4 per million characters.""".replace("\n", " ")
+        ) 
+        mdlabel.on_link_click(self.link_click) 
+        mdlabel.pack(side="top", fill="x", expand=False)
+        
+        # ok, so I'm amused by little things. 
+        LinkList(
+            self, [
+                [
+                    'Create an IAM user',
+                    "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html#id_users_create_console",
+                    """You want to create a user with only the permissions that
+                    are absolutely necessary.  We're applying the
+                    "AmazonPollyReadOnlyAccess" policy.  Nothing else.
+                    """
+                ],
+                [
+                    'Create and retrieve the keys',
+                    "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_CreateAccessKey",
+                    """Then we create an access key.  This allows a program to make requests on behalf
+                    of the minimal-access user we just created.
+                    """
+                ]
+            ]
+        ).pack(side="top", fill="both", expand=True)
+
+        auth_settings = ttk.Frame(self)
+        auth_settings.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
+        auth_settings.columnconfigure(1, weight=2, uniform="baseconfig")
+
+        count = 0
+        self.tkvars = {}
+        for key, text, getter, setter, is_hidden in [(
+            'access_key_id',
+            'Access Key ID',
+            self.get_access_key_id,
+            self.set_access_key_id,
+            False
+        ), (
+            'secret_access_key',
+            'Secret Access Key',
+            self.get_secret_access_key,
+            self.set_secret_access_key,
+            True
+        )]:  
+            ttk.Label(
+                auth_settings,
+                text=text,
+                anchor="e",
+            ).grid(column=0, row=count, sticky='e')
+            self.tkvars[key] = tk.StringVar(value=getter())
+            self.tkvars[key].trace_add('write', setter)
+        
+            entry = ttk.Entry(
+                auth_settings,
+                textvariable=self.tkvars[key],
+                # show="*"
+            )
+            if is_hidden:
+                entry.config({'show': '*'})
+            # TODO: config show based on is_hidden
+            entry.grid(column=1, row=count, sticky='w')
+
+            count += 1
+        auth_settings.pack(side="top", fill="x", expand=True)
+
+    def link_click(self, url):
+        log.info('link click')
+        # no funny business, just open the URL in a browser.
+        webbrowser.open(url, autoraise=True)
+
+    def _read_credentials(self):
+        config = configparser.ConfigParser()
+        config.read(self.credential_fn)
+        return config
+
+    def _set_credential(self, key, cred_key):
+        config = self._read_credentials()
+        value = self.tkvars[key].get()
+        config[cred_key] = value
+        with open(self.credential_fn, 'w') as configfile:
+            config.write(configfile)
+
+    def get_access_key_id(self):
+        config = self._read_credentials()
+        return config['default']['aws_access_key_id']
+    
+    def set_access_key_id(self, *args, **kwargs):
+        self._set_credential(
+            key="access_key_id",
+            cred_key="aws_access_key_id",
+        )
+        
+    def get_secret_access_key(self):
+        config = self._read_credentials()
+        return config['default']['aws_secret_access_key']
+    
+    def set_secret_access_key(self, *args, **kwargs):
+        self._set_credential(
+            key="secret_access_key_id",
+            cred_key="aws_secret_access_key",
+        )
 
 class AmazonPolly(TTSEngine):
     """
@@ -23,6 +166,7 @@ class AmazonPolly(TTSEngine):
     """
     cosmetic = "Amazon Polly"
     key = "amazonpolly"
+    auth_ui_class = AmazonPollyAuthUI
 
     config = (
         ('Engine', 'engine', "StringVar", 'standard', {}, "get_engine_names"),

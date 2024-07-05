@@ -1,19 +1,126 @@
 import logging
+import os
+import tkinter as tk
+from tkinter import ttk
 
 import cnv.database.models as models
 import cnv.lib.settings as settings
 import voicebox
+import webbrowser
+from google.auth.transport.requests import Request
 from google.cloud import texttospeech
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from sqlalchemy import select
 
-from .base import TTSEngine
+from .base import MarkdownLabel, TTSEngine
 
 log = logging.getLogger(__name__)
+
+# https://cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize
+SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+
+# the credentials are a secret in a typical oauth workflow
+# but we are a desktop applicaton, there are no secrets.
+#
+# google auth uses this "secret" as a unique to identify our
+# application.  It pops open a browser, asks about auth to
+# give the application permission to utilize the users google
+# account for text-to-speech.
+# 
+# The response is a 'code', which is sent to this application.
+# the code is then sent back to google to create a token.
+# that token can be used on every text-to-speech request until
+# it expires, then we refresh it to get the a token.
+#
+# To completely remove access, delete the token.  If you delete
+# the credential you will have to re-install.
+credential_file = "google_credential.json"
+token_file = "google_token.json"
+
+# it looks like I have some hoops to jump through before google will let this be
+# a "published" app for oauth purposes. nothing huge.  I need a domain with a
+# few pages, a youtube explaining what I'm doing, a written explanation of what
+# I'm doing and verified domains.  That seems overwhelming, but it isn't really
+# that bad but it will take some time.  In the meantime this is in "test" mode;
+# the 100 user limit is no big deal but it's unclear to me if they need to be
+# pre-approved.  If they do this will not work and I'm sorry, that kind of
+# sucks.  If you send me your google account email address I can add you to the
+# test user list.
+
+def get_credentials():
+    """
+    Returns credentials or None.  Does not make the user do anything.
+    This is what anything that needs google access calls to retrieve
+    the credentials.
+    """
+    creds = None
+    if os.path.exists(token_file):
+        creds = Credentials.from_authorized_user_file(
+            token_file, SCOPES
+        )
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            # try and refresh the credential
+            creds.refresh(Request())
+
+            # persist the refreshed token to disk
+            with open(token_file, "w") as token:
+                token.write(creds.to_json())
+        else:
+            creds = None
+        
+    return creds
+
+
+class GoogleCloudAuthUI(ttk.Frame):
+    label = "Google Cloud"
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        mdlabel = MarkdownLabel(
+            self,
+            text="""[Google Text-to-Speech](https://cloud.google.com/text-to-speech?hl=en)
+            is an solid txt-to-speech service from google. A free tier account
+            (currently 7/24) provides 1 million characters per month. if you run
+            out it (currently) costs $4-$16 per million characters, billed
+            per-character.
+            """.replace("\n", " ")
+        ) 
+        mdlabel.on_link_click(self.link_click) 
+        mdlabel.pack(side="top", fill="x", expand=False)
+
+        ttk.Button(
+            self,
+            text="Browser oauth2 authentication",
+            command=self.authenticate
+        ).pack(side="top")
+
+
+    def link_click(self, url):
+        log.info('link click')
+        # no funny business, just open the URL in a browser.
+        webbrowser.open(url, autoraise=True)
+
+    def authenticate(self):
+        if not os.path.exists(credential_file):
+            log.error(f'Installation error:  Required file {credential_file} not found.')
+            return
+
+        flow = InstalledAppFlow.from_client_secrets_file(
+            credential_file, SCOPES
+        )
+        creds = flow.run_local_server(port=0)
+        # Save the credentials for the next run
+        with open(token_file, "w") as token:
+            token.write(creds.to_json())
+
 
 class GoogleCloud(TTSEngine):
     cosmetic = "Google Text-to-Speech"
     key = 'googletts'
-    auth_ui_class = None
+    auth_ui_class = GoogleCloudAuthUI
 
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
@@ -124,7 +231,9 @@ class GoogleCloud(TTSEngine):
         voice_pitch = self.override.get('voice_pitch', self.config_vars["voice_pitch"].get())
         language_code = self.get_voice_language(voice_name)
 
-        client = texttospeech.TextToSpeechClient()
+        client = texttospeech.TextToSpeechClient(
+            credentials=get_credentials()
+        )
 
         audio_config = texttospeech.AudioConfig(
             speaking_rate=float(speaking_rate), 

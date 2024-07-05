@@ -5,6 +5,7 @@ from tkinter import ttk
 
 import cnv.lib.settings as settings
 from cnv.engines import engines
+from cnv.engines.base import Notebook
 
 log = logging.getLogger(__name__)
 
@@ -53,19 +54,19 @@ class SpokenLanguageSelection(ttk.Frame):
             # we should immediately translate and localize the UI       
 
 
-class EngineAuthentication(ttk.Notebook):
+class EngineAuthentication(Notebook):
     """
     Collects tabs for configuring authentication for each of the TTS engines.  The 
     actual tab contents are provided by the engine(s).
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
 
         for engine_ui in engines.ENGINE_LIST:
             if engine_ui.auth_ui_class:
-                auth_ui = engine_ui.auth_ui_class()
-                auth_ui.pack(side="top", fill="x")
+                auth_ui = engine_ui.auth_ui_class(self)
+                #auth_ui.pack(side="top", fill="both", expand=True) #column=0, row=0)
                 self.add(auth_ui, text=auth_ui.label)
 
 

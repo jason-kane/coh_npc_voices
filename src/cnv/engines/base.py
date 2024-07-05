@@ -5,7 +5,9 @@ from tkinter import ttk
 import cnv.database.models as models
 import cnv.lib.settings as settings
 import voicebox
+from markdown_it import MarkdownIt
 from sqlalchemy import select
+from tkinterweb import HtmlLabel
 
 log = logging.getLogger(__name__)
 
@@ -15,6 +17,84 @@ class USE_SECONDARY(Exception):
     signal to disable this engine for this session
     """
 
+class MarkdownLabel(HtmlLabel):  # Label
+    def __init__(self, *args, **kwargs):
+        md = MarkdownIt(
+            'commonmark',
+            {
+                'breaks': True,
+                'html': True
+            }
+        )
+        kwargs['text'] = md.render(kwargs['text'])
+        log.info(kwargs['text'])
+        super().__init__(*args, **kwargs)
+
+
+class Notebook(ttk.Frame):
+    def __init__(self, parent, takefocus=True, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self.notebook = ttk.Notebook(self, takefocus=takefocus)
+        self.blankframe = lambda: tk.Frame(self.notebook, height=0, bd=0, highlightthickness=0)
+
+        self.notebook.pack(side="top", fill="x", expand=True)
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
+
+        self.pages = []
+        self.previous_page = None
+
+    def on_tab_change(self, event):
+        self.event_generate("<<NotebookTabChanged>>")
+        tabId = self.notebook.index(self.notebook.select())
+        newpage = self.pages[tabId]
+        if self.previous_page:
+            self.previous_page.pack_forget()
+        newpage.pack(fill="both", expand=True)
+        self.previous_page = newpage
+        
+    def add(self, child, **kwargs):
+        if child in self.pages:
+            raise ValueError("{} is already managed by {}.".format(child, self))
+        self.notebook.add(self.blankframe(), **kwargs)
+        self.pages.append(child)
+
+    def insert(self, where, child, **kwargs):
+        if child in self.pages:
+            raise ValueError("{} is already managed by {}.".format(child, self))
+        self.notebook.insert(where, self.blankframe(), **kwargs)
+        self.pages.insert(where, child)
+        
+    def enable_traversal(self):
+        self.notebook.enable_traversal()
+
+    def select(self, tabId):
+        if not isinstance(tabId, int) and tabId in self.pages:
+            tabId = self.pages.index(tabId)
+        self.notebook.select(tabId)
+    
+    def tab(self, tabId, option=None, **kwargs):
+        if not isinstance(tabId, int) and tabId in self.pages:
+            tabId = self.pages.index(tabId)
+        self.notebook.tab(tabId, option, **kwargs)
+
+    def forget(self, tabId):
+        if not isinstance(tabId, int):
+            tabId = self.pages.index(tabId)
+            self.pages.remove(tabId)
+        else:
+            del self.pages[tabId]
+        self.notebook.forget(self.pages.index(tabId))
+
+    def index(self, child):
+        try:
+            return self.pages.index(child)
+        except IndexError:
+            return self.notebook.index(child)
+    
+    def tabs(self):
+        return self.pages
+    
 
 # Base Class for engines
 class TTSEngine(ttk.Frame):

@@ -20,6 +20,7 @@ elevenlabs==1.1.2
 executing==2.0.1
 fonttools==4.51.0
 google-api-core==2.18.0
+google-auth-oauthlib==1.2.0
 google-auth==2.29.0
 google-cloud-texttospeech==2.16.3
 googleapis-common-protos==1.63.0
@@ -95,6 +96,7 @@ SQLAlchemy-Utils==0.41.2
 SQLAlchemy==2.0.29
 stack-data==0.6.3
 tkfeather==1.0.0
+tkinterweb==3.23.10
 tqdm==4.66.2
 traitlets==5.14.3
 translate==3.6.1

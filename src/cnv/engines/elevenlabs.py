@@ -14,7 +14,7 @@ from elevenlabs.client import ElevenLabs as ELABS
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
 
-from .base import TTSEngine
+from .base import TTSEngine, MarkdownLabel
 
 log = logging.getLogger(__name__)
 
@@ -23,36 +23,40 @@ class ElevenLabsAuthUI(ttk.Frame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        description = ttk.Frame(self)
-        tk.Message(
-            description,
-            text="https://elevenlabs.io/ is a leading edge company focused on providing"
-            "top quality text to speech technology.  A free account provides 10,000 characters"
-            "of text-to-speech.  When it runs out we can automatically toggle over to your"
-            "secondary voice provider.  Create an account, login to it.  Then in the bottom "
-            "left, click yourself.  Choose 'Profile + API key'.  Put that API key here.",
-            anchor="nw",
-            justify="left"
-        ).pack(side="left", fill="both", expand=True)
-        description.grid(column=0, row=0, sticky='w')
+        mdlabel = MarkdownLabel(
+            self,
+            text="[ElevenLabs](https://elevenlabs.io/) is a leading edge company focused on providing "            
+            "top quality text to speech technology.  A free account provides 10,000 characters "
+            "of text-to-speech.  When it runs out we can automatically toggle over to your "
+            "secondary voice provider.  Don't like the drop in quality?  Elevenlabs "
+            "[pricing](https://elevenlabs.io/pricing) is premium but not unreasonable.\n"
+            "Supporting using your voice clone as your own playback voice "
+            "is surpisingly close to easy.\n"
+            "* Create an account\n"
+            "* login to it\n"
+            "* In the bottom left corner, click yourself\n"
+            "* Choose *'Profile + API key'*",
+        )
+        mdlabel.pack(side="top", fill="x", expand=False)
 
-        self.columnconfigure(0, minsize=125, uniform="baseconfig")
-        self.columnconfigure(1, weight=2, uniform="baseconfig")
-        self.columnconfigure(2, weight=2, uniform="baseconfig")
+        auth_settings = ttk.Frame(self)
+        auth_settings.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
+        auth_settings.columnconfigure(1, weight=2, uniform="baseconfig")
 
         ttk.Label(
-            self,
+            auth_settings,
             text="ElevenLabs API Key",
             anchor="e",
-        ).grid(column=1, row=0, sticky='e')
+        ).grid(column=0, row=0, sticky='e')
         
         self.elevenlabs_key = tk.StringVar(value=self.get_elevenlabs_key())
         self.elevenlabs_key.trace_add('write', self.change_elevenlabs_key)
         ttk.Entry(
-            self,
+            auth_settings,
             textvariable=self.elevenlabs_key,
             show="*"
-        ).grid(column=2, row=0, sticky='w')
+        ).grid(column=1, row=0, sticky='w')
+        auth_settings.pack(side="top", fill="x", expand=True)
 
     def change_elevenlabs_key(self, a, b, c):
         with open("eleven_labs.key", 'w') as h:
