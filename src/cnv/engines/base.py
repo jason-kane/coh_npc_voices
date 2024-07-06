@@ -26,12 +26,21 @@ class MarkdownLabel(HtmlLabel):  # Label
                 'html': True
             }
         )
-        kwargs['text'] = md.render(kwargs['text'])
+        kwargs['text'] = f"""<body style="background-color:#FFF">
+        {md.render(kwargs['text'])}
+        </body>"""
         # log.info(kwargs['text'])
         super().__init__(*args, **kwargs)
 
 
 class Notebook(ttk.Frame):
+    """
+    Workaround an error in tkinterweb.HtmlLabel
+    We make a Notebook but the pages are blankframe.
+    
+    When a notebook tab is selected we forget the previous page
+    and pack the new page (fill=both, expand=true).
+    """
     def __init__(self, parent, takefocus=True, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 

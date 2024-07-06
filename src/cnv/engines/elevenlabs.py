@@ -39,7 +39,11 @@ class ElevenLabsAuthUI(ttk.Frame):
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 
-        auth_settings = ttk.Frame(self)
+        s = ttk.Style()
+        s.configure('EngineAuth.TFrame', background='white')
+        s.configure('EngineAuth.TLabel', background='white')
+
+        auth_settings = ttk.Frame(self, style='EngineAuth.TFrame')
         auth_settings.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
         auth_settings.columnconfigure(1, weight=2, uniform="baseconfig")
 
@@ -47,6 +51,7 @@ class ElevenLabsAuthUI(ttk.Frame):
             auth_settings,
             text="ElevenLabs API Key",
             anchor="e",
+            style='EngineAuth.TLabel'
         ).grid(column=0, row=0, sticky='e')
         
         self.elevenlabs_key = tk.StringVar(value=self.get_elevenlabs_key())
@@ -55,7 +60,7 @@ class ElevenLabsAuthUI(ttk.Frame):
             auth_settings,
             textvariable=self.elevenlabs_key,
             show="*"
-        ).grid(column=1, row=0, sticky='w')
+        ).grid(column=1, row=0, sticky='ew')
         auth_settings.pack(side="top", fill="x", expand=True)
 
     def change_elevenlabs_key(self, a, b, c):

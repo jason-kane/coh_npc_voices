@@ -66,7 +66,6 @@ class EngineAuthentication(Notebook):
         for engine_ui in engines.ENGINE_LIST:
             if engine_ui.auth_ui_class:
                 auth_ui = engine_ui.auth_ui_class(self)
-                #auth_ui.pack(side="top", fill="both", expand=True) #column=0, row=0)
                 self.add(auth_ui, text=auth_ui.label)
 
 
@@ -225,5 +224,8 @@ class ConfigurationTab(ttk.Frame):
         
         MasterVolume(self).pack(side="top", fill="x")
         SpokenLanguageSelection(self).pack(side="top", fill="x")
-        EngineAuthentication(self).pack(side="top", fill="x")
+        EngineAuthentication(
+            self,
+            padding=5
+        ).pack(side="top", fill="x")
         ChannelToEngineMap(self).pack(side="top", fill="x")

@@ -53,7 +53,11 @@ class AmazonPollyAuthUI(ttk.Frame):
         ) 
         mdlabel.on_link_click(self.link_click) 
         mdlabel.pack(side="top", fill="x", expand=False)
-        
+
+        s = ttk.Style()
+        s.configure('EngineAuth.TFrame', background='white')
+        s.configure('EngineAuth.TLabel', background='white')
+
         # ok, so I'm amused by little things. 
         LinkList(
             self, [
@@ -72,10 +76,11 @@ class AmazonPollyAuthUI(ttk.Frame):
                     of the minimal-access user we just created.
                     """
                 ]
-            ]
+            ],
+            style="EngineAuth.TFrame"
         ).pack(side="top", fill="both", expand=True)
 
-        auth_settings = ttk.Frame(self)
+        auth_settings = ttk.Frame(self, style='EngineAuth.TFrame')
         auth_settings.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
         auth_settings.columnconfigure(1, weight=2, uniform="baseconfig")
 
@@ -83,13 +88,13 @@ class AmazonPollyAuthUI(ttk.Frame):
         self.tkvars = {}
         for key, text, getter, setter, is_hidden in [(
             'access_key_id',
-            'Access Key ID',
+            'Access Key ID ',
             self.get_access_key_id,
             self.set_access_key_id,
             False
         ), (
             'secret_access_key',
-            'Secret Access Key',
+            'Secret Access Key ',
             self.get_secret_access_key,
             self.set_secret_access_key,
             True
@@ -98,6 +103,7 @@ class AmazonPollyAuthUI(ttk.Frame):
                 auth_settings,
                 text=text,
                 anchor="e",
+                style="EngineAuth.TLabel"
             ).grid(column=0, row=count, sticky='e')
             self.tkvars[key] = tk.StringVar(value=getter())
             self.tkvars[key].trace_add('write', setter)
@@ -110,7 +116,7 @@ class AmazonPollyAuthUI(ttk.Frame):
             if is_hidden:
                 entry.config({'show': '*'})
             # TODO: config show based on is_hidden
-            entry.grid(column=1, row=count, sticky='w')
+            entry.grid(column=1, row=count, sticky='ew')
 
             count += 1
         auth_settings.pack(side="top", fill="x", expand=True)

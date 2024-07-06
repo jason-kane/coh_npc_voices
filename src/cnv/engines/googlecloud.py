@@ -1,7 +1,7 @@
 import logging
 import os
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, font
 
 import cnv.database.models as models
 import cnv.lib.settings as settings
@@ -47,6 +47,9 @@ token_file = "google_token.json"
 # pre-approved.  If they do this will not work and I'm sorry, that kind of
 # sucks.  If you send me your google account email address I can add you to the
 # test user list.
+#
+# Since I'm not really sure oauth will work smoothly; I'll have ADC as an
+# alternative.
 
 def get_credentials():
     """
@@ -70,7 +73,14 @@ def get_credentials():
                 token.write(creds.to_json())
         else:
             creds = None
-        
+
+    if creds is None and 'GOOGLE_APPLICATION_CREDENTIALS' in os.environ:
+        # https://cloud.google.com/docs/authentication/provide-credentials-adc#local-key
+        log.debug('Using Application Default Credential: %s', os.environ['GOOGLE_APPLICATION_CREDENTIALS'])
+        return None
+    else:
+        log.warning('No valid Google authentication method provided.  Google voices will not work.')
+
     return creds
 
 
@@ -78,6 +88,8 @@ class GoogleCloudAuthUI(ttk.Frame):
     label = "Google Cloud"
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        self.columnconfigure(0, weight=1)
 
         mdlabel = MarkdownLabel(
             self,
@@ -89,13 +101,54 @@ class GoogleCloudAuthUI(ttk.Frame):
             """.replace("\n", " ")
         ) 
         mdlabel.on_link_click(self.link_click) 
-        mdlabel.pack(side="top", fill="x", expand=False)
+        mdlabel.grid(column=0, row=0, sticky="nsew")
+        #pack(side="top", fill="x", expand=False)
+        s = ttk.Style()
+        s.configure('EngineAuth.TFrame', background='white')
+        s.configure('EngineAuth.TLabel', background='white')
+
+        frame = ttk.Frame(self, style='EngineAuth.TFrame')
+
+        frame.columnconfigure(0, weight=2)
+        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(2, weight=2)
 
         ttk.Button(
-            self,
+            frame,
             text="Browser oauth2 authentication",
             command=self.authenticate
-        ).pack(side="top")
+        ).grid(column=0, row=0)
+        #pack(side="left")
+
+        ttk.Label(
+            frame,
+            font=font.Font(
+                size=12,
+                weight="bold"
+            ),            
+            text=" OR ",
+            anchor="center",
+            style="EngineAuth.TLabel"
+        ).grid(column=1, row=0, sticky="nsew")
+        #.pack(side="left")
+
+        adc = ttk.Frame(frame)
+        ttk.Button(
+            adc,
+            text="Create a service account key",
+            command=lambda: self.link_click('https://cloud.google.com/iam/docs/keys-create-delete#creating')
+        ).pack(side="top", fill='x')
+
+        ttk.Button(
+            adc,
+            text="Set GOOGLE_APPLICATION_CREDENTIALS",
+            command=lambda: self.link_click('https://cloud.google.com/docs/authentication/provide-credentials-adc#local-key')
+        ).pack(side="top", fill='x')
+        adc.grid(column=2, row=0, sticky="n")
+        #.pack(side="left", fill="x")
+
+        frame.grid(column=0, row=1, sticky="nsew")
+        #.pack(side="top", fill="x")
 
 
     def link_click(self, url):
@@ -231,8 +284,13 @@ class GoogleCloud(TTSEngine):
         voice_pitch = self.override.get('voice_pitch', self.config_vars["voice_pitch"].get())
         language_code = self.get_voice_language(voice_name)
 
+        kwargs = {}
+        credentials = get_credentials()
+        if credentials:
+            kwargs['credentials'] = credentials
+
         client = texttospeech.TextToSpeechClient(
-            credentials=get_credentials()
+            **kwargs
         )
 
         audio_config = texttospeech.AudioConfig(
