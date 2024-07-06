@@ -23,7 +23,6 @@ class LinkList(ttk.Frame):
         self.columnconfigure(1, weight=2, uniform="baseconfig")
 
         index = 0
-        log.info(links)
         for text, link, docs in links:           
             ttk.Button(
                 self,
@@ -117,7 +116,6 @@ class AmazonPollyAuthUI(ttk.Frame):
         auth_settings.pack(side="top", fill="x", expand=True)
 
     def link_click(self, url):
-        log.info('link click')
         # no funny business, just open the URL in a browser.
         webbrowser.open(url, autoraise=True)
 

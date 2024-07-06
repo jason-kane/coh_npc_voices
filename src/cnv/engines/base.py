@@ -27,7 +27,7 @@ class MarkdownLabel(HtmlLabel):  # Label
             }
         )
         kwargs['text'] = md.render(kwargs['text'])
-        log.info(kwargs['text'])
+        # log.info(kwargs['text'])
         super().__init__(*args, **kwargs)
 
 

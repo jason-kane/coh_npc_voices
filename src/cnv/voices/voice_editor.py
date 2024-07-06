@@ -89,7 +89,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         """
         a phrase was chosen.
         """
-        # make sure this characters is the one selected in the charcter list
+        # make sure this characters is the one selected in the character list
         character = self.detailside.parent.get_selected_character()
         
         # retrieve the selected phrase
@@ -97,7 +97,11 @@ class WavfileMajorFrame(ttk.LabelFrame):
         
         if selected_index >= 0:
             log.debug(f'Retrieving phrase at index {selected_index}')
-            phrase_id = self.phrase_id[selected_index]
+            try:
+                phrase_id = self.phrase_id[selected_index]
+            except IndexError:
+                # likely "Rebuild all phrases"
+                return
 
             # we want to work with the translated string
             message, is_translated = models.get_translated(phrase_id)                
