@@ -26,11 +26,13 @@ class MarkdownLabel(HtmlLabel):  # Label
                 'html': True
             }
         )
-        kwargs['text'] = f"""<body style="background-color:#FFF">
-        {md.render(kwargs['text'])}
+        text = f"""<body style="background-color:#FFF">
+        {md.render(kwargs.pop('text'))}
         </body>"""
-        # log.info(kwargs['text'])
+        
+        kwargs['text'] = text
         super().__init__(*args, **kwargs)
+        # self.load_html(text)
 
 
 class Notebook(ttk.Frame):

@@ -4,6 +4,7 @@ from .amazonpolly import AmazonPolly
 from .elevenlabs import ElevenLabs
 from .googlecloud import GoogleCloud
 from .windowstts import WindowsTTS
+from .openai import OpenAI
 
 log = logging.getLogger(__name__)
 
@@ -23,5 +24,5 @@ def get_engine(engine_name):
 
 
 ENGINE_LIST = [ 
-    WindowsTTS, GoogleCloud, ElevenLabs, AmazonPolly 
+    WindowsTTS, GoogleCloud, ElevenLabs, AmazonPolly, OpenAI
 ]

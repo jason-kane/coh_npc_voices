@@ -167,6 +167,8 @@ class Character(Base):
             if gender is None:
                 if name in ["Celestine", "Alessandra", ]:
                     gender = 'Female'
+                elif name in ["Matthew", ]:
+                    gender = "Male"
                 else:
                     gender = random.choice(['Male', 'Female'])
 

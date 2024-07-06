@@ -89,6 +89,7 @@ def get_elevenlabs_client():
     else:
         log.warning("Elevenlabs Requires valid eleven_labs.key file")
 
+
 class ElevenLabs(TTSEngine):
     """
     Elevenlabs detects the incoming language; so in theory every voice works with every language.  I have doubts.
@@ -218,6 +219,7 @@ class ElevenLabs(TTSEngine):
             voice=voice_name,
             model=model
         )
+
 
 @dataclass
 class ttsElevenLabs(voicebox.tts.TTS):
