@@ -7,6 +7,8 @@ from .windowstts import WindowsTTS
 
 log = logging.getLogger(__name__)
 
+from .base import USE_SECONDARY
+
 # https://github.com/coqui-ai/tts 
 #
 # I tried this.  Doesn't work yet in Windown w/Py 3.12 due to the absense of

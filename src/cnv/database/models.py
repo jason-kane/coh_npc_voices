@@ -136,6 +136,8 @@ class Character(Base):
         # based on the preset, and some random choices
         # where the preset does not specify, create a voice
         # for this NPC.
+        if group_name in ["Random Any"]:
+            group_name = None
 
         # first we set the engine based on global defaults
         pkey = f'{str_category}_engine_primary'
@@ -151,15 +153,12 @@ class Character(Base):
             engine=primary_engine_name,
             engine_secondary=secondary_engine_name,
             category=category,
+            group_name=group_name
         )
         session.add(character)
         session.commit()
         session.refresh(character)
-        
-        # now for the preset and/or random choices
-        engine_key = ENGINE_COSMETIC_TO_ID[primary_engine_name]
-        rank = "primary"
-        
+               
         # if all_npc provided a gender, we will use that.
         if gender is None:
             # otherwise, use the gender value in preset.  IE: the preset gender
@@ -173,104 +172,119 @@ class Character(Base):
                 else:
                     gender = random.choice(['Male', 'Female'])
 
+        # now for the preset and/or random choices
+        # engine_key = ENGINE_COSMETIC_TO_ID[primary_engine_name]
+        # rank = "primary"
+
         # all of the available _engine_ configuration values
-        engine_config_meta = session.scalars(
-            select(EngineConfigMeta).where(
-                EngineConfigMeta.engine_key==engine_key
-            )
-        ).all()
+        # engine_config_meta = session.scalars(
+        #     select(EngineConfigMeta).where(
+        #         EngineConfigMeta.engine_key==engine_key
+        #     )
+        # ).all()
 
-        log.debug(f'|-  The configuration fields relevant to the {engine_key} TTS Engine are:')
-        # loop through the availabe configuration settings
-        for config_meta in engine_config_meta:
-            log.debug(f"|-    {config_meta}")
-            # we want sensible defaults with some jitter
-            # for each voice engine config setting.
-            value = None
+        for rank, engine_key in [
+            ["primary", ENGINE_COSMETIC_TO_ID[primary_engine_name]],
+            ["secondary", ENGINE_COSMETIC_TO_ID[secondary_engine_name]]
+        ]:
+            # all of the available _engine_ configuration values
+            engine_config_meta = session.scalars(
+                select(EngineConfigMeta).where(
+                    EngineConfigMeta.engine_key==engine_key
+                )
+            ).all()            
 
-            # does this configuration setting take a string value from a list of
-            # possible choices?
-            if config_meta.varfunc == "StringVar":
-                # we don't know what the possible values are since we can't run
-                # the function without instantiating the engine, which will drag
-                # in TK baggage. 
+            log.debug(f'|-  The configuration fields relevant to the {engine_key} TTS Engine are:')
+            # loop through the availabe configuration settings
+            for config_meta in engine_config_meta:
+                log.debug(f"|-    {config_meta}")
+                # we want sensible defaults with some jitter
+                # for each voice engine config setting.
+                value = None
 
-                # but.. we can accesss the cache?.  does that introduce a
-                # sequence dependency?
-                all_values = diskcache(f"{engine_key}_{config_meta.key}")
-                
-                if all_values is None:
-                    log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
-                    value = "<Cache Failure>"
-                else:
-                    # it's a dict, keyey on voice_name
-                    # language_code_regex = "en-.*"
-                    if language_code_regex and 'language_code' in all_values[0].keys():
-                        # pass through languages that satisfy the regex
-                        out = []
-                        for v in all_values:
-                            code = v.get('language_code', '')
-                            if re.match(language_code_regex, code):
-                                out.append(v)
-                        all_values = out
+                # does this configuration setting take a string value from a list of
+                # possible choices?
+                if config_meta.varfunc == "StringVar":
+                    # we don't know what the possible values are since we can't run
+                    # the function without instantiating the engine, which will drag
+                    # in TK baggage. 
+
+                    # but.. we can accesss the cache?.  does that introduce a
+                    # sequence dependency?
+                    all_values = diskcache(f"{engine_key}_{config_meta.key}")
                     
-                    # if we have a gender, filter out the voices that don't
-                    # have the same gender.
-                    if gender and 'gender' in all_values[0].keys():
-                        def gender_filter(voice):
-                            return voice['gender'] == gender
-                        all_values = filter(gender_filter, all_values)
-
-                    # does the preset have any more guidance?
-                    # use the preset if there is one.  Otherwise
-                    # choose randomly from the available options.
-                    log.debug(f"{all_values=}")
-
-                    if config_meta.key in preset:
-                        value = preset[config_meta.key]
+                    if all_values is None:
+                        log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
+                        value = "<Cache Failure>"
                     else:
-                        chosen_row = random.choice(list(all_values))
-                        log.debug(f'Random selection: {chosen_row}')
-                        value = chosen_row[config_meta.key]
+                        # it's a dict, keyey on voice_name
+                        # language_code_regex = "en-.*"
+                        if language_code_regex and 'language_code' in all_values[0].keys():
+                            # pass through languages that satisfy the regex
+                            out = []
+                            for v in all_values:
+                                code = v.get('language_code', '')
+                                if re.match(language_code_regex, code):
+                                    out.append(v)
+                            all_values = out
+                        
+                        # if we have a gender, filter out the voices that don't
+                        # have the same gender.
+                        if gender and 'gender' in all_values[0].keys():
+                            def gender_filter(voice):
+                                return voice['gender'] == gender
+                            all_values = filter(gender_filter, all_values)
 
-            # do we have a numeric value, with a min/max and some
-            # hints about useful granularity?
-            elif config_meta.varfunc == "DoubleVar":
-                # no cache, use the preset or a random choice in the range.
-                # this shouldn't be .uniform, it should be more likely 
-                # for the values that are more common.
-                value = preset.get(
-                    config_meta.key,
-                    random.uniform(
-                        config_meta.cfgdict['min'], 
-                        config_meta.cfgdict['max']
+                        # does the preset have any more guidance?
+                        # use the preset if there is one.  Otherwise
+                        # choose randomly from the available options.
+                        log.debug(f"{all_values=}")
+
+                        if config_meta.key in preset:
+                            value = preset[config_meta.key]
+                        else:
+                            chosen_row = random.choice(list(all_values))
+                            log.debug(f'Random selection: {chosen_row}')
+                            value = chosen_row[config_meta.key]
+
+                # do we have a numeric value, with a min/max and some
+                # hints about useful granularity?
+                elif config_meta.varfunc == "DoubleVar":
+                    # no cache, use the preset or a random choice in the range.
+                    # this shouldn't be .uniform, it should be more likely 
+                    # for the values that are more common.
+                    value = preset.get(
+                        config_meta.key,
+                        random.uniform(
+                            config_meta.cfgdict['min'], 
+                            config_meta.cfgdict['max']
+                        )
                     )
-                )
 
-                # round to nearest multiple of 'resolution'
-                resolution = config_meta.cfgdict.get('resolution', 1.0)
-                value = (
-                    resolution * round(value / resolution)
-                )
+                    # round to nearest multiple of 'resolution'
+                    resolution = config_meta.cfgdict.get('resolution', 1.0)
+                    value = (
+                        resolution * round(value / resolution)
+                    )
 
-            # do we have a true/false, enable/disable sort thing?
-            elif config_meta.varfunc == "BooleanVar":
-                # to be or not to be, that is the question.
-                value = preset.get(
-                    config_meta.key,
-                    random.choice([True, False])
-                )
+                # do we have a true/false, enable/disable sort thing?
+                elif config_meta.varfunc == "BooleanVar":
+                    # to be or not to be, that is the question.
+                    value = preset.get(
+                        config_meta.key,
+                        random.choice([True, False])
+                    )
 
-            # write our value for this configuration setting to the database
-            log.debug(f'Configuring {rank} engine {engine_key}:  Setting {config_meta.key} to {value}')
-            new_config_entry = BaseTTSConfig(
-                character_id=character.id,
-                rank=rank,
-                key=config_meta.key,
-                value=value
-            )
-            session.add(new_config_entry)
-            session.commit()
+                # write our value for this configuration setting to the database
+                log.debug(f'Configuring {rank} engine {engine_key}:  Setting {config_meta.key} to {value}')
+                new_config_entry = BaseTTSConfig(
+                    character_id=character.id,
+                    rank=rank,
+                    key=config_meta.key,
+                    value=value
+                )
+                session.add(new_config_entry)
+                session.commit()
 
         # add effects but only if there is a preset, no random effects.
         for effect_dict in preset.get('Effects', []):

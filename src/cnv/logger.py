@@ -32,6 +32,11 @@ LOGGING_CONFIG = {
             'level': 'DEBUG',
             'propagate': True
         },
+        "botocore.credentials": {
+            'handlers': ['default', 'error_file'],
+            'level': 'WARNING',
+            'propagate': True            
+        }
         # 'coh_npc_voices': {
         #     'handlers': ['default', 'error_file'],
         #     'level': 'DEBUG',

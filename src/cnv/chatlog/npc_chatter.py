@@ -35,7 +35,9 @@ log = logging.getLogger(__name__)
 CAPTION_SPEAKER_INDICATORS = (
     ('Positron here', 'Positron'),
     ('Matthew, is it', 'Dana'),  # Cinderburn mission
-    ("Dana... you're alive?!", 'Matthew'),
+    ("Dana you're alive?!", 'Matthew'),
+    ("This is Penelope Yin!", 'Penelope Yin'),
+    ('This is Robert Alderman', 'Robert Alderman')
 )
 
 # class ParallelTTS(threading.Thread):
