@@ -129,15 +129,13 @@ class Character(Base):
                 group_name = None
             
             if group_name:
-                group_name = settings.get_alias(group_name)               
+                alias_name = settings.get_alias(group_name)
             
             preset = settings.get_preset(group_name)
 
-        # based on the preset, and some random choices
-        # where the preset does not specify, create a voice
-        # for this NPC.
-        if group_name in ["Random Any"]:
-            group_name = None
+        # we want to use the alias instead of the group name.
+        if alias_name not in ["Random Any"]:
+            group_name = alias_name
 
         # first we set the engine based on global defaults
         pkey = f'{str_category}_engine_primary'
