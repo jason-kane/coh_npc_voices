@@ -30,7 +30,7 @@ class OpenAIAuthUI(ttk.Frame):
             "input characters. ie: $15 per million characters\n"
             "It is easy to put a hard limit on how much you want to spend. "
             "The variety of voices is extremely limited (there are 6).  I think "
-            "this is a great choice for the most imporant snippets of NPC dialog "
+            "this is a great choice for the most important snippets of NPC dialog "
             "where having a few high quality unique voices in reserve pays off."
         )
         mdlabel.pack(side="top", fill="x", expand=False)
@@ -107,9 +107,9 @@ class OpenAI(TTSEngine):
         ]
 
     def get_voice_names(self, gender=None):
-        if gender.upper() == "FEMALE":
+        if gender and gender.upper() == "FEMALE":
             return ['alloy', 'nova', 'shimmer', 'fable']
-        elif gender.upper() == "MALE":
+        elif gender and gender.upper() == "MALE":
             return ['echo', 'onyx', 'fable']
         else:
             return [

@@ -3,6 +3,7 @@ import logging
 import random
 import re
 import sys
+import tkinter as tk
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional, Self
@@ -346,6 +347,65 @@ class Character(Base):
 
         log.debug(f'\\-- Character.get() returning {character}')
         return character
+
+
+#selected_character = None
+TKVAR = {}
+#selected_category = None
+
+def set_selected_character(name, category):
+    if TKVAR.get('character') is None:
+        TKVAR['character'] = tk.StringVar()
+    
+    if TKVAR.get('category') is None:
+        TKVAR['category'] = tk.StringVar()
+
+    TKVAR['character'].set(name)
+    TKVAR['category'].set(category)
+
+def get_selected_character():
+    if 'character' not in TKVAR:
+        return None
+
+    with db() as session:
+        character = Character.get(
+            name=TKVAR['character'].get(),
+            category=TKVAR['category'].get(), 
+            session=session
+        )
+    return character
+
+def get_engine(rank):
+    if ('engine', rank) not in TKVAR:
+        return None
+    else:
+        return TKVAR[('engine', rank)].get()
+
+def set_engine(rank, value):
+    if TKVAR.get(('engine', rank)) is None:
+        TKVAR[('engine', rank)] = tk.StringVar()
+
+    TKVAR[('engine', rank)].set(value)
+
+# list of instantiated effect classes
+ACTIVE_EFFECTS = []
+def get_effects():
+    return ACTIVE_EFFECTS
+
+def pop_effect():
+    return ACTIVE_EFFECTS.pop()
+
+def add_effect(new_effect):
+    ACTIVE_EFFECTS.append(new_effect)
+
+def remove_effect(effect):
+    ACTIVE_EFFECTS.remove(effect)
+
+def wipe_all_effects():
+    while ACTIVE_EFFECTS:
+        effect = pop_effect()
+        effect.clear_traces()
+        effect.pack_forget()    
 
 
 def get_character_from_rawname(raw_name, session):

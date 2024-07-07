@@ -298,7 +298,7 @@ class TTSEngine(ttk.Frame):
 
     def draw_config_meta(self):
         # now we build it.
-        for m in self.get_config_meta():
+        for index, m in enumerate(self.get_config_meta()):
             frame = ttk.Frame(self)
             frame.columnconfigure(0, minsize=125, uniform="ttsengine")
             frame.columnconfigure(1, weight=2, uniform="ttsengine")
@@ -324,7 +324,8 @@ class TTSEngine(ttk.Frame):
             # changes to the value of this widget trip a generic 'reconfig'
             # handler.
             self.config_vars[m.key].trace_add("write", self.reconfig)
-            frame.pack(side="top", fill="x", expand=True)
+            frame.grid(column=0, row=index)
+            #.pack(side="top", fill="x", expand=True)
 
     def _tkStringVar(self, key, frame):
         # combo widget for strings

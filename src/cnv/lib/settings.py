@@ -41,7 +41,7 @@ LANGUAGES = {
 # to cache hit anyway.
 PERSIST_PLAYER_CHAT = True
 
-REPLAY = False
+REPLAY = True
 
 logging.basicConfig(
     level=LOGLEVEL,
@@ -138,20 +138,21 @@ def clean_customer_name(in_name):
     return in_name, clean_name
 
 
-def cache_filename(name, message):
+def cache_filename(name, message, rank):
     clean_message = re.sub(r'[^\w]', '', message)
     clean_message = hashlib.sha256(message.encode()).hexdigest()[:5] + f"_{clean_message[:10]}"
+    clean_message += rank[0]
     return clean_message + ".mp3"
 
 
-def get_cachefile(name, message, category):
+def get_cachefile(name, message, category, rank):
     name, clean_name = clean_customer_name(name)
-    log.debug(f"{name=} {clean_name=} {message=}")
+    log.debug(f"{name=} {clean_name=} {message=} {rank=}")
 
     # ie: abcde_timetodan.mp3
     # this should be unique to this messags, it's only
     # a 5 character hash, collisions are possible.
-    filename = cache_filename(name, message)
+    filename = cache_filename(name, message, rank)
 
     # do we already have this NPC/Message rendered to an audio file?
     # first we need the path the file ought to have
