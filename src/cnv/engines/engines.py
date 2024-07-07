@@ -6,6 +6,7 @@ from .elevenlabs import ElevenLabs
 from .googlecloud import GoogleCloud
 from .openai import OpenAI
 from .windowstts import WindowsTTS
+from .azure import Azure
 
 log = logging.getLogger(__name__)
 
@@ -30,4 +31,5 @@ ENGINE_LIST = [
     ElevenLabs, 
     AmazonPolly, 
     OpenAI,
+    Azure
 ]

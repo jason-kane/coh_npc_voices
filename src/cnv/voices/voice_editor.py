@@ -469,7 +469,7 @@ class EngineSelectAndConfigure(ttk.Frame):
         if self.rank == "primary":
             if character.engine != engine_name:
                 clear = True
-                log.debug(f'{self.rank} engine changing from {character.engine!r} to {engine_name.get()!r}')
+                log.debug(f'{self.rank} engine changing from {character.engine!r} to {engine_name!r}')
         elif self.rank == "secondary":
             if character.engine_secondary != engine_name:
                 clear = True

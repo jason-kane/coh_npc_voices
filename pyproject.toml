@@ -17,6 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "alembic",
+    "azure-cognitiveservices-speech",
     "colorama",
     "elevenlabs",
     "google-cloud-texttospeech",
