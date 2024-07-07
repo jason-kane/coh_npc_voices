@@ -118,7 +118,8 @@ class Character(Base):
         gender = None
         group_name = None
         preset = {}
-        
+        alias_name = ""
+
         # look up this character by name
         if str_category == "npc":
             npc_spec = settings.get_npc_data(name)
@@ -135,7 +136,7 @@ class Character(Base):
             preset = settings.get_preset(group_name)
 
         # we want to use the alias instead of the group name.
-        if alias_name not in ["Random Any"]:
+        if alias_name not in ["", "Random Any"]:
             group_name = alias_name
 
         # first we set the engine based on global defaults
@@ -168,7 +169,7 @@ class Character(Base):
             if gender is None:
                 if name in ["Celestine", "Alessandra", ]:
                     gender = 'Female'
-                elif name in ["Matthew", ]:
+                elif name in ["Matthew", "Toothbreaker Jones"]:
                     gender = "Male"
                 else:
                     gender = random.choice(['Male', 'Female'])

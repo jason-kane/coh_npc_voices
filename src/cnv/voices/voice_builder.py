@@ -54,6 +54,10 @@ def create(character, message, session):
 
         effect_list.append(effect_instance.get_effect())
 
+    rank = 'primary'
+    if ENGINE_OVERRIDE.get(character.engine, False):
+        rank = 'secondary'
+
     # have we seen this particular phrase before?
     if character.category != PLAYER_CATEGORY or settings.PERSIST_PLAYER_CHAT:
         # phrase_id = models.get_or_create_phrase_id(
@@ -63,9 +67,11 @@ def create(character, message, session):
         # )
         
         # message = models.get_translated(phrase_id)
-                    
         cachefile = settings.get_cachefile(
-            character.name, message, character.cat_str()
+            character.name, 
+            message, 
+            character.cat_str(),
+            rank
         )
 
         try:
@@ -75,10 +81,6 @@ def create(character, message, session):
             # the directory already exists.  This is not a problem.
             pass
 
-        sink = Distributor([
-            SoundDevice(),
-            WaveFile(cachefile + '.wav')
-        ])
         save = True
     else:
         sink = Distributor([
@@ -89,10 +91,6 @@ def create(character, message, session):
     name = character.name
     category = character.category
     
-    rank = 'primary'
-    if ENGINE_OVERRIDE.get(character.engine, False):
-        rank = 'secondary'
-
     # character.engine may already have a value.  It probably does.  We're over-writing it
     # with anything we have in the dict ENGINE_OVERRIDE.  But if we don't have anything, you can keep
     # your previous value and carry on.
@@ -101,9 +99,20 @@ def create(character, message, session):
         if rank == 'secondary':
             raise engines.USE_SECONDARY
         
+        if save:
+            sink = Distributor([
+                SoundDevice(),
+                WaveFile(cachefile + '.wav')
+            ])
+        else:
+            sink = Distributor([
+                SoundDevice()
+            ])
+
         log.debug(f'Using engine: {character.engine}')
         engines.get_engine(character.engine)(None, 'primary', name, category).say(message, effect_list, sink=sink)
     except engines.USE_SECONDARY:
+        rank = 'secondary'
         # our chosen engine for this character isn't working.  So we're going to switch
         # to the secondary and use that for the rest of this session.
         ENGINE_OVERRIDE[character.engine] = True
@@ -113,6 +122,25 @@ def create(character, message, session):
             )
         )
         
+        # new rank, new cachefile
+        cachefile = settings.get_cachefile(
+            character.name, 
+            message, 
+            character.cat_str(),
+            rank
+        )
+
+        # new cachefile, new sink.
+        if save:
+            sink = Distributor([
+                SoundDevice(),
+                WaveFile(cachefile + '.wav')
+            ])
+        else:
+            sink = Distributor([
+                SoundDevice()
+            ])
+
         if character.engine_secondary:
             # use the secondary engine config defined for this character
             engine_instance = engines.get_engine(character.engine_secondary)

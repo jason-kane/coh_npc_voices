@@ -20,6 +20,7 @@ dependencies = [
     "colorama",
     "elevenlabs",
     "google-cloud-texttospeech",
+    "openai",
     "google-auth-oauthlib",
     "matplotlib",
     "pyautogui",

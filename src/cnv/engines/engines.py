@@ -1,14 +1,15 @@
 import logging
 
 from .amazonpolly import AmazonPolly
+from .base import USE_SECONDARY
 from .elevenlabs import ElevenLabs
 from .googlecloud import GoogleCloud
-from .windowstts import WindowsTTS
 from .openai import OpenAI
+from .windowstts import WindowsTTS
 
 log = logging.getLogger(__name__)
 
-from .base import USE_SECONDARY
+
 
 # https://github.com/coqui-ai/tts 
 #
@@ -24,5 +25,9 @@ def get_engine(engine_name):
 
 
 ENGINE_LIST = [ 
-    WindowsTTS, GoogleCloud, ElevenLabs, AmazonPolly, OpenAI
+    WindowsTTS, 
+    GoogleCloud, 
+    ElevenLabs, 
+    AmazonPolly, 
+    OpenAI,
 ]

@@ -1,6 +1,7 @@
 {
   "5thColumn": "Random Any",
   "5thColumnEndgame": "Random Any",
+  "Arachnos_60s": "Arachnos",
   "ArachnosEndgame": "Arachnos",
   "BanishedPantheon": "Random Any",
   "Behavioral Adjustees": "Random Any",
@@ -25,6 +26,6 @@
   "TheDestroyers": "Random Any",
   "TheFamily": "Random Any",
   "Tsoo": "Random Any",
-  "TsooEndgame": "Random Any",
+  "TsooEndgame": "Tsoo",
   "Warriors": "Random Any"
 }

@@ -1,6 +1,5 @@
 import logging
 import os
-import tkinter as tk
 from tkinter import ttk, font
 
 import cnv.database.models as models

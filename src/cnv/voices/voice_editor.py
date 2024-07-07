@@ -371,7 +371,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 msg = translator.translate(msg)
 
             try:
-                ttsengine(None, rank, character.name, character.category).say(msg, effect_list)
+                ttsengine(None, self.rank, character.name, character.category).say(msg, effect_list)
             except engines.DISABLE_ENGINES:
                 # I'm not even sure what we want to do.  The user clicked 'play' but
                 # we don't have any quota left for the selected engine.

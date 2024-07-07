@@ -175,34 +175,29 @@ class TightTTS(threading.Thread):
 
             log.debug(f"Speaking thread received {category} {name}:{message}")
 
-            cachefile = settings.get_cachefile(name, message, category)
+            found = False
+            for rank in ['primary', 'secondary']:
+                cachefile = settings.get_cachefile(name, message, category, rank)
             
-            if os.path.exists(cachefile):
-                log.debug(f"(tighttts) Cache HIT: {cachefile}")
-                # requires pydub?
-                with AudioFile(cachefile) as input:
-                    with AudioFile(
-                        filename=cachefile + ".wav",
-                        samplerate=input.samplerate,
-                        num_channels=input.num_channels,
-                    ) as output:
-                        while input.tell() < input.frames:
-                            output.write(input.read(1024))
+                if os.path.exists(cachefile):
+                    found = True
+                    log.debug(f"(tighttts) Cache HIT: {cachefile}")
+                    # requires pydub?
+                    with AudioFile(cachefile) as input:
+                        with AudioFile(
+                            filename=cachefile + ".wav",
+                            samplerate=input.samplerate,
+                            num_channels=input.num_channels,
+                        ) as output:
+                            while input.tell() < input.frames:
+                                output.write(input.read(1024))
 
-                audio = get_audio_from_wav_file(cachefile + ".wav")
-                os.unlink(cachefile + ".wav")
+                    audio = get_audio_from_wav_file(cachefile + ".wav")
+                    os.unlink(cachefile + ".wav")
 
-                voicebox.sinks.SoundDevice().play(audio)
-            else:
-                # make sure the directory exists
-                try:
-                    os.mkdir(os.path.dirname(cachefile))
-                except OSError:
-                    # the directory already exists.  This is not a problem.
-                    pass
+                    voicebox.sinks.SoundDevice().play(audio)
 
-                log.debug(f"(tighttts) Cache MISS: {cachefile} not found")
-                
+            if not found:               
                 # building session out here instead of inside get_character
                 # keeps character alive and properly tied to the database as we
                 # pass it into update_character_last_spoke and voice_builder.
@@ -212,6 +207,7 @@ class TightTTS(threading.Thread):
                     models.update_character_last_spoke(character.id, session)
                     # it isn't very well named, but this will speak "message" as
                     # character and cache a copy into cachefile.
+                    
                     voice_builder.create(character, message, session)
 
             # we've said our piece.

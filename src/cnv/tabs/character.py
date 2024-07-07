@@ -125,8 +125,10 @@ class ChartFrame(ttk.Frame):
 
                 if xp_gain:
                     sum_xp += xp_gain
+
                 if inf_gain:
                     sum_inf += inf_gain
+
                 event_time = datetime.strptime(datestring, "%Y-%m-%d %H:%M:%S") 
                 
                 while previous_event and (event_time - previous_event) > timedelta(minutes=1, seconds=30):
