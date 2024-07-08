@@ -406,7 +406,7 @@ def wipe_all_effects():
     while ACTIVE_EFFECTS:
         effect = pop_effect()
         effect.clear_traces()
-        effect.pack_forget()    
+        effect.grid_forget()    
 
 
 def get_character_from_rawname(raw_name, session):
