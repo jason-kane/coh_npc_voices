@@ -125,7 +125,7 @@ class TTSEngine(ttk.Frame):
 
         self.set_config_meta(self.config)
 
-        self.draw_config_meta()
+        self.draw_config_meta(self)
         self.load_character(category=category, name=name)
         self.repopulate_options()
 
@@ -296,14 +296,15 @@ class TTSEngine(ttk.Frame):
                             session.add(new_config_setting)
                             session.commit()
 
-    def draw_config_meta(self):
-        # now we build it.
+    def draw_config_meta(self, parent):
+        # now we build it.  Row 0 is taken by the engine selector, the rest is ours.
+        # column sizing is handled upstream, we need to stay clean with 
+        parent.columnconfigure(0, minsize=125, uniform="ttsengine")
+        parent.columnconfigure(1, weight=2, uniform="ttsengine")
+
         for index, m in enumerate(self.get_config_meta()):
-            frame = ttk.Frame(self)
-            frame.columnconfigure(0, minsize=125, uniform="ttsengine")
-            frame.columnconfigure(1, weight=2, uniform="ttsengine")
-            ttk.Label(frame, text=m.cosmetic, anchor="e").grid(
-                row=0, column=0, sticky="e", padx=10
+            ttk.Label(parent, text=m.cosmetic, anchor="e").grid(
+                row=index + 1, column=0, sticky="e", padx=10
             )
 
             # create the tk.var for the value of this widget
@@ -312,11 +313,11 @@ class TTSEngine(ttk.Frame):
 
             # create the widget itself
             if m.varfunc == "StringVar":
-                self._tkStringVar(m.key, frame)
+                self._tkStringVar(index + 1, m.key, parent)
             elif m.varfunc == "DoubleVar":
-                self._tkDoubleVar(m.key, frame, m.cfgdict)
+                self._tkDoubleVar(index + 1, m.key, parent, m.cfgdict)
             elif m.varfunc == "BooleanVar":
-                self._tkBooleanVar(m.key, frame)
+                self._tkBooleanVar(index + 1, m.key, parent)
             else:
                 # this will fail, but at least it will fail with a log message.
                 log.error(f'No widget defined for variables like {varfunc}')
@@ -324,19 +325,17 @@ class TTSEngine(ttk.Frame):
             # changes to the value of this widget trip a generic 'reconfig'
             # handler.
             self.config_vars[m.key].trace_add("write", self.reconfig)
-            frame.grid(column=0, row=index)
-            #.pack(side="top", fill="x", expand=True)
 
-    def _tkStringVar(self, key, frame):
+    def _tkStringVar(self, index, key, frame):
         # combo widget for strings
         self.widget[key] = ttk.Combobox(
             frame,
             textvariable=self.config_vars[key],
         )
         self.widget[key]["state"] = "readonly"
-        self.widget[key].grid(row=0, column=1, sticky="ew")
+        self.widget[key].grid(row=index, column=1, sticky="new")
 
-    def _tkDoubleVar(self, key, frame, cfg):
+    def _tkDoubleVar(self, index, key, frame, cfg):
         # doubles get a scale widget.  I haven't been able to get the ttk.Scale
         # widget to behave itself.  I like the visual a bit better, but its hard
         # to get equivilent results.
@@ -350,9 +349,9 @@ class TTSEngine(ttk.Frame):
             digits=cfg.get('digits', 2),
             resolution=cfg.get('resolution', 1)
         )
-        self.widget[key].grid(row=0, column=1, sticky="ew")
+        self.widget[key].grid(row=index, column=1, sticky="new")
 
-    def _tkBooleanVar(self, key, frame):
+    def _tkBooleanVar(self, index, key, frame):
         """
         Still using a label then checkbutton because the 'text' field on
         checkbutton puts the text after the button.  Well, and it will make it
@@ -366,7 +365,7 @@ class TTSEngine(ttk.Frame):
             onvalue=True,
             offvalue=False
         )
-        self.widget[key].grid(row=0, column=1, sticky="ew")
+        self.widget[key].grid(row=index, column=1, sticky="new")
 
     def reconfig(self, *args, **kwargs):
         """

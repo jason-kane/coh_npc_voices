@@ -8,6 +8,7 @@ from typing import Union
 
 import azure.cognitiveservices.speech as speechsdk
 import cnv.database.models as models
+from cnv.lib import settings
 import numpy as np
 import voicebox
 from voicebox.audio import Audio
@@ -126,8 +127,6 @@ class Azure(TTSEngine):
 
     config = (
         ('Voice Name', 'voice', "StringVar", "<unconfigured>", {}, "get_voice_names"),
-        # ('Voice Model', 'model', "StringVar", "<unconfigured>", {}, "get_models"),
-        # ('Speed', 'speed', "DoubleVar", 1.0, {'min': 0.25, 'max': 4.0, 'resolution': 0.25}, None),
     )
 
     def get_models(self):
@@ -138,11 +137,27 @@ class Azure(TTSEngine):
 
     def get_voice_names(self, gender=None):
         voices = self.get_voices()
-        # TODO: filter by language code 
+        allow_language_codes = settings.get_voice_language_codes()
+
+        language_filtered = []
+        for v in voices:
+            if v['locale'].split("-")[0] not in allow_language_codes:
+                continue
+            language_filtered.append(v)
+
+        # getting the wrong gender (because the right one isn't available)
+        # isn't as bad as a voice that can't pronounce the language.
+        gender_filtered = []
         if gender:
-            return [v['voice_name'] for v in voices if v['gender'] == gender]
-            
-        return [v['voice_name'] for v in voices]
+            for v in language_filtered:
+                if gender is None or v['gender'] != gender:
+                    continue
+                gender_filtered.add(v)
+
+        if gender_filtered:        
+            return [v['voice_name'] for v in gender_filtered]
+        else:
+            return [v['voice_name'] for v in language_filtered]
 
     def get_voices(self):
         all_voices = models.diskcache(f'{self.key}_voice_name')

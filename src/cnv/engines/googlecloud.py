@@ -75,10 +75,12 @@ def get_credentials():
 
     if creds is None and 'GOOGLE_APPLICATION_CREDENTIALS' in os.environ:
         # https://cloud.google.com/docs/authentication/provide-credentials-adc#local-key
+        # https://cloud.google.com/docs/authentication/external/set-up-adc
         log.debug('Using Application Default Credential: %s', os.environ['GOOGLE_APPLICATION_CREDENTIALS'])
         return None
     else:
-        log.warning('No valid Google authentication method provided.  Google voices will not work.')
+        log.debug('Using:  gcloud auth application-default')
+        log.debug('If it does not work, try "gcloud auth application-default login"')
 
     return creds
 

@@ -40,6 +40,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         super().__init__(*args, **kwargs)
         self.phrase_id = []
         self.rank = rank
+        self.visualize_wav = None
 
         frame = ttk.Frame(self)
         
@@ -54,8 +55,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
             textvariable=self.chosen_phrase
         )
         self.options["values"] = []
-
-        self.populate_phrases()
+        
         self.options.pack(side="left", fill="x", expand=True)
 
         self.play_btn = ttk.Button(frame, text="Play", command=self.play_cache)
@@ -63,6 +63,9 @@ class WavfileMajorFrame(ttk.LabelFrame):
         regen_btn = ttk.Button(frame, text="Regen", command=self.say_it)
         regen_btn.pack(side="left")
         self.play_btn.pack(side="left")        
+
+        # must be called after self.play_btn exists
+        self.populate_phrases()
 
         frame.pack(side="top", expand=True, fill="x")
 
@@ -75,7 +78,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
             justify="left"
         ).pack(side="top", fill="x")    
 
-        self.visualize_wav = None
+        
 
     def set_translated(self, *args, **kwargs):
         """
@@ -128,7 +131,6 @@ class WavfileMajorFrame(ttk.LabelFrame):
 
         self.clear_wave()
         self.play_btn["state"] = "disabled"
-
 
     def populate_phrases(self):
         log.debug('** populate_phrases() called **')
@@ -379,84 +381,71 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
 
 
-class EngineSelection(ttk.LabelFrame):
+class EngineSelectAndConfigure(ttk.LabelFrame):
     """
-    Frame for just the Text to speech labal and
-    a combobox to choose a different engine.  We are
-    tracing on the variable, not binding the widget.
+    Responsible for everything inside the "Engine" section
+    of the detailside.  There is one instance of this object per
+    layer of engine (primary, secondary, etc..)
     """
-
-    def __init__(self, parent, selected_engine, *args, **kwargs):
+    def __init__(self, rank, *args, **kwargs):
         kwargs['text'] = 'Engine'
-        super().__init__(parent, *args, **kwargs)
-        self.selected_engine = selected_engine
+        super().__init__(*args, **kwargs)
+        log.debug(f'EngineSelectAndConfigure.__init__({rank=}')
+        self.rank = rank
+        self.engine_parameters = None
         
         self.columnconfigure(0, minsize=125, uniform="ttsengine")
         self.columnconfigure(1, weight=2, uniform="ttsengine")
+        
+        #-- Row 0 --------------------------------------
         ttk.Label(self, text="Text to Speech Engine", anchor="e").grid(
-            column=0, row=0, sticky="e"
+            row=0, column=0, sticky="e", padx=10
         )
 
-        base_tts = ttk.Combobox(self, textvariable=self.selected_engine)
-        base_tts["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
-        base_tts["state"] = "readonly"
-
-        base_tts.grid(
-            column=1, row=0, sticky="ew"
-        )
-
-
-class EngineSelectAndConfigure(ttk.Frame):
-    """
-    two element stack, the first has the engine selection,
-    the second has all the parameters supported by the seleted engine
-    """
-
-    def __init__(self, rank, parent, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-        self.rank = rank
-        self.parent = parent
-        
         self.selected_engine = tk.StringVar()
-        self.engine_parameters = None
-        
         self.selected_engine.trace_add(
             "write", 
             self.change_selected_engine
         )
-
-        self.phrase_selector = WavfileMajorFrame(
-            rank, self
+        base_tts = ttk.Combobox(self, textvariable=self.selected_engine)
+        base_tts["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
+        base_tts["state"] = "readonly"
+        base_tts.grid(
+            column=1, row=0, sticky="new"
         )
-        self.phrase_selector.pack(side="top", fill="x", expand=True)
-
-        # self.presetSelect = PresetSelector(
-        #     self.frame, self, self.selected_character
-        # )
-        # self.presetSelect.pack(side="top", fill="x", expand=True)
-
+        #-- Row 1 --------------------------------------
         with models.Session(models.engine) as session:
-            self.load_character(session)
+            self.load_character_engines(session)      
 
-        self.es = EngineSelection(self, self.selected_engine)
-        self.es.pack(side="top", fill="x", expand=True)
-
-    def set_engine(self, engine_name):       
-        # update the phrase selector
-        self.phrase_selector.populate_phrases()
+    def set_engine(self, engine_name):
+        """
+        When a character is loading (detailside.load_character()) this is
+        called.  We can expect models.get_selected_character() to provide
+        a character object for whomever we are working on.
+        """
+        log.debug(f'[{self.rank}] ESC.set_engine({engine_name})')
 
         # this set() will trip change_selected_engine
         # which will in turn set a value for engine_parameters
         self.selected_engine.set(engine_name)  
 
+
     def change_selected_engine(self, a, b, c):
         """
-        the user changed the engine.
+        1. the user changed the engine for this character. 
+         
+        or 
+        
+        2. we swapped the character out from under this, then did an engine.set
+        which is triggered here to configure a totally different character.
+
+        Having this one function handle both those states is a poor design,
+        since only state #1 should write anything to the database.
         """
         # No problem.
         # clear the old engine configuration
         # show the selected engine configuration
-        log.debug('EngineSelectAndConfigure.change_selected_engine()')
+        log.info('EngineSelectAndConfigure.change_selected_engine()')
         
         character = models.get_selected_character()
         engine_name = self.selected_engine.get()
@@ -476,10 +465,14 @@ class EngineSelectAndConfigure(ttk.Frame):
                 log.debug(f'{self.rank} engine changing from {character.engine_secondary!r} to {engine_name!r}')
 
         if self.engine_parameters:
-            self.engine_parameters.pack_forget()
+            log.debug('Clearing prior engine_parameters')
+            for w in self.engine_parameters.winfo_children:
+                w.destroy()
+            self.engine_parameters.destroy()
 
         # remove any existing engine level configuration
         if clear:
+            log.debug(f'Deleting BaseTTS for {character.id=} {self.rank=}')
             with models.db() as session:
                 rows = session.scalars(
                     select(models.BaseTTSConfig).where(
@@ -492,22 +485,37 @@ class EngineSelectAndConfigure(ttk.Frame):
                     log.debug(f'Deleting {row}...')
                     session.delete(row)
                 session.commit()
+        else:
+            log.debug(f'Not changing the {self.rank} character engines ({engine_name})')
 
         models.set_engine(self.rank, engine_name)
         engine_cls = engines.get_engine(engine_name)
 
         if not engine_cls:
             # that didn't work.. try the default engine
+            log.warning(f'Invalid Engine: {engine_name}.  Using default {settings.DEFAULT_ENGINE} engine.')
             engine_cls = engines.get_engine(settings.DEFAULT_ENGINE)
 
         self.engine_parameters = engine_cls(
-            self.es,
+            self,
             rank=self.rank, 
             category=character.category,
             name=character.name
         )
-        self.engine_parameters.grid(column=0, row=1, columnspan=2)
-        # side="top", fill="x", expand=True)
+        self.engine_parameters.grid(column=0, row=1, columnspan=2, sticky='new')
+        
+        #-- Row 2 --------------------------------------
+        self.engine_parameters = None           
+        self.phrase_selector = WavfileMajorFrame(
+            self.rank, self
+        )
+        self.phrase_selector.grid(
+            columnspan=2, column=0, row=2, sticky="new"
+        )
+
+        # update the phrase selector
+        self.phrase_selector.populate_phrases()
+
         self.save_character()
 
     def save_character(self):
@@ -534,20 +542,27 @@ class EngineSelectAndConfigure(ttk.Frame):
         with models.Session(models.engine) as session:
             character = models.Character.get(name, category_str, session)
 
-            log.debug(
-                f'''Saving {self.rank} changed engine_string {character.name}
-                    {character.engine} {character.engine_secondary} {engine_string}
-                ''', 
-            )
-
+            change = False
             if self.rank == "primary" and character.engine != engine_string:
                 character.engine = engine_string
+                change = True
             elif self.rank == "secondary" and character.engine_secondary != engine_string:
                 character.engine_secondary = engine_string
+                change = True
 
-            session.commit()
+            if change:
+                log.debug(
+                    f'''Saving {self.rank} changed engine_string {character.name}
+                        {character.engine=} 
+                        {character.engine_secondary=} 
+                        {self.rank=}
+                        {engine_string=}
+                    ''', 
+                )
 
-    def load_character(self, session):
+                session.commit()
+
+    def load_character_engines(self, session):
         """
         We've set the character name, we want the rest of the metadata to
         populate.  Setting the engine name will domino the rest.
@@ -883,10 +898,10 @@ class DetailSide(ttk.Frame):
 
         engine_notebook = ttk.Notebook(self.frame)
         self.primary_tab = EngineSelectAndConfigure(
-            'primary', self.frame, 
+            'primary', self, 
         )
         self.secondary_tab = EngineSelectAndConfigure(
-            'secondary', self.frame, 
+            'secondary', self, 
         )
         engine_notebook.add(self.primary_tab, text='Primary')
         engine_notebook.add(self.secondary_tab, text='Secondary')
