@@ -36,11 +36,17 @@ class WavfileMajorFrame(ttk.LabelFrame):
     ALL_PHRASES = "⪡  Rebuild all phrases  ⪢"
     
     def __init__(self, rank, *args, **kwargs):
+        log.debug(f"Initializing WavfileMajorFrame({rank=})")
         kwargs['text'] = 'Wavefile(s)'
         super().__init__(*args, **kwargs)
         self.phrase_id = []
         self.rank = rank
         self.visualize_wav = None
+        
+        self.fig = None
+        self.plt = None
+        self.spec = None
+        self.canvas = None
 
         frame = ttk.Frame(self)
         
@@ -64,9 +70,6 @@ class WavfileMajorFrame(ttk.LabelFrame):
         regen_btn.pack(side="left")
         self.play_btn.pack(side="left")        
 
-        # must be called after self.play_btn exists
-        self.populate_phrases()
-
         frame.pack(side="top", expand=True, fill="x")
 
         # NOT inside the frame
@@ -78,6 +81,11 @@ class WavfileMajorFrame(ttk.LabelFrame):
             justify="left"
         ).pack(side="top", fill="x")    
 
+        # Wavfile visualizations
+        self.visualize_wav = ttk.Frame(self, padding = 0)
+
+        # must be called after self.play_btn exists
+        self.populate_phrases()
         
 
     def set_translated(self, *args, **kwargs):
@@ -126,6 +134,8 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 # and display the wav
                 self.show_wave(wavfilename)
                 return
+            else:
+                self.clear_wave()
         
             log.debug(f'Cached mp3 {cachefile} does not exist.')
 
@@ -183,35 +193,52 @@ class WavfileMajorFrame(ttk.LabelFrame):
     def clear_wave(self):
         if hasattr(self, 'canvas'):
             log.debug('*** clear_wave() called ***')
-            self.plt.clear()
-            self.spec.clear()
-            self.canvas.draw_idle()
+            if self.plt:
+                self.plt.clear()
+
+            if self.spec:
+                self.spec.clear()
+            
+            if self.canvas:
+                #for item in self.canvas.get_tk_widget().find_all():
+                #    self.canvas.get_tk_widget().delete(item)
+    
+                self.canvas.draw_idle()
 
     def show_wave(self, cachefile):
         """
         Visualize a wav file
 
-        # I know, not very efficient to just jam this in here
-        # https://learnpython.com/blog/plot-waveform-in-python/
-        # https://matplotlib.org/3.1.0/gallery/user_interfaces/embedding_in_tk_sgskip.html        
+        I know, not very efficient to just jam this in here
+        * https://learnpython.com/blog/plot-waveform-in-python/
+        * https://matplotlib.org/3.1.0/gallery/user_interfaces/embedding_in_tk_sgskip.html        
         """
-        sampling_rate, data = wavfile.read(cachefile)
-        if self.visualize_wav is None:
-            # our widget hasn't been rendered.  Do be a sweetie and take
-            # care of that for me.
-            self.visualize_wav = ttk.Frame(self, padding = 0)
+        if self.fig is None:
             self.fig = Figure(
-                figsize=(3, 2), # (width, height) figsize in inches (not kidding)
+                figsize=(3, 4), # (width, height) figsize in inches (not kidding)
                 dpi=100, # but we get dpi too so... sane?
                 layout='constrained'
             )
 
+        if self.plt is None:
             self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
+        else:
+            self.plt.remove()
+            self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
+
+        if self.spec is None:
             self.spec = self.fig.add_subplot(212)
+        else:
+            self.spec.clear()
+
+        # 211 = rows=2 columns=1 index=1
+        if self.canvas is None:
             self.canvas = FigureCanvasTkAgg(self.fig, self.visualize_wav)
             self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=1)
-        else:
-            self.clear_wave()
+
+        sampling_rate, data = wavfile.read(cachefile)
+        
+        log.debug(f'*** show_wave({cachefile=}) called ***')
 
         # if channels == 1:
         self.plt.plot(data)
@@ -414,6 +441,16 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
             column=1, row=0, sticky="new"
         )
         #-- Row 1 --------------------------------------
+        
+        #-- Row 2 --------------------------------------
+        self.engine_parameters = None           
+        self.phrase_selector = WavfileMajorFrame(
+            self.rank, self
+        )
+        self.phrase_selector.grid(
+            columnspan=2, column=0, row=2, sticky="new"
+        )
+
         with models.Session(models.engine) as session:
             self.load_character_engines(session)      
 
@@ -445,7 +482,7 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         # No problem.
         # clear the old engine configuration
         # show the selected engine configuration
-        log.info('EngineSelectAndConfigure.change_selected_engine()')
+        log.debug('EngineSelectAndConfigure.change_selected_engine()')
         
         character = models.get_selected_character()
         engine_name = self.selected_engine.get()
@@ -466,7 +503,7 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
 
         if self.engine_parameters:
             log.debug('Clearing prior engine_parameters')
-            for w in self.engine_parameters.winfo_children:
+            for w in self.engine_parameters.winfo_children():
                 w.destroy()
             self.engine_parameters.destroy()
 
@@ -504,15 +541,6 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         )
         self.engine_parameters.grid(column=0, row=1, columnspan=2, sticky='new')
         
-        #-- Row 2 --------------------------------------
-        self.engine_parameters = None           
-        self.phrase_selector = WavfileMajorFrame(
-            self.rank, self
-        )
-        self.phrase_selector.grid(
-            columnspan=2, column=0, row=2, sticky="new"
-        )
-
         # update the phrase selector
         self.phrase_selector.populate_phrases()
 
@@ -592,22 +620,24 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         return character
 
 
-class EffectList(ttk.LabelFrame):
+class EffectList(ttk.Frame):
     def __init__(self, parent, *args, **kwargs):       
-        kwargs['text'] = "Effects",
         super().__init__(parent, *args, **kwargs)
 
-        self.buffer = False
+        # self.buffer = False
         
         self.name = None
         self.category = None
+        self.next_effect_row = 0
 
         self.add_effect_combo = AddEffect(self, self)
-        self.add_effect_combo.pack(side="top", fill="x", expand=True)
+        self.add_effect_combo.grid(
+            column=0, row=0, sticky="new"
+        )
+        #pack(side="top", fill="both", expand=True)
 
     def load_effects(self, name, category):
         log.debug('EffectList.load_effects()')
-        has_effects = False
 
         self.name = name
         self.category = category
@@ -631,8 +661,8 @@ class EffectList(ttk.LabelFrame):
                 )
             ).all()
 
-            for effect in voice_effects:
-                has_effects = True
+            index = -1
+            for index, effect in enumerate(voice_effects):
                 log.debug(f'Adding effect {effect} found in the database')
                 effect_class = effects.EFFECTS[effect.effect_name]
 
@@ -648,22 +678,30 @@ class EffectList(ttk.LabelFrame):
                     relief="groove",
                     style="Effect.TFrame"
                 )
-                effect_config_frame.pack(side="top", fill="x", expand=True)
+                effect_config_frame.grid(row=index, column=0, sticky="new")
+                #pack(side="top", fill="x", expand=True)
                 effect_config_frame.effect_id.set(effect.id)
                 models.add_effect(effect_config_frame)
 
                 effect_config_frame.load()
-                        
-            if not has_effects:
-                self.buffer = ttk.Frame(self, width=1, height=1).pack(side="top")
-            else:
-                if self.buffer:
-                    self.buffer.pack_forget()
+            
+            self.next_effect_row = index + 1
+
+            # if not has_effects:
+            #     self.buffer = ttk.Frame(self, width=1, height=1).pack(side="top")
+            # else:
+            #     if self.buffer:
+            #         self.buffer.pack_forget()
 
             log.debug("Rebuilding add_effect")
-            self.add_effect_combo.pack_forget()
+            self.add_effect_combo.grid_forget()
             self.add_effect_combo = AddEffect(self, self)
-            self.add_effect_combo.pack(side="top", fill='x', expand=True)
+            self.add_effect_combo.grid(
+                row=self.next_effect_row, 
+                column=0, 
+                sticky="new"
+            )
+            #(side="top", fill='x', expand=True)
             
     def add_effect(self, effect_name):
         """
@@ -705,8 +743,22 @@ class EffectList(ttk.LabelFrame):
                 style="EffectConfig.TFrame",
                 borderwidth=1
             )
-            effect_config_frame.pack(side="top", fill="x", expand=True)
-            settings.add_effect(effect_config_frame)
+            self.add_effect_combo.grid_forget()
+            effect_config_frame.grid(
+                column=0, 
+                row=self.next_effect_row, 
+                sticky="new"
+            )
+
+            self.next_effect_row += 1
+            log.debug("Rebuilding add_effect")
+            self.add_effect_combo.grid(
+                row=self.next_effect_row, 
+                column=0, 
+                sticky="new"
+            )
+
+            models.add_effect(effect_config_frame)
 
             with models.Session(models.engine) as session:
                 # retrieve this character
@@ -760,8 +812,8 @@ class EffectList(ttk.LabelFrame):
             session.commit()
 
         # forget the widgets for this object
-        effect_obj.pack_forget()
-        self.pack()
+        effect_obj.grid_forget()
+        # self.grid()
 
 
 class AddEffect(ttk.Frame):
@@ -769,7 +821,7 @@ class AddEffect(ttk.Frame):
     # hell buddy.  This is the shit that causing errors when people
     # use an app at different resolutions.  This will center at one spot
     # and all the other entries will be different.
-    add_an_effect = "⪡  Add an Effect  ⪢"
+    ADD_AN_EFFECT = "⪡  Add an Effect  ⪢"
 
     def __init__(self, parent, effect_list, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -779,7 +831,7 @@ class AddEffect(ttk.Frame):
         # this combobox.  That only gives us the scope of what can see this
         # selected_effect to either read the current value or trace_add to 
         # trigger whenever selected_effect is written to.       
-        self.selected_effect = tk.StringVar(value=self.add_an_effect)
+        self.selected_effect = tk.StringVar(value=self.ADD_AN_EFFECT)
         self.selected_effect.trace_add("write", self.add_effect)
 
         effect_combobox = ttk.Combobox(
@@ -791,7 +843,7 @@ class AddEffect(ttk.Frame):
         effect_combobox["state"] = "readonly"
 
         #  <-[XXX    ]
-        effect_combobox.pack(side="left", fill="x", expand=True)
+        effect_combobox.pack(side="top", fill="x", expand=True)
 
         #  [XXX]->
         # ttk.Button(self, text="Add Effect", command=self.add_effect).pack(side="right")
@@ -806,7 +858,7 @@ class AddEffect(ttk.Frame):
         self.effect_list.add_effect(effect_name)
                
         # reset the UI back to the "add an effect" prompt
-        self.selected_effect.set(self.add_an_effect)
+        self.selected_effect.set(self.ADD_AN_EFFECT)
 
 
 class DetailSide(ttk.Frame):
@@ -903,15 +955,17 @@ class DetailSide(ttk.Frame):
         self.secondary_tab = EngineSelectAndConfigure(
             'secondary', self, 
         )
-        engine_notebook.add(self.primary_tab, text='Primary')
-        engine_notebook.add(self.secondary_tab, text='Secondary')
-
-        engine_notebook.pack(side="top", fill="x", expand=True)
 
         # list of effects already configured, but .. we don't
         # actually _have_ a character yet, so this is kind of stupid.
         self.effect_list = EffectList(self.frame, name=None, category=None)
-        self.effect_list.pack(side="top", fill="x", expand=True)
+
+        engine_notebook.add(self.primary_tab, text='Primary')
+        engine_notebook.add(self.secondary_tab, text='Secondary')
+        engine_notebook.add(self.effect_list, text='Effects')
+
+        engine_notebook.pack(side="top", fill="x", expand=True)
+
 
         self.bind('<Enter>', self._bound_to_mousewheel)
         self.bind('<Leave>', self._unbound_to_mousewheel)
