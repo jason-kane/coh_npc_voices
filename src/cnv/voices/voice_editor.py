@@ -68,7 +68,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
 
         regen_btn = ttk.Button(frame, text="Regen", command=self.say_it)
         regen_btn.pack(side="left")
-        self.play_btn.pack(side="left")        
+        self.play_btn.pack(side="left")
 
         frame.pack(side="top", expand=True, fill="x")
 
@@ -386,6 +386,8 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 cachefile + ".wav",
                 mp3filename=cachefile
             )
+            
+            self.play_btn["state"] = "normal"
             # unlink the wav file?
 
         if not all_phrases:
@@ -624,8 +626,6 @@ class EffectList(ttk.Frame):
     def __init__(self, parent, *args, **kwargs):       
         super().__init__(parent, *args, **kwargs)
 
-        # self.buffer = False
-        
         self.name = None
         self.category = None
         self.next_effect_row = 0
@@ -634,7 +634,6 @@ class EffectList(ttk.Frame):
         self.add_effect_combo.grid(
             column=0, row=0, sticky="new"
         )
-        #pack(side="top", fill="both", expand=True)
 
     def load_effects(self, name, category):
         log.debug('EffectList.load_effects()')
@@ -643,6 +642,8 @@ class EffectList(ttk.Frame):
         self.category = category
 
         # teardown any effects already in place
+        #for effect in models.get_effects():
+
         models.wipe_all_effects()
 
         with models.db() as session:
