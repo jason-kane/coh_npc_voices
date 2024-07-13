@@ -341,6 +341,12 @@ class TTSEngine(ctk.CTkFrame):
         # widget to behave itself.  I like the visual a bit better, but its hard
         # to get equivilent results.
 
+
+        # TODO:
+        # display the current value
+        # mark ticks/steps?
+        # use digits/resolution to determine steps?
+        #
         self.widget[key] = ctk.CTkSlider(
             frame,
             variable=self.config_vars[key],

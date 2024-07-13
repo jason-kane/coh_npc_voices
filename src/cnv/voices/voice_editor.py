@@ -971,6 +971,7 @@ class DetailSide(ctk.CTkScrollableFrame):
         
         # enginenotebook
         self.rowconfigure(1, weight=1)
+        self.columnconfigure(0, weight=1)
 
         self.character_name = tk.StringVar()
         self.group_name = tk.StringVar()
@@ -996,6 +997,10 @@ class DetailSide(ctk.CTkScrollableFrame):
         #.pack(side="top", fill="both", expand=True)
 
         engine_notebook = ttk.Notebook(self)
+        engine_notebook.grid_rowconfigure(0, weight=1)
+        engine_notebook.grid_rowconfigure(1, weight=1)
+        engine_notebook.grid_columnconfigure(0, weight=1)
+
         self.primary_tab = EngineSelectAndConfigure(
             'primary', self, 
         )
@@ -1231,7 +1236,12 @@ class ListSide(ctk.CTkFrame):
             width=40,
             textvariable=self.list_filter
         )
-        listfilter.grid(column=0, row=0, columnspan=2, sticky="ew")
+        listfilter.grid(
+            column=0, 
+            row=0, 
+            columnspan=2, 
+            sticky="ew"
+        )
 
         self.list_filter.trace_add('write', self.apply_list_filter)
 

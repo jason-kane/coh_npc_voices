@@ -10,24 +10,19 @@ log = logging.getLogger(__name__)
 
 class VoicesTab(ctk.CTkFrame):
     def __init__(self, parent, event_queue, *args, **kwargs):
-        kwargs['border_color'] = "red"
-        kwargs['border_width'] = 2
         super().__init__(parent, *args, **kwargs)
         self.detailside=None
         self.listside=None
-
-        self.rowconfigure(0, weight=1)
-        
-        self.columnconfigure(0, weight=0)
-        self.columnconfigure(1, weight=1)
+       
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=1)
 
         detailside = voice_editor.DetailSide(self)
         listside = voice_editor.ListSide(self, detailside)
 
         listside.grid(column=0, row=0, sticky="nsew")
-        #.pack(side="left", fill=tk.Y, expand=False)
         detailside.grid(column=1, row=0, sticky="nsew")
-        #.pack(side="left", fill="both", expand=True)
 
     def get_selected_character(self):
         if (self.detailside is None or self.listside is None):

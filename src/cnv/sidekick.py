@@ -40,13 +40,13 @@ EXIT = False
 class MainTabView(ctk.CTkTabview):
     def __init__(self, master, event_queue, **kwargs):
         kwargs["height"] = 1024  # this is really more like maxheight
-        kwargs['border_color'] = "darkgrey"
-        kwargs['border_width'] = 2
+        #kwargs['border_color'] = "darkgrey"
+        #kwargs['border_width'] = 2
         kwargs['anchor'] = 'nw'
         super().__init__(master, **kwargs)
 
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
         for tablabel, tabobj in (
             ('Character', character.CharacterTab),
@@ -55,11 +55,10 @@ class MainTabView(ctk.CTkTabview):
             ('Automation', automation.AutomationTab),
         ):
             ctkframe = self.add(tablabel)
+            ctkframe.grid_columnconfigure(0, weight=1)
+            ctkframe.grid_rowconfigure(0, weight=1)
             
             tab_contents = tabobj(ctkframe, event_queue)
-
-            ctkframe.columnconfigure(0, weight=1)
-            ctkframe.rowconfigure(0, weight=1)
             tab_contents.grid(column=0, row=0, sticky='nsew')
 
 
@@ -77,25 +76,27 @@ def main():
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.iconbitmap("sidekick.ico")
 
-    root.geometry("680x640+200+200")
+    root.geometry("720x640+200+200")
     root.resizable(True, True)
     root.title("City of Heroes Sidekick")
 
     event_queue = multiprocessing.Queue()
 
-    root.columnconfigure(0, weight=1)
-    root.rowconfigure(0, weight=1)
+    root.grid_columnconfigure(0, weight=1)
+    root.grid_rowconfigure(0, weight=1)
     
+    buffer = ctk.CTkFrame(root)
+    buffer.grid_columnconfigure(0, weight=1)
+    buffer.grid_rowconfigure(0, weight=1)
+
     mtv = MainTabView(
-        root, event_queue=event_queue
+        buffer, event_queue=event_queue
     )
     mtv.grid(
-        column=0, row=0, sticky="nsew"
+        column=0, row=0, sticky="new"
     )
+    buffer.grid(column=0, row=0, sticky="nsew")
     
-    # put the tabs on the left side
-    # mtv._segmented_button.grid(sticky="w")
-
     # in the mainloop we want to know if event_queue gets a new
     # entry.
     last_character_update = None
