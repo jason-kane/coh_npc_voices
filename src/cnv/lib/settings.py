@@ -41,7 +41,7 @@ LANGUAGES = {
 # to cache hit anyway.
 PERSIST_PLAYER_CHAT = True
 
-REPLAY = True
+REPLAY = False
 
 logging.basicConfig(
     level=LOGLEVEL,

@@ -7,6 +7,7 @@ import cnv.lib.settings as settings
 import voicebox
 import webbrowser
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.cloud import texttospeech
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -65,11 +66,18 @@ def get_credentials():
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             # try and refresh the credential
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
 
-            # persist the refreshed token to disk
-            with open(token_file, "w") as token:
-                token.write(creds.to_json())
+                # persist the refreshed token to disk
+                with open(token_file, "w") as token:
+                    token.write(creds.to_json())
+
+            except RefreshError as err:
+                # our token can't be refreshed.
+                log.error(err)
+                os.unlink(token_file)
+                creds = None
         else:
             creds = None
 
