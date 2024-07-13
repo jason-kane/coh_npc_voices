@@ -47,7 +47,7 @@ class Notebook(ctk.CTkFrame):
         super().__init__(parent, *args, **kwargs)
 
         self.notebook = ttk.Notebook(self, takefocus=takefocus)
-        self.blankframe = lambda: tk.Frame(self.notebook, height=0, bd=0, highlightthickness=0)
+        self.blankframe = lambda: ctk.CTkFrame(self.notebook, height=0)
 
         self.notebook.pack(side="top", fill="x", expand=True)
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)

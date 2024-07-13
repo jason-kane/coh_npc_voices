@@ -633,13 +633,15 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         return character
 
 
-class EffectList(ttk.Frame):
+class EffectList(ctk.CTkFrame):
     def __init__(self, parent, *args, **kwargs):       
         super().__init__(parent, *args, **kwargs)
 
         self.name = None
         self.category = None
         self.next_effect_row = 0
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
         self.add_effect_combo = AddEffect(self, self)
         self.add_effect_combo.grid(
@@ -686,9 +688,9 @@ class EffectList(ttk.Frame):
                 # not very DRY
                 effect_config_frame = effect_class(
                     self, 
-                    borderwidth=1,                     
-                    relief="groove",
-                    style="Effect.TFrame"
+                    # borderwidth=1,                     
+                    # relief="groove",
+                    # style="Effect.TFrame"
                 )
                 effect_config_frame.grid(row=index, column=0, sticky="new")
                 #pack(side="top", fill="x", expand=True)
@@ -745,15 +747,15 @@ class EffectList(ttk.Frame):
             # with an apply(Audio) that returns an Audio; An "Audio" is a pretty
             # simple object wrapping a np.ndarray of [-1 to 1] samples.
             #
-            ttk.Style().configure(
-                "EffectConfig.TFrame",
-                highlightbackground="black", 
-                relief="groove"
-            )
+            # ttk.Style().configure(
+            #     "EffectConfig.TFrame",
+            #     highlightbackground="black", 
+            #     relief="groove"
+            # )
             effect_config_frame = effect(
                 self, 
-                style="EffectConfig.TFrame",
-                borderwidth=1
+                # style="EffectConfig.TFrame",
+                # borderwidth=1
             )
             self.add_effect_combo.grid_forget()
             effect_config_frame.grid(
@@ -996,25 +998,39 @@ class DetailSide(ctk.CTkScrollableFrame):
         biography.grid(column=0, row=0, sticky='nsew')
         #.pack(side="top", fill="both", expand=True)
 
-        engine_notebook = ttk.Notebook(self)
+        engine_notebook = ctk.CTkTabview(
+            self,
+            anchor="nw"
+        )
         engine_notebook.grid_rowconfigure(0, weight=1)
         engine_notebook.grid_rowconfigure(1, weight=1)
         engine_notebook.grid_columnconfigure(0, weight=1)
 
+        primary = engine_notebook.add('Primary')
+        primary.grid_rowconfigure(0, weight=1)
+        primary.grid_columnconfigure(0, weight=1)
+
+        secondary = engine_notebook.add('Secondary')
+        secondary.grid_rowconfigure(0, weight=1)
+        secondary.grid_columnconfigure(0, weight=1)
+        
+        effects = engine_notebook.add('Effects')
+        effects.grid_rowconfigure(0, weight=1)
+        effects.grid_columnconfigure(0, weight=1)
+
         self.primary_tab = EngineSelectAndConfigure(
-            'primary', self, 
+            'primary', primary, 
         )
+        self.primary_tab.grid(column=0, row=0, sticky="nsew")
+
         self.secondary_tab = EngineSelectAndConfigure(
-            'secondary', self, 
+            'secondary', secondary, 
         )
+        self.secondary_tab.grid(column=0, row=0, sticky="nsew")
 
-        # list of effects already configured, but .. we don't
-        # actually _have_ a character yet, so this is kind of stupid.
-        self.effect_list = EffectList(self, name=None, category=None)
-
-        engine_notebook.add(self.primary_tab, text='Primary')
-        engine_notebook.add(self.secondary_tab, text='Secondary')
-        engine_notebook.add(self.effect_list, text='Effects')
+        # list of effects already configured
+        self.effect_list = EffectList(effects)
+        self.effect_list.grid(column=0, row=0, sticky="nsew")
 
         engine_notebook.grid(column=0, row=1, sticky="nsew")
         #.pack(side="top", fill="x", expand=True)

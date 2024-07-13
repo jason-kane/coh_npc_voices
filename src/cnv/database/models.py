@@ -666,6 +666,9 @@ class EffectSetting(Base):
     key: Mapped[str] = mapped_column(String(256))
     value: Mapped[str] = mapped_column(String(256))
 
+    def __str__(self):
+        return f"<EffectSetting {self.effect_id} {self.key}={self.value}/>"
+
 class Hero(Base):
     __tablename__ = "hero"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

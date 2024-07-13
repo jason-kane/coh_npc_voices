@@ -1,6 +1,7 @@
 import logging
 import tkinter as tk
 from tkinter import font, ttk
+import customtkinter as ctk
 
 import cnv.database.models as models
 import numpy as np
@@ -13,7 +14,7 @@ log = logging.getLogger(__name__)
 
 WRAPLENGTH=350
 
-class LScale(ttk.Frame):
+class LScale(ctk.CTkFrame):
     """
     Labeled choose-a-number
     """
@@ -33,7 +34,7 @@ class LScale(ttk.Frame):
         self.columnconfigure(0, minsize=125, uniform="effect")
         self.columnconfigure(1, weight=2, uniform="effect")
         
-        if _type == int:
+        if isinstance(_type, int):
             variable = tk.IntVar(
                 name=f"{parent.label.lower()}_{pname}",
                 value=default
@@ -45,31 +46,61 @@ class LScale(ttk.Frame):
             )
 
         # label for the setting
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text=label,
             anchor="e",
             justify='right'
         ).grid(row=0, column=0, sticky='e')
 
+        # TODO:
+        # display the current value
+        # mark ticks/steps?
+        # use digits/resolution to determine steps?
+        #
+        log.info(f'{resolution=}')
+        if resolution:
+            steps = int((to - from_) / resolution)
+        else:
+            steps = 20
+        
+        if steps > 50:
+            log.warning(f'Resolution for {label} is too detailed')
+
         # widget for viewing/changing the value
-        tk.Scale(
+        ctk.CTkSlider(
             self,
+            variable=variable,
             from_=from_,
             to=to,
-            orient='horizontal',
-            variable=variable,
-            *args,
-            digits=digits,
-            resolution=resolution,
-            **kwargs
+            orientation='horizontal',
+            number_of_steps=steps
         ).grid(row=0, column=1, sticky='ew')
+
+        ctk.CTkLabel(
+            self,
+            textvariable=variable
+        ).grid(row=0, column=2, sticky='e')
+
+        # tk.Scale(
+        #     self,
+        #     from_=from_,
+        #     to=to,
+        #     orient='horizontal',
+        #     variable=variable,
+        #     *args,
+        #     digits=digits,
+        #     resolution=resolution,
+        #     **kwargs
+        # ).grid(row=0, column=1, sticky='ew')
 
         setattr(parent, pname, variable)
         parent.parameters.append(pname)
+        if digits:
+            parent.digits[pname] = digits
 
 
-class LCombo(ttk.Frame):
+class LCombo(ctk.CTkFrame):
     """
     Combo widget to select a string from a set of possible values
     """
@@ -87,7 +118,7 @@ class LCombo(ttk.Frame):
         variable = tk.StringVar(value=default)
 
         # label for the setting
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text=label,
             anchor="e",
@@ -95,12 +126,14 @@ class LCombo(ttk.Frame):
         ).grid(row=0, column=0, sticky='e')
 
         # widget for viewing/changing the value
-        options = ttk.Combobox(
+        options = ctk.CTkComboBox(
             self, 
-            textvariable=variable
+            values=list(choices),
+            variable=variable,
+            state='readonly'
         )
-        options['values'] = list(choices)
-        options['state'] = 'readonly'
+        # options['values'] = list(choices)
+        # options['state'] = 'readonly'
             
         options.grid(row=0, column=1, sticky='ew')
 
@@ -108,7 +141,7 @@ class LCombo(ttk.Frame):
         parent.parameters.append(pname)        
 
 
-class LBoolean(ttk.Frame):
+class LBoolean(ctk.CTkFrame):
     def __init__(
         self,
         parent,
@@ -126,7 +159,7 @@ class LBoolean(ttk.Frame):
         )
 
         # label for the setting
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text=label,
             anchor="e",
@@ -134,7 +167,7 @@ class LBoolean(ttk.Frame):
         ).grid(row=0, column=0, sticky='e')
 
         # widget for viewing/changing the value
-        ttk.Checkbutton(
+        ctk.CTkSwitch(
             self, 
             text="",
             variable=variable,
@@ -146,7 +179,7 @@ class LBoolean(ttk.Frame):
         parent.parameters.append(pname)  
 
 
-class EffectParameterEditor(ttk.Frame):
+class EffectParameterEditor(ctk.CTkFrame):
     label = "Label"
     desc = "Description of effect"
 
@@ -156,39 +189,42 @@ class EffectParameterEditor(ttk.Frame):
         self.effect_id = tk.IntVar()
         self.parameters = []
         self.traces = {}
+        self.digits = {}
         self.trashcan = Feather("trash-2", size=24)
 
-        topbar = ttk.Frame(self)
+        topbar = ctk.CTkFrame(self)
         # the name of this effect
-        ttk.Label(
+        ctk.CTkLabel(
             topbar,
             text=self.label.title(),
             anchor="n",
-            font=font.Font(
+            font=ctk.CTkFont(
                 size=18,
                 weight="bold"
             )
         ).pack(side='left', fill='x', expand=True)
     
-        ttk.Style().configure(
-            "CloseFrame.TButton",
-            anchor="center",
-            width=1,
-            height=1
-        )
+        # ttk.Style().configure(
+        #     "CloseFrame.TButton",
+        #     anchor="center",
+        #     width=1,
+        #     height=1
+        # )
 
         # delete button
-        ttk.Button(
+        ctk.CTkButton(
             topbar,
             image=self.trashcan.icon,
-            style="CloseFrame.TButton",
+            #style="CloseFrame.TButton",
+            text="",
+            width=40,
             command=self.remove_effect
         ).place(relx=1, rely=0, anchor='ne')
 
         topbar.pack(side="top", fill='x', expand=True)
 
         # the descriptive text for this effect
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text=self.desc,
             anchor="n",
@@ -233,12 +269,19 @@ class EffectParameterEditor(ttk.Frame):
                 )
             ).all()
 
-            log.debug(f'Sync to db {effect_settings}')
             found = set()
             for effect_setting in effect_settings:
+                log.info(f'Sync to db {effect_setting}')
                 found.add(effect_setting.key)
                 try:
                     new_value = str(getattr(self, effect_setting.key).get())
+                    digits = self.digits.get(effect_setting.key, None)
+                    if digits is not None:
+                        formatstr = "{:.%sf}" % digits
+                        new_value = formatstr.format(float(new_value))
+                        getattr(self, effect_setting.key).set(new_value)
+                    else:
+                        log.info(f'{effect_setting.key} not in digits {self.digits}')
                 except AttributeError:
                     log.error(f'Invalid configuration.  Cannot set {effect_setting.key} on a {self} effect.')
                     continue
@@ -329,7 +372,7 @@ class BandpassFilter(EffectParameterEditor):
         LScale(
             self,
             pname='low_frequency',
-            label='Low Frequency', 
+            label='Low Frequency (Hz)', 
             desc="Filter frequency in Hz",
             default=100,
             from_=100,
@@ -340,7 +383,7 @@ class BandpassFilter(EffectParameterEditor):
         LScale(
             self,
             pname="high_frequency",
-            label='High Frequency', 
+            label='High Frequency (Hz)', 
             desc="Filter frequency in Hz",
             default=0,
             from_=0,
@@ -361,7 +404,7 @@ class BandpassFilter(EffectParameterEditor):
         LCombo(
             self,
             pname="type_",
-            label='Type',
+            label='IIR Filter Type',
             desc='type of IIR filter to design',
             default="butter",
             choices=IIR_FILTERS,
@@ -827,7 +870,7 @@ class Chorus(EffectParameterEditor):
             from_=0,
             to=100,
             digits=0,
-            resolution=1
+            resolution=5
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
@@ -851,7 +894,7 @@ class Chorus(EffectParameterEditor):
             from_=0,
             to=50,
             digits=1,
-            resolution=0.5
+            resolution=1
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
