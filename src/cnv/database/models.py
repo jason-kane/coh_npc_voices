@@ -576,9 +576,7 @@ class Translation(Base):
     text: Mapped[str] = mapped_column(String(256))
 
 
-def get_or_create_phrase_id(name, category, message):
-    """
-    """
+def get_or_create_phrase(name, category, message):
     with db() as session:
         character = Character().get(
             name=name, category=category, session=session)
@@ -597,7 +595,10 @@ def get_or_create_phrase_id(name, category, message):
             session.add(phrase)
             session.commit()
         
-        return phrase.id
+        return phrase
+
+def get_or_create_phrase_id(name, category, message):
+    return get_or_create_phrase(name, category, message).id
 
 
 def get_translated(phrase_id):

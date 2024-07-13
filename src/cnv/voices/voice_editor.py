@@ -1,24 +1,22 @@
 """Voice Editor component"""
 import logging
-import multiprocessing
 import os
-import queue
 import sys
 import tkinter as tk
 from tkinter import font, ttk
-from translate import Translator
 
+import customtkinter as ctk
 import voicebox
-from cnv.chatlog import npc_chatter
 from cnv.database import db, models
 from cnv.effects import effects
 from cnv.engines import engines
-from cnv.lib import settings, audio
+from cnv.lib import audio, settings
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from scipy.io import wavfile
 from sqlalchemy import delete, desc, select
 from tkfeather import Feather
+from translate import Translator
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from voicebox.tts.utils import get_audio_from_wav_file
 
@@ -32,12 +30,12 @@ log = logging.getLogger(__name__)
 ENGINE_OVERRIDE = {}
 
 #class ChoosePhrase(ttk.Frame):
-class WavfileMajorFrame(ttk.LabelFrame):    
+class WavfileMajorFrame(ctk.CTkFrame):    
     ALL_PHRASES = "⪡  Rebuild all phrases  ⪢"
     
     def __init__(self, rank, *args, **kwargs):
         log.debug(f"Initializing WavfileMajorFrame({rank=})")
-        kwargs['text'] = 'Wavefile(s)'
+        # kwargs['text'] = 'Wavefile(s)'
         super().__init__(*args, **kwargs)
         self.phrase_id = []
         self.rank = rank
@@ -48,7 +46,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         self.spec = None
         self.canvas = None
 
-        frame = ttk.Frame(self)
+        frame = ctk.CTkFrame(self)
         
         self.translated = tk.StringVar(value="")
 
@@ -56,24 +54,27 @@ class WavfileMajorFrame(ttk.LabelFrame):
             value="<Choose or type a phrase>"
         )
         self.chosen_phrase.trace_add('write', self.choose_phrase)
-        self.options = ttk.Combobox(
+        self.options = ctk.CTkComboBox(
             frame, 
-            textvariable=self.chosen_phrase
+            values=[],
+            variable=self.chosen_phrase
         )
-        self.options["values"] = []
-        
         self.options.pack(side="left", fill="x", expand=True)
 
-        self.play_btn = ttk.Button(frame, text="Play", command=self.play_cache)
+        self.play_btn = ctk.CTkButton(
+            frame, text="Play", width=80, command=self.play_cache
+        )
 
-        regen_btn = ttk.Button(frame, text="Regen", command=self.say_it)
+        regen_btn = ctk.CTkButton(
+            frame, text="Regen", width=80, command=self.say_it
+        )
         regen_btn.pack(side="left")
         self.play_btn.pack(side="left")
 
         frame.pack(side="top", expand=True, fill="x")
 
         # NOT inside the frame
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             textvariable=self.translated,
             wraplength=350,
@@ -82,7 +83,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         ).pack(side="top", fill="x")    
 
         # Wavfile visualizations
-        self.visualize_wav = ttk.Frame(self, padding = 0)
+        self.visualize_wav = ctk.CTkFrame(self)
 
         # must be called after self.play_btn exists
         self.populate_phrases()
@@ -103,42 +104,41 @@ class WavfileMajorFrame(ttk.LabelFrame):
         character = models.get_selected_character()
         
         # retrieve the selected phrase
-        selected_index = self.options.current()
+        message = self.options.get()
+        if message in [self.ALL_PHRASES, ]:
+            return
+
+        # determine the id of this phrase
+        phrase = models.get_or_create_phrase(
+            character.name,
+            character.category,
+            message
+        )
         
-        if selected_index >= 0:
-            log.debug(f'Retrieving phrase at index {selected_index}')
-            try:
-                phrase_id = self.phrase_id[selected_index]
-            except IndexError:
-                # likely "Rebuild all phrases"
-                return
+        # we want to work with the translated string
+        message, is_translated = models.get_translated(phrase.id)
 
-            # we want to work with the translated string
-            message, is_translated = models.get_translated(phrase_id)                
+        if is_translated:
+            self.translated.set(message)
+        else:
+            self.translated.set("")
 
-            if is_translated:
-                self.translated.set(message)
-            else:
-                self.translated.set("")
+        # find the file associated with this phrase
+        cachefile = self.get_cachefile(
+            character, message, self.rank
+        )
 
-            # find the file associated with this phrase
-            cachefile = self.get_cachefile(
-                character, message, self.rank
+        if os.path.exists(cachefile):
+            # activate the play button and display the waveform
+            wavfilename = audio.mp3file_to_wavfile(
+                mp3filename=cachefile
             )
-
-            if os.path.exists(cachefile):
-                wavfilename = audio.mp3file_to_wavfile(
-                    mp3filename=cachefile
-                )
-                self.play_btn["state"] = "normal"
-                # and display the wav
-                self.show_wave(wavfilename)
-                return
-            else:
-                self.clear_wave()
-        
-            log.debug(f'Cached mp3 {cachefile} does not exist.')
-
+            self.play_btn["state"] = "normal"
+            # and display the wav
+            self.show_wave(wavfilename)
+            return
+    
+        log.debug(f'Cached mp3 {cachefile} does not exist.')
         self.clear_wave()
         self.play_btn["state"] = "disabled"
 
@@ -171,7 +171,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
             values.append(phrase.text)
         
         values.append(self.ALL_PHRASES)
-        self.options["values"] = values
+        self.options.configure(values=values)
 
         if character_phrases:
             # default to the first phrase
@@ -342,13 +342,19 @@ class WavfileMajorFrame(ttk.LabelFrame):
                         )
                     ).all()
         else:
-            phrase_id = self.phrase_id[self.options.current()]
-            with models.db() as session:
-                all_phrases = session.scalars(
-                        select(models.Phrases).where(
-                            models.Phrases.id == phrase_id
-                        )
-                    ).all()
+            all_phrases = [ models.get_or_create_phrase(
+                name=character.name,
+                category=character.category,
+                message=message
+            ), ]
+
+            # phrase_id = self.phrase_id[self.options.current()]
+            # with models.db() as session:
+            #     all_phrases = session.scalars(
+            #             select(models.Phrases).where(
+            #                 models.Phrases.id == phrase_id
+            #             )
+            #         ).all()
 
         for phrase in all_phrases:           
             log.debug(f'{phrase=}')
@@ -427,7 +433,7 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         self.columnconfigure(1, weight=2, uniform="ttsengine")
         
         #-- Row 0 --------------------------------------
-        ttk.Label(self, text="Text to Speech Engine", anchor="e").grid(
+        ctk.CTkLabel(self, text="Text to Speech Engine", anchor="e").grid(
             row=0, column=0, sticky="e", padx=10
         )
 
@@ -436,9 +442,14 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
             "write", 
             self.change_selected_engine
         )
-        base_tts = ttk.Combobox(self, textvariable=self.selected_engine)
-        base_tts["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
-        base_tts["state"] = "readonly"
+        base_tts = ctk.CTkComboBox(
+            self, 
+            variable=self.selected_engine,
+            state='readonly',
+            values=[e.cosmetic for e in engines.ENGINE_LIST]
+        )
+        # base_tts["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
+        # base_tts["state"] = "readonly"
         base_tts.grid(
             column=1, row=0, sticky="new"
         )
@@ -862,7 +873,54 @@ class AddEffect(ttk.Frame):
         self.selected_effect.set(self.ADD_AN_EFFECT)
 
 
-class DetailSide(ttk.Frame):
+class BiographyFrame(ctk.CTkFrame):
+    def __init__(
+            self, 
+            parent, 
+            character_name, 
+            group_name, 
+            character_description, 
+            *args, 
+            **kwargs
+        ):
+        super().__init__(parent, *args, **kwargs)
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure((0, 1), weight=0)
+        self.rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            self,
+            textvariable=character_name,
+            anchor="center",
+            font=ctk.CTkFont(
+                size=22,
+                weight="bold"
+            )
+        ).grid(column=0, row=0, sticky="ew")
+
+        # which group is this npc a member of.  this will
+        # frequently not have a value
+        ctk.CTkLabel(
+            self,
+            textvariable=group_name,
+            wraplength=220,
+            anchor="n",
+            justify="center"
+        ).grid(column=0, row=1, sticky="ew")
+
+        # description of the character (if there is one)
+        ctk.CTkLabel(
+            self,
+            textvariable=character_description,
+            wraplength=350,
+            anchor="nw",
+            justify="left"
+        ).grid(column=0, row=2, sticky="nsew")
+
+
+
+class DetailSide(ctk.CTkScrollableFrame):
     """
     Primary frame for the "detail" side of the application.
     """
@@ -873,83 +931,71 @@ class DetailSide(ttk.Frame):
         self.listside = None
         self.trashcan = Feather("trash-2", size=24)
 
-        self.vsb = tk.Scrollbar(self, orient="vertical")
-        self.vsb.pack(side="right", fill="y", expand=False)
+        #self.scrollable_frame = ctk.CTkScrollableFrame(self)
 
-        self.canvas = tk.Canvas(
-            self, 
-            borderwidth=0, 
-            background="#ffffff",
-            yscrollcommand=self.vsb.set
-        )
-        self.canvas.pack(side="left", fill="both", expand=True)
+        #self.vsb = ctk.CTkScrollbar(self)
+        #self.vsb.pack(side="right", fill="y", expand=False)
+
+        #self.canvas = tk.Canvas(
+        #     self, 
+        #     borderwidth=0, 
+        #     background="#ffffff",
+        #     yscrollcommand=self.vsb.set
+        # )
+        # self.canvas.pack(side="left", fill="both", expand=True)
 
         # drag the scrollbar, see the canvas slide
-        self.vsb.config(command=self.canvas.yview)
+        #self.vsb.configure(command=self.canvas.yview)
 
-        self.canvas.xview_moveto(0)
-        self.canvas.yview_moveto(0)
+        #self.canvas.xview_moveto(0)
+        #self.canvas.yview_moveto(0)
 
         # this is the scrollable thing
-        self.frame = ttk.Frame(self.canvas)
-        self.frame_id = self.canvas.create_window(
-            (0, 0), window=self.frame, anchor="nw",
-            tags="self.frame"
-        )
+        # self.frame = ttk.Frame(self.canvas)
+        # self.frame_id = self.canvas.create_window(
+        #     (0, 0), window=self.frame, anchor="nw",
+        #     tags="self.frame"
+        # )
 
-        self.frame.bind("<Configure>", self.onFrameConfigure)
-        self.canvas.bind("<Configure>", self.onCanvasConfigure)
+        # self.frame.bind("<Configure>", self.onFrameConfigure)
+        # self.canvas.bind("<Configure>", self.onCanvasConfigure)
 
-        name_frame = ttk.Frame(self.frame)
+        # style = ttk.Style()
+        # style.configure(
+        #     "RemoveCharacter.TButton",
+        #     width=1
+        # )
+
+        # biography
+        self.rowconfigure(0, weight=0)
+        
+        # enginenotebook
+        self.rowconfigure(1, weight=1)
 
         self.character_name = tk.StringVar()
-        ttk.Label(
-            name_frame,
-            textvariable=self.character_name,
-            anchor="center",
-            font=font.Font(
-                size=22,
-                weight="bold"
-            )
-        ).pack(side="left", fill="x", expand=True)
+        self.group_name = tk.StringVar()
+        self.character_description = tk.StringVar()
 
-        style = ttk.Style()
-        style.configure(
-            "RemoveCharacter.TButton",
-            width=1
+        biography = BiographyFrame(
+            self, 
+            character_name=self.character_name,
+            group_name=self.group_name,
+            character_description=self.character_description
         )
 
-        ttk.Button(
-            name_frame,
+        ctk.CTkButton(
+            biography,
             image=self.trashcan.icon,
-            style="RemoveCharacter.TButton",
+            text="",
+            width=45,
+            #style="RemoveCharacter.TButton",
             command=self.remove_character
         ).place(relx=1, rely=0, anchor='ne')
 
-        name_frame.pack(side="top", fill="x", expand=True)
+        biography.grid(column=0, row=0, sticky='nsew')
+        #.pack(side="top", fill="both", expand=True)
 
-        self.group_name = tk.StringVar()
-        # which group is this npc a member of.  this will
-        # frequently not have a value
-        ttk.Label(
-            self.frame,
-            textvariable=self.group_name,
-            wraplength=220,
-            anchor="n",
-            justify="center"
-        ).pack(side="top", fill="x")
-
-        self.character_description = tk.StringVar()
-        # description of the character (if there is one)
-        ttk.Label(
-            self.frame,
-            textvariable=self.character_description,
-            wraplength=350,
-            anchor="nw",
-            justify="left"
-        ).pack(side="top", fill="x")
-
-        engine_notebook = ttk.Notebook(self.frame)
+        engine_notebook = ttk.Notebook(self)
         self.primary_tab = EngineSelectAndConfigure(
             'primary', self, 
         )
@@ -959,17 +1005,17 @@ class DetailSide(ttk.Frame):
 
         # list of effects already configured, but .. we don't
         # actually _have_ a character yet, so this is kind of stupid.
-        self.effect_list = EffectList(self.frame, name=None, category=None)
+        self.effect_list = EffectList(self, name=None, category=None)
 
         engine_notebook.add(self.primary_tab, text='Primary')
         engine_notebook.add(self.secondary_tab, text='Secondary')
         engine_notebook.add(self.effect_list, text='Effects')
 
-        engine_notebook.pack(side="top", fill="x", expand=True)
+        engine_notebook.grid(column=0, row=1, sticky="nsew")
+        #.pack(side="top", fill="x", expand=True)
 
-
-        self.bind('<Enter>', self._bound_to_mousewheel)
-        self.bind('<Leave>', self._unbound_to_mousewheel)
+        #self.bind('<Enter>', self._bound_to_mousewheel)
+        #self.bind('<Leave>', self._unbound_to_mousewheel)
 
     def selected_category_and_name(self):
         """
@@ -977,39 +1023,39 @@ class DetailSide(ttk.Frame):
         """
         return self.listside.selected_category_and_name()
 
-    def _bound_to_mousewheel(self, event):
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+    # def _bound_to_mousewheel(self, event):
+    #     self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
 
-    def _unbound_to_mousewheel(self, event):
-        self.canvas.unbind_all("<MouseWheel>")
+    # def _unbound_to_mousewheel(self, event):
+    #     self.canvas.unbind_all("<MouseWheel>")
 
-    def _on_mousewheel(self, event):
-        top, bottom = self.vsb.get()
-        if top > 0.0 or bottom < 1.0:
-            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    # def _on_mousewheel(self, event):
+    #     top, bottom = self.vsb.get()
+    #     if top > 0.0 or bottom < 1.0:
+    #         self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
     def remove_character(self):
         if self.listside:
             self.listside.delete_selected_character()
 
-    def onFrameConfigure(self, event):
-        """Reset the scroll region to encompass the inner frame"""
-        # Update the scrollbars to match the size of the inner frame.
-        size = (self.frame.winfo_reqwidth(), self.frame.winfo_reqheight())
-        self.canvas.config(scrollregion="0 0 %s %s" % size)
-        if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
-            # Update the canvas's width to fit the inner frame.
-            self.canvas.config(width=self.frame.winfo_reqwidth())        
+    # def onFrameConfigure(self, event):
+    #     """Reset the scroll region to encompass the inner frame"""
+    #     # Update the scrollbars to match the size of the inner frame.
+    #     size = (self.frame.winfo_reqwidth(), self.frame.winfo_reqheight())
+    #     self.canvas.config(scrollregion="0 0 %s %s" % size)
+    #     if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
+    #         # Update the canvas's width to fit the inner frame.
+    #         self.canvas.config(width=self.frame.winfo_reqwidth())        
 
-        # self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+    #     # self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
-    def onCanvasConfigure(self, event):
-        if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
-            # Update the frame width to fill the canvas.
-            self.canvas.itemconfigure(
-                self.frame_id, 
-                width=self.canvas.winfo_width()
-            )
+    # def onCanvasConfigure(self, event):
+    #     if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
+    #         # Update the frame width to fill the canvas.
+    #         self.canvas.itemconfigure(
+    #             self.frame_id, 
+    #             width=self.canvas.winfo_width()
+    #         )
 
     def load_character(self, category, name):
         """
@@ -1075,8 +1121,8 @@ class DetailSide(ttk.Frame):
         # self.presetSelect.reset()
 
         # scroll to the top
-        self.vsb.set(0, 1)
-        self.canvas.yview_moveto(0)
+        # self.vsb.set(0, 1)
+        # self.canvas.yview_moveto(0)
 
 
 # class PresetSelector(ttk.Frame):
@@ -1167,31 +1213,42 @@ class Character:
         cursor.close()
         return phrases
 
-class ListSide(ttk.Frame):
+class ListSide(ctk.CTkFrame):
     def __init__(self, parent, detailside, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.detailside = detailside
         #wait, what?
         self.detailside.listside = self
 
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=0)
+        self.rowconfigure(1, weight=1)
+        self.rowconfigure(2, weight=0)
+
         self.list_filter = tk.StringVar(value="")
-        listfilter = ttk.Entry(self, width=40, textvariable=self.list_filter)
-        listfilter.pack(side="top", fill=tk.X)
+        listfilter = ctk.CTkEntry(
+            self,
+            width=40,
+            textvariable=self.list_filter
+        )
+        listfilter.grid(column=0, row=0, columnspan=2, sticky="ew")
+
         self.list_filter.trace_add('write', self.apply_list_filter)
 
-        listarea = ttk.Frame(self)
+        #listarea = ctk.CTkFrame(self)
         columns = ('name', )
         self.character_tree = ttk.Treeview(
-            listarea, selectmode="browse", columns=columns, show=''
+            self,  # listarea, 
+            selectmode="browse", 
+            columns=columns, 
+            show=''
         )
-
         self.character_tree.column('name', width=200, stretch=tk.YES)       
         self.refresh_character_list()
-        self.character_tree.pack(side="left", expand=True, fill=tk.BOTH)
+        self.character_tree.grid(column=0, row=1, sticky='nsew')
 
-        vsb = tk.Scrollbar(
-            listarea,
-            orient='vertical',
+        vsb = ctk.CTkScrollbar(
+            self,
             command=self.character_tree.yview
         )
         self.character_tree.configure(yscrollcommand=vsb.set)
@@ -1199,19 +1256,14 @@ class ListSide(ttk.Frame):
         self.bind('<Enter>', self._bound_to_mousewheel)
         self.bind('<Leave>', self._unbound_to_mousewheel)
 
-        vsb.pack(side='right', fill=tk.Y)
-        listarea.pack(side="top", expand=True, fill=tk.BOTH)
+        vsb.grid(column=2, row=1, sticky='ns')
 
-        action_frame = ttk.Frame(self)
-        ttk.Button(
-            action_frame,
+        ctk.CTkButton(
+            self,
             text="Refresh",
             command=self.refresh_character_list
-        ).pack(
-            side="right"
-        )
+        ).grid(column=0, columnspan=3, row=2, sticky='e')
 
-        action_frame.pack(side="top", expand=False, fill=tk.X)
         self.character_tree.bind("<<TreeviewSelect>>", self.character_selected)
 
     def _bound_to_mousewheel(self, event):
@@ -1456,95 +1508,6 @@ class ListSide(ttk.Frame):
        
         return item
         
-
-class ChatterService:
-    def start(self, event_queue):
-        self.speaking_queue = queue.Queue()
-
-        npc_chatter.TightTTS(self.speaking_queue, event_queue)
-        self.speaking_queue.put((None, "Attaching to most recent log...", 'system'))
-
-        logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
-        #logdir = "g:/CoH/homecoming/accounts/VVonder/Logs"
-        badges = True
-        team = True
-        npc = True
-
-        ls = npc_chatter.LogStream(
-            logdir, self.speaking_queue, event_queue, badges, npc, team
-        )
-        while True:
-            ls.tail()
-
-
-class Chatter(ttk.Frame):
-    attach_label = 'Attach to Log'
-    detach_label = "Detach from Log"
-
-    def __init__(self, parent, event_queue, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-        self.event_queue = event_queue
-        self.button_text = tk.StringVar(value=self.attach_label)
-        self.attached = False
-        self.hero = None
-        
-        self.logdir = tk.StringVar(
-            value=settings.get_config_key('logdir', default='')
-        )
-        self.logdir.trace_add('write', self.save_logdir)
-
-        ttk.Button(
-            self, 
-            textvariable=self.button_text, 
-            command=self.attach_chatter
-        ).pack(
-            side="left"
-        )
-        tk.Entry(
-            self, 
-            textvariable=self.logdir
-        ).pack(
-            side="left",
-            fill='x',
-            expand=True
-        )
-         
-        ttk.Button(
-            self,
-            text="Set Log Dir",
-            command=self.ask_directory
-        ).pack(side="left")
-        
-        self.cs = ChatterService()
-
-    def save_logdir(self, *args):
-        logdir = self.logdir.get()
-        log.debug(f'Persisting setting logdir={logdir}')
-        settings.set_config_key('logdir', logdir)
-
-    def ask_directory(self):
-        dirname = tk.filedialog.askdirectory()
-        self.logdir.set(dirname)
-
-    def attach_chatter(self):
-        """
-        Not sure exactly how I want to do this.  I think the best long term
-        option is to just launch a process and be done with it.
-        """
-        if self.attached:
-            # we are already attached, I guess we want to stop.
-            self.p.terminate()
-            self.button_text.set(self.attach_label)
-            self.attached = False
-            log.debug('Detached')
-        else:
-            # we are not attached, lets do that.
-            self.attached = True
-            self.button_text.set(self.detach_label)
-            self.p = multiprocessing.Process(target=self.cs.start, args=(self.event_queue, ))
-            self.p.start()
-            log.debug('Attached')
-
 
 # def main():
 #     root = tk.Tk()

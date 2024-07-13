@@ -2,7 +2,7 @@
 import logging
 import tkinter as tk
 from tkinter import ttk
-
+import customtkinter as ctk
 import cnv.lib.settings as settings
 from cnv.engines import engines
 from cnv.engines.base import Notebook
@@ -217,15 +217,14 @@ class ChannelToEngineMap(ttk.Frame):
         return frame
 
 
-class ConfigurationTab(ttk.Frame):
+class ConfigurationTab(ctk.CTkFrame):
   
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, parent, event_queue, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
         
         MasterVolume(self).pack(side="top", fill="x")
         SpokenLanguageSelection(self).pack(side="top", fill="x")
         EngineAuthentication(
             self,
-            padding=5
         ).pack(side="top", fill="x")
         ChannelToEngineMap(self).pack(side="top", fill="x")

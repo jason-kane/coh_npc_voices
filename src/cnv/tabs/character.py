@@ -1,20 +1,25 @@
 
 import logging
+import multiprocessing
+import queue
 import tkinter as tk
 from datetime import datetime, timedelta
 from tkinter import ttk
 
 import cnv.database.models as models
 import cnv.voices.voice_editor as voice_editor
+import customtkinter as ctk
 import matplotlib.dates as mdates
 import numpy as np
+from cnv.chatlog import npc_chatter
+from cnv.lib import settings
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from sqlalchemy import func, select
 
 log = logging.getLogger(__name__)
 
-class ChartFrame(ttk.Frame):
+class ChartFrame(ctk.CTkFrame):
     def __init__(self, parent, hero, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         log.debug('Initializing ChartFrame()')
@@ -220,19 +225,110 @@ class ChartFrame(ttk.Frame):
             log.debug('graph constructed')      
 
 
-class CharacterTab(ttk.Frame):
+class ChatterService:
+    def start(self, event_queue):
+        self.speaking_queue = queue.Queue()
+
+        npc_chatter.TightTTS(self.speaking_queue, event_queue)
+        self.speaking_queue.put((None, "Attaching to most recent log...", 'system'))
+
+        logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
+        #logdir = "g:/CoH/homecoming/accounts/VVonder/Logs"
+        badges = True
+        team = True
+        npc = True
+
+        ls = npc_chatter.LogStream(
+            logdir, self.speaking_queue, event_queue, badges, npc, team
+        )
+        while True:
+            ls.tail()
+
+
+class Chatter(ctk.CTkFrame):
+    attach_label = 'Attach to Log'
+    detach_label = "Detach from Log"
+
+    def __init__(self, parent, event_queue, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.event_queue = event_queue
+        self.button_text = tk.StringVar(value=self.attach_label)
+        self.attached = False
+        self.hero = None
+        
+        self.logdir = tk.StringVar(
+            value=settings.get_config_key('logdir', default='')
+        )
+        self.logdir.trace_add('write', self.save_logdir)
+
+        # expand the entry box
+        self.columnconfigure(0, weight=0)
+        self.columnconfigure(1, weight=1)
+        self.columnconfigure(2, weight=0)
+
+        ctk.CTkButton(
+            self, 
+            textvariable=self.button_text, 
+            command=self.attach_chatter
+        ).grid(column=0, row=0)
+
+        ctk.CTkEntry(
+            self, 
+            textvariable=self.logdir
+        ).grid(column=1, row=0, sticky="ew")
+         
+        ctk.CTkButton(
+            self,
+            text="Set Log Dir",
+            command=self.ask_directory
+        ).grid(column=2, row=0)
+        
+        self.cs = ChatterService()
+
+    def save_logdir(self, *args):
+        logdir = self.logdir.get()
+        log.debug(f'Persisting setting logdir={logdir}')
+        settings.set_config_key('logdir', logdir)
+
+    def ask_directory(self):
+        dirname = tk.filedialog.askdirectory()
+        self.logdir.set(dirname)
+
+    def attach_chatter(self):
+        """
+        Not sure exactly how I want to do this.  I think the best long term
+        option is to just launch a process and be done with it.
+        """
+        if self.attached:
+            # we are already attached, I guess we want to stop.
+            self.p.terminate()
+            self.button_text.set(self.attach_label)
+            self.attached = False
+            log.debug('Detached')
+        else:
+            # we are not attached, lets do that.
+            self.attached = True
+            self.button_text.set(self.detach_label)
+            self.p = multiprocessing.Process(target=self.cs.start, args=(self.event_queue, ))
+            self.p.start()
+            log.debug('Attached')
+
+
+class CharacterTab(ctk.CTkFrame):
     def __init__(self, parent, event_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
+        self.columnconfigure(0, weight=1)
+
         self.name = tk.StringVar()
-        self.chatter = voice_editor.Chatter(self, event_queue)
-        self.chatter.pack(side="top", fill=tk.X)
+        self.chatter = Chatter(self, event_queue)
+        self.chatter.grid(column=0, row=0, sticky="nsew")
 
         self.total_exp = tk.IntVar(value=0)
         self.total_inf = tk.IntVar(value=0)
         
         totals_frame = self.totals_frame()
-        totals_frame.pack(side="top", fill=tk.X, expand=False)
+        totals_frame.grid(column=0, row=1, sticky="ew")
 
         self.start_time = datetime.now()
         self.set_hero()
@@ -241,11 +337,11 @@ class CharacterTab(ttk.Frame):
         """
         Frame for displaying xp and influence totals
         """
-        frame = ttk.Frame(self)
-        ttk.Label(frame, text="Experience").pack(side="left")
-        ttk.Label(frame, textvariable=self.total_exp).pack(side="left")
-        ttk.Label(frame, text="Influence").pack(side="left")
-        ttk.Label(frame, textvariable=self.total_inf).pack(side="left")
+        frame = ctk.CTkFrame(self)
+        ctk.CTkLabel(frame, text="Experience").grid(column=0, row=0)
+        ctk.CTkLabel(frame, textvariable=self.total_exp).grid(column=1, row=0)
+        ctk.CTkLabel(frame, text="Influence").grid(column=0, row=1)
+        ctk.CTkLabel(frame, textvariable=self.total_inf).grid(column=1, row=1)
         return frame
 
     def update_xpinf(self):

@@ -33,7 +33,7 @@ class AutomationTab(ttk.Frame):
     Lets make this awesome.
     """
 
-    def __init__(self, parent, *args, **kwargs):
+    def __init__(self, parent, event_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
         if parent:

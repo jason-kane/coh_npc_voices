@@ -1,16 +1,6 @@
 """
 There is more awesome to be had.
 """
-# sys.path.append(
-#     os.path.abspath(
-#         os.path.join(
-#             os.path.dirname(
-#                 os.path.realpath(__file__)
-#             ), 
-#         '..', '..')
-#     )
-# )
-
 import ctypes
 import logging
 import multiprocessing
@@ -23,6 +13,7 @@ from tkinter import ttk
 import cnv.chatlog.npc_chatter as npc_chatter
 import cnv.logger
 import colorama
+import customtkinter as ctk
 import lib.settings as settings
 import pyautogui as p
 import win32api
@@ -46,9 +37,36 @@ cnv.logger.init()
 log = logging.getLogger(__name__)
 EXIT = False
 
+class MainTabView(ctk.CTkTabview):
+    def __init__(self, master, event_queue, **kwargs):
+        kwargs["height"] = 1024  # this is really more like maxheight
+        kwargs['border_color'] = "darkgrey"
+        kwargs['border_width'] = 2
+        kwargs['anchor'] = 'nw'
+        super().__init__(master, **kwargs)
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        for tablabel, tabobj in (
+            ('Character', character.CharacterTab),
+            ('Voices', voices.VoicesTab), 
+            ('Configuration', configuration.ConfigurationTab),
+            ('Automation', automation.AutomationTab),
+        ):
+            ctkframe = self.add(tablabel)
+            
+            tab_contents = tabobj(ctkframe, event_queue)
+
+            ctkframe.columnconfigure(0, weight=1)
+            ctkframe.rowconfigure(0, weight=1)
+            tab_contents.grid(column=0, row=0, sticky='nsew')
+
+
 def main():
     colorama.init()
-    root = tk.Tk()  
+    #root = tk.Tk()  
+    root = ctk.CTk()
 
     def on_closing():
         global EXIT
@@ -63,26 +81,20 @@ def main():
     root.resizable(True, True)
     root.title("City of Heroes Sidekick")
 
-    notebook = ttk.Notebook(root)
     event_queue = multiprocessing.Queue()
 
-    char = character.CharacterTab(notebook, event_queue)
-    char.pack(side="top", fill="both", expand=True)
-    notebook.add(char, text='Character')  
-
-    voice = voices.VoicesTab(notebook)
-    voice.pack(side="top", fill="both", expand=True)
-    notebook.add(voice, text='Voices')
-
-    config = configuration.ConfigurationTab(notebook)
-    config.pack(side="top", fill="both", expand=True)
-    notebook.add(config, text="Configuration")
-
-    automate = automation.AutomationTab(notebook)
-    automate.pack(side="top", fill="both", expand=True)
-    notebook.add(automate, text="Automation")
-
-    notebook.pack(fill="both", expand=True)
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+    
+    mtv = MainTabView(
+        root, event_queue=event_queue
+    )
+    mtv.grid(
+        column=0, row=0, sticky="nsew"
+    )
+    
+    # put the tabs on the left side
+    # mtv._segmented_button.grid(sticky="w")
 
     # in the mainloop we want to know if event_queue gets a new
     # entry.

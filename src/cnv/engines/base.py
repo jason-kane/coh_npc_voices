@@ -1,7 +1,7 @@
 import logging
 import tkinter as tk
 from tkinter import ttk
-
+import customtkinter as ctk
 import cnv.database.models as models
 import cnv.lib.settings as settings
 import voicebox
@@ -35,7 +35,7 @@ class MarkdownLabel(HtmlLabel):  # Label
         # self.load_html(text)
 
 
-class Notebook(ttk.Frame):
+class Notebook(ctk.CTkFrame):
     """
     Workaround an error in tkinterweb.HtmlLabel
     We make a Notebook but the pages are blankframe.
@@ -108,7 +108,7 @@ class Notebook(ttk.Frame):
     
 
 # Base Class for engines
-class TTSEngine(ttk.Frame):
+class TTSEngine(ctk.CTkFrame):
     auth_ui_class = None
 
     def __init__(self, parent, rank, name, category, *args, **kwargs):
@@ -303,7 +303,7 @@ class TTSEngine(ttk.Frame):
         parent.columnconfigure(1, weight=2, uniform="ttsengine")
 
         for index, m in enumerate(self.get_config_meta()):
-            ttk.Label(parent, text=m.cosmetic, anchor="e").grid(
+            ctk.CTkLabel(parent, text=m.cosmetic, anchor="e").grid(
                 row=index + 1, column=0, sticky="e", padx=10
             )
 
@@ -328,11 +328,12 @@ class TTSEngine(ttk.Frame):
 
     def _tkStringVar(self, index, key, frame):
         # combo widget for strings
-        self.widget[key] = ttk.Combobox(
+        self.widget[key] = ctk.CTkComboBox(
             frame,
-            textvariable=self.config_vars[key],
+            variable=self.config_vars[key],
+            state="readonly"
         )
-        self.widget[key]["state"] = "readonly"
+        # self.widget[key]["state"] = "readonly"
         self.widget[key].grid(row=index, column=1, sticky="new")
 
     def _tkDoubleVar(self, index, key, frame, cfg):
@@ -340,15 +341,24 @@ class TTSEngine(ttk.Frame):
         # widget to behave itself.  I like the visual a bit better, but its hard
         # to get equivilent results.
 
-        self.widget[key] = tk.Scale(
+        self.widget[key] = ctk.CTkSlider(
             frame,
             variable=self.config_vars[key],
             from_=cfg.get('min', 0),
             to=cfg['max'],
-            orient='horizontal',
-            digits=cfg.get('digits', 2),
-            resolution=cfg.get('resolution', 1)
-        )
+            orientation='horizontal',
+            number_of_steps=20
+            #digits=cfg.get('digits', 2),
+            #resolution=cfg.get('resolution', 1)
+        )            
+        #     frame,
+        #     variable=self.config_vars[key],
+        #     from_=cfg.get('min', 0),
+        #     to=cfg['max'],
+        #     orient='horizontal',
+        #     digits=cfg.get('digits', 2),
+        #     resolution=cfg.get('resolution', 1)
+        # )
         self.widget[key].grid(row=index, column=1, sticky="new")
 
     def _tkBooleanVar(self, index, key, frame):
@@ -358,7 +368,7 @@ class TTSEngine(ttk.Frame):
         easier to maintain consistency with the other widgets.  Oh, and text
         doesn't belong on a checkbox.  It's a wart, sorry.
         """
-        self.widget[key] = ttk.Checkbutton(
+        self.widget[key] = ctk.CTkSwitch(
             frame,
             text="",
             variable=self.config_vars[key],
@@ -408,7 +418,7 @@ class TTSEngine(ttk.Frame):
                 if not all_options:
                     log.error(f'{m.gatherfunc=} returned no options ({self.cosmetic})')
 
-                self.widget[m.key]["values"] = all_options
+                self.widget[m.key].configure(values=all_options)
             
                 if self.config_vars[m.key].get() not in all_options:
                     # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')                    
