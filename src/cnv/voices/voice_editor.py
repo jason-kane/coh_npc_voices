@@ -946,7 +946,7 @@ class DetailSide(ctk.CTkScrollableFrame):
 
         ctk.CTkButton(
             biography,
-            image=self.trashcan.icon,
+            image=self.trashcan.CTkImage,
             text="",
             width=40,
             command=self.remove_character

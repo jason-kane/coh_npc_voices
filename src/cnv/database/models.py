@@ -596,7 +596,7 @@ def get_or_create_phrase(name, category, message):
             session.add(phrase)
             session.commit()
         
-        return phrase
+    return phrase
 
 def get_or_create_phrase_id(name, category, message):
     return get_or_create_phrase(name, category, message).id

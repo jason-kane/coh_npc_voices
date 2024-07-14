@@ -138,7 +138,7 @@ def main():
             elif key == "SPOKE":
                 # name, category = value
                 log.debug('Refreshing character list...')
-                # voice.listside.refresh_character_list()
+                mtv.tabdict['Voices'].listside.refresh_character_list()
             elif key == "RECHARGED":
                 log.debug(f'Power {value} has recharged.')
                 if value in ["Hasten", "Domination"]:
