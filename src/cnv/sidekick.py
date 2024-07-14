@@ -6,12 +6,10 @@ import logging
 import multiprocessing
 import queue
 import sys
-import tkinter as tk
 from datetime import datetime, timedelta
-from tkinter import ttk
 
-import cnv.chatlog.npc_chatter as npc_chatter
 import cnv.logger
+from cnv.database import models
 import colorama
 import customtkinter as ctk
 import lib.settings as settings
@@ -38,7 +36,7 @@ log = logging.getLogger(__name__)
 EXIT = False
 
 class MainTabView(ctk.CTkTabview):
-    def __init__(self, master, event_queue, **kwargs):
+    def __init__(self, master, event_queue, speaking_queue, **kwargs):
         kwargs["height"] = 1024  # this is really more like maxheight
         #kwargs['border_color'] = "darkgrey"
         #kwargs['border_width'] = 2
@@ -47,19 +45,20 @@ class MainTabView(ctk.CTkTabview):
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
+        self.tabdict = {}
 
-        for tablabel, tabobj in (
-            ('Character', character.CharacterTab),
-            ('Voices', voices.VoicesTab), 
-            ('Configuration', configuration.ConfigurationTab),
-            ('Automation', automation.AutomationTab),
+        for tablabel, tabobj, args in (
+            ('Character', character.CharacterTab, (event_queue, speaking_queue)),
+            ('Voices', voices.VoicesTab, (event_queue, speaking_queue)), 
+            ('Configuration', configuration.ConfigurationTab, (event_queue, speaking_queue)),
+            ('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
         ):
             ctkframe = self.add(tablabel)
             ctkframe.grid_columnconfigure(0, weight=1)
             ctkframe.grid_rowconfigure(0, weight=1)
             
-            tab_contents = tabobj(ctkframe, event_queue)
-            tab_contents.grid(column=0, row=0, sticky='nsew')
+            self.tabdict[tablabel] = tabobj(ctkframe, *args)
+            self.tabdict[tablabel].grid(column=0, row=0, sticky='nsew')
 
 
 def main():
@@ -81,6 +80,8 @@ def main():
     root.title("City of Heroes Sidekick")
 
     event_queue = multiprocessing.Queue()
+    speaking_queue = multiprocessing.Queue()
+    #queue.Queue()
 
     root.grid_columnconfigure(0, weight=1)
     root.grid_rowconfigure(0, weight=1)
@@ -90,7 +91,9 @@ def main():
     buffer.grid_rowconfigure(0, weight=1)
 
     mtv = MainTabView(
-        buffer, event_queue=event_queue
+        buffer, 
+        event_queue=event_queue,
+        speaking_queue=speaking_queue
     )
     mtv.grid(
         column=0, row=0, sticky="new"
@@ -121,20 +124,21 @@ def main():
             if key == "SET_CHARACTER":
                 # if this chatter hasn't been started this 
                 # will fail.
-                if hasattr(char.chatter.cs, 'speaking_queue'):
-                    char.chatter.cs.speaking_queue.put(
-                        (None, f"Welcome back {value}", "system")
-                    )
-                
-                log.debug('path set_chraracter')
-                char.chatter.hero = npc_chatter.Hero(value)
-                log.debug('Calling set_hero()...')
-                char.set_hero()
+                # speaking_queue.put(
+                #     (None, f"Welcome back {value}", "system")
+                # )
+                models.set_hero(name=value)
+                mtv.tabdict['Character'].set_hero()
+
+                #log.debug('path set_chraracter')
+                #char.chatter.hero = npc_chatter.Hero(value)
+                #log.debug('Calling set_hero()...')
+                #char.set_hero()
                 last_character_update = datetime.now()
             elif key == "SPOKE":
                 # name, category = value
                 log.debug('Refreshing character list...')
-                voice.listside.refresh_character_list()
+                # voice.listside.refresh_character_list()
             elif key == "RECHARGED":
                 log.debug(f'Power {value} has recharged.')
                 if value in ["Hasten", "Domination"]:
@@ -168,7 +172,7 @@ def main():
         if last_character_update:
             elapsed = datetime.now() - last_character_update
             if elapsed > update_frequency:
-                char.set_hero()
+                mtv.tabdict['Character'].set_hero()
                 last_character_update = datetime.now()
 
         root.update_idletasks()

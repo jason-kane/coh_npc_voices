@@ -1,6 +1,4 @@
 import logging
-import tkinter as tk
-from tkinter import ttk
 import customtkinter as ctk
 import cnv.database.models as models
 import cnv.voices.voice_editor as voice_editor
@@ -9,7 +7,7 @@ log = logging.getLogger(__name__)
 
 
 class VoicesTab(ctk.CTkFrame):
-    def __init__(self, parent, event_queue, *args, **kwargs):
+    def __init__(self, parent, event_queue, speaking_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.detailside=None
         self.listside=None

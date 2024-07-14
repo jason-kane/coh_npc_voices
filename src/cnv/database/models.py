@@ -72,6 +72,7 @@ def category_int2str(inint):
     except ValueError:
         return ''
 
+# obsolete?
 ENGINE_COSMETIC_TO_ID = {
     'Google Text-to-Speech': 'googletts',
     'Windows TTS': 'windowstts',
@@ -673,6 +674,38 @@ class Hero(Base):
     __tablename__ = "hero"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(256))
+
+
+def get_hero():
+    hero_id = settings.get_config_key('hero_id', cf='state.json')
+    if hero_id:
+        with db() as session:
+            hero = session.scalar(
+                select(Hero).where(
+                    Hero.id==hero_id
+                )
+            )
+    
+        return hero
+
+def set_hero(hero_id=None, name=None):
+    if hero_id:
+        with db() as session:
+            hero = session.scalar(
+                select(Hero).where(
+                    Hero.id==hero_id
+                )
+            )
+    elif name:
+        with db() as session:
+            hero = session.scalar(
+                select(Hero).where(
+                    Hero.name==name
+                )
+            )        
+    
+    settings.set_config_key('hero_id', hero.id, cf='state.json')
+
 
 class HeroStatEvent(Base):
     __tablename__ = "hero_stat_events"

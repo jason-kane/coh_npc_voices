@@ -192,11 +192,13 @@ class TTSEngine(ctk.CTkFrame):
                     # networking is borked.
                     log.error(err)
                     if err.grpc_status_code == 14:
+                        log.error(f'Google Error code {err.grpc_status_code}.  Switching to secondary.')
                         raise USE_SECONDARY
 
                 elif err.status_code == 401:
                     log.error(err.body)
                     if err.body.get('detail', {}).get('status') == "quota_exceeded":
+                        log.error('ElevelLabs quota exceeded.  Switching to secondary.')
                         raise USE_SECONDARY
                 raise
 
@@ -334,7 +336,7 @@ class TTSEngine(ctk.CTkFrame):
             state="readonly"
         )
         # self.widget[key]["state"] = "readonly"
-        self.widget[key].grid(row=index, column=1, sticky="new")
+        self.widget[key].grid(row=index, column=1, columnspan=2, sticky="new")
 
     def _tkDoubleVar(self, index, key, frame, cfg):
         # doubles get a scale widget.  I haven't been able to get the ttk.Scale
@@ -347,25 +349,28 @@ class TTSEngine(ctk.CTkFrame):
         # mark ticks/steps?
         # use digits/resolution to determine steps?
         #
+        if cfg.get('resolution'):
+            steps = int((cfg['max'] - cfg.get('min', 0)) / cfg.get('resolution'))
+        else:
+            steps = 20
+        
+        if steps > 50:
+            log.warning(f'Resolution for {key} is too detailed')
+
         self.widget[key] = ctk.CTkSlider(
             frame,
             variable=self.config_vars[key],
             from_=cfg.get('min', 0),
             to=cfg['max'],
             orientation='horizontal',
-            number_of_steps=20
-            #digits=cfg.get('digits', 2),
-            #resolution=cfg.get('resolution', 1)
+            number_of_steps=steps
         )            
-        #     frame,
-        #     variable=self.config_vars[key],
-        #     from_=cfg.get('min', 0),
-        #     to=cfg['max'],
-        #     orient='horizontal',
-        #     digits=cfg.get('digits', 2),
-        #     resolution=cfg.get('resolution', 1)
-        # )
         self.widget[key].grid(row=index, column=1, sticky="new")
+
+        ctk.CTkLabel(
+            frame,
+            textvariable=self.config_vars[key]
+        ).grid(row=index, column=2, sticky='e')
 
     def _tkBooleanVar(self, index, key, frame):
         """

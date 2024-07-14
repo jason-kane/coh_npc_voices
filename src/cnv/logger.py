@@ -14,7 +14,7 @@ LOGGING_CONFIG = {
     },
     'handlers': { 
         'default': { 
-            'level': 'INFO',
+            'level': 'DEBUG',
             'formatter': 'standard',
             'class': RichHandler
         },
@@ -29,19 +29,24 @@ LOGGING_CONFIG = {
     'loggers': { 
         '': {  # root logger
             'handlers': ['default', 'error_file'],
-            'level': 'DEBUG',
-            'propagate': True
+            'level': 'INFO',
+            'propagate': False
         },
         "botocore.credentials": {
             'handlers': ['default', 'error_file'],
             'level': 'WARNING',
-            'propagate': True            
-        }
-        # 'coh_npc_voices': {
-        #     'handlers': ['default', 'error_file'],
-        #     'level': 'DEBUG',
-        #     'propagate': True
-        # },
+            'propagate': True           
+        },
+        'cnv.voices.voice_editor': {
+            'handlers': ['default', ],
+            'level': 'INFO',
+            'propagate': False
+        },
+        'cnv.chatlog.npc_chatter': {
+            'handlers': ['default', ],
+            'level': 'DEBUG',
+            'propagate': False
+        },        
     } 
 }
 

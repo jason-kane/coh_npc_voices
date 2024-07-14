@@ -98,7 +98,6 @@ sounddevice==0.4.6
 SQLAlchemy-Utils==0.41.2
 SQLAlchemy==2.0.29
 stack-data==0.6.3
-tkfeather==1.0.0
 tkinterweb==3.23.10
 tqdm==4.66.2
 traitlets==5.14.3

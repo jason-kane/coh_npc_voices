@@ -16,6 +16,7 @@ class MasterVolume(ttk.Frame):
     This is for playback volume.
     """
 
+
 class SpokenLanguageSelection(ttk.Frame):
     """
     The user gets to decide which language they want to hear.  They may also
@@ -219,7 +220,7 @@ class ChannelToEngineMap(ttk.Frame):
 
 class ConfigurationTab(ctk.CTkFrame):
   
-    def __init__(self, parent, event_queue, *args, **kwargs):
+    def __init__(self, parent, event_queue, speaking_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
         MasterVolume(self).pack(side="top", fill="x")

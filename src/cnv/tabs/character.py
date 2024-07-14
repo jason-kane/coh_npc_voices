@@ -1,13 +1,10 @@
 
 import logging
 import multiprocessing
-import queue
 import tkinter as tk
 from datetime import datetime, timedelta
-from tkinter import ttk
 
 import cnv.database.models as models
-import cnv.voices.voice_editor as voice_editor
 import customtkinter as ctk
 import matplotlib.dates as mdates
 import numpy as np
@@ -220,17 +217,18 @@ class ChartFrame(ctk.CTkFrame):
                 fig, 
                 master = self
             )   
+            # this is the only widget in ChartFrame
             canvas.draw()         
             canvas.get_tk_widget().pack(fill="both", expand=True)
             log.debug('graph constructed')      
 
 
 class ChatterService:
-    def start(self, event_queue):
-        self.speaking_queue = queue.Queue()
-
-        npc_chatter.TightTTS(self.speaking_queue, event_queue)
-        self.speaking_queue.put((None, "Attaching to most recent log...", 'system'))
+    def start(self, event_queue, speaking_queue):
+        log.info('ChatterService.start()')
+        
+        npc_chatter.TightTTS(speaking_queue, event_queue)
+        speaking_queue.put((None, "Attaching to most recent log...", 'system'))
 
         logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
         #logdir = "g:/CoH/homecoming/accounts/VVonder/Logs"
@@ -239,7 +237,7 @@ class ChatterService:
         npc = True
 
         ls = npc_chatter.LogStream(
-            logdir, self.speaking_queue, event_queue, badges, npc, team
+            logdir, speaking_queue, event_queue, badges, npc, team
         )
         while True:
             ls.tail()
@@ -249,9 +247,10 @@ class Chatter(ctk.CTkFrame):
     attach_label = 'Attach to Log'
     detach_label = "Detach from Log"
 
-    def __init__(self, parent, event_queue, *args, **kwargs):
+    def __init__(self, parent, event_queue, speaking_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.event_queue = event_queue
+        self.speaking_queue = speaking_queue
         self.button_text = tk.StringVar(value=self.attach_label)
         self.attached = False
         self.hero = None
@@ -309,19 +308,28 @@ class Chatter(ctk.CTkFrame):
             # we are not attached, lets do that.
             self.attached = True
             self.button_text.set(self.detach_label)
-            self.p = multiprocessing.Process(target=self.cs.start, args=(self.event_queue, ))
+            self.p = multiprocessing.Process(
+                target=self.cs.start, 
+                args=(
+                    self.event_queue,
+                    self.speaking_queue
+                )
+            )
             self.p.start()
             log.debug('Attached')
 
 
 class CharacterTab(ctk.CTkFrame):
-    def __init__(self, parent, event_queue, *args, **kwargs):
+    def __init__(self, parent, event_queue, speaking_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
         self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=0)
+        self.rowconfigure(1, weight=0)
+        self.rowconfigure(2, weight=1)
 
         self.name = tk.StringVar()
-        self.chatter = Chatter(self, event_queue)
+        self.chatter = Chatter(self, event_queue, speaking_queue)
         self.chatter.grid(column=0, row=0, sticky="nsew")
 
         self.total_exp = tk.IntVar(value=0)
@@ -345,12 +353,14 @@ class CharacterTab(ctk.CTkFrame):
         return frame
 
     def update_xpinf(self):
+        hero_id = settings.get_config_key('hero_id', cf='state.json')
+
         with models.db() as session:
             total_exp, total_inf = session.query(
                 func.sum(models.HeroStatEvent.xp_gain),
                 func.sum(models.HeroStatEvent.inf_gain)
                 ).where(
-                    models.HeroStatEvent.hero_id == self.chatter.hero.id,
+                    models.HeroStatEvent.hero_id == hero_id,
                     models.HeroStatEvent.event_time >= self.start_time
             ).all()[0]  # first (only) row
             
@@ -363,16 +373,16 @@ class CharacterTab(ctk.CTkFrame):
         Invoked at init(), but also whenever the character changes (logout to character select)
         and more critically, every N seconds to refresh the graph.
         """
-        log.debug(f'{self.chatter=}')
-        log.debug(f'set_hero({self.chatter.hero})')
+        hero = models.get_hero()
 
         if hasattr(self, "progress_chart"):
-            self.progress_chart.pack_forget()
+            self.progress_chart.grid_forget()
             self.total_exp.set(0)
             self.total_inf.set(0)
         try:
             self.update_xpinf()
-            self.progress_chart = ChartFrame(self, self.chatter.hero)
-            self.progress_chart.pack(side="top", fill="both", expand=True)
+            self.progress_chart = ChartFrame(self, hero)
+            self.progress_chart.grid(column=0, row=2, sticky="nsew")
+            # side="top", fill="both", expand=True)
         except Exception as err:
             log.error(err)

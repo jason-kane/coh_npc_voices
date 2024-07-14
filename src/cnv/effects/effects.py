@@ -1,6 +1,5 @@
 import logging
 import tkinter as tk
-from tkinter import font, ttk
 import customtkinter as ctk
 
 import cnv.database.models as models
@@ -8,7 +7,7 @@ import numpy as np
 import pedalboard
 import voicebox
 from sqlalchemy import select
-from tkfeather import Feather
+from cnv.lib.gui import Feather
 
 log = logging.getLogger(__name__)
 
@@ -51,14 +50,10 @@ class LScale(ctk.CTkFrame):
             text=label,
             anchor="e",
             justify='right'
-        ).grid(row=0, column=0, sticky='e')
+        ).grid(row=0, column=0, sticky='e', padx=5)
 
         # TODO:
-        # display the current value
         # mark ticks/steps?
-        # use digits/resolution to determine steps?
-        #
-        log.info(f'{resolution=}')
         if resolution:
             steps = int((to - from_) / resolution)
         else:
@@ -116,6 +111,8 @@ class LCombo(ctk.CTkFrame):
         super().__init__(parent, *args, **kwargs)
 
         variable = tk.StringVar(value=default)
+        self.columnconfigure(0, minsize=125, uniform="effect")
+        self.columnconfigure(1, weight=2, uniform="effect")
 
         # label for the setting
         ctk.CTkLabel(
@@ -153,6 +150,9 @@ class LBoolean(ctk.CTkFrame):
     ):
         super().__init__(parent, *args, **kwargs)
 
+        self.columnconfigure(0, minsize=125, uniform="effect")
+        self.columnconfigure(1, weight=2, uniform="effect")
+
         variable = tk.BooleanVar(
             name=f"{pname}",
             value=default
@@ -173,7 +173,7 @@ class LBoolean(ctk.CTkFrame):
             variable=variable,
             onvalue=True,
             offvalue=False
-        ).grid(row=0, column=0, sticky='ew')
+        ).grid(row=0, column=1, sticky='ew')
 
         setattr(parent, pname, variable)
         parent.parameters.append(pname)  
@@ -190,32 +190,28 @@ class EffectParameterEditor(ctk.CTkFrame):
         self.parameters = []
         self.traces = {}
         self.digits = {}
-        self.trashcan = Feather("trash-2", size=24)
+        self.trashcan = Feather(
+            'trash-2',
+            size=22
+        )
 
         topbar = ctk.CTkFrame(self)
         # the name of this effect
         ctk.CTkLabel(
             topbar,
-            text=self.label.title(),
+            text=self.label.title() + " ",
             anchor="n",
             font=ctk.CTkFont(
-                size=18,
-                weight="bold"
+                size=24,
+                # weight="bold",
+                slant='italic'
             )
         ).pack(side='left', fill='x', expand=True)
     
-        # ttk.Style().configure(
-        #     "CloseFrame.TButton",
-        #     anchor="center",
-        #     width=1,
-        #     height=1
-        # )
-
         # delete button
         ctk.CTkButton(
             topbar,
-            image=self.trashcan.icon,
-            #style="CloseFrame.TButton",
+            image=self.trashcan.CTkImage,
             text="",
             width=40,
             command=self.remove_effect

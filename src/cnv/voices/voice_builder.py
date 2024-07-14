@@ -4,7 +4,8 @@ import re
 
 import cnv.database.models as models
 import cnv.effects.effects as effects
-import cnv.engines.engines as engines
+from cnv.engines.engines import get_engine
+from cnv.engines.base import USE_SECONDARY
 import cnv.lib.settings as settings
 import cnv.lib.audio as audio
 import pyfiglet
@@ -97,7 +98,7 @@ def create(character, message, session):
 
     try:
         if rank == 'secondary':
-            raise engines.USE_SECONDARY
+            raise USE_SECONDARY
         
         if save:
             sink = Distributor([
@@ -110,8 +111,8 @@ def create(character, message, session):
             ])
 
         log.debug(f'Using engine: {character.engine}')
-        engines.get_engine(character.engine)(None, 'primary', name, category).say(message, effect_list, sink=sink)
-    except engines.USE_SECONDARY:
+        get_engine(character.engine)(None, 'primary', name, category).say(message, effect_list, sink=sink)
+    except USE_SECONDARY:
         rank = 'secondary'
         # our chosen engine for this character isn't working.  So we're going to switch
         # to the secondary and use that for the rest of this session.
@@ -143,12 +144,12 @@ def create(character, message, session):
 
         if character.engine_secondary:
             # use the secondary engine config defined for this character
-            engine_instance = engines.get_engine(character.engine_secondary)
+            engine_instance = get_engine(character.engine_secondary)
             engine_instance(None, 'secondary', name, category).say(message, effect_list, sink=sink)
         else:
             # use the global default secondary engine
             engine_name = settings.get_config_key(f"{character.category}_engine_secondary")
-            engine_instance = engines.get_engine(engine_name)
+            engine_instance = get_engine(engine_name)
             engine_instance(None, 'secondary', name, category).say(message, effect_list, sink=sink)
      
     if save:

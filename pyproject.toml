@@ -25,7 +25,6 @@ dependencies = [
     "google-auth-oauthlib",
     "matplotlib",
     "pyautogui",
-    "pyfeather",
     "pyfiglet",
     "pypiwin32",
     "rich",

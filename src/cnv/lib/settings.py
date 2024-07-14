@@ -41,7 +41,7 @@ LANGUAGES = {
 # to cache hit anyway.
 PERSIST_PLAYER_CHAT = True
 
-REPLAY = False
+REPLAY = True
 
 logging.basicConfig(
     level=LOGLEVEL,
@@ -59,7 +59,7 @@ def how_did_i_get_here():
 
 
 CACHE_CONFIG = {}
-CACHE_CONFIG_MTIME = None
+CACHE_CONFIG_MTIME = {}
 
 
 def get_config(cf="config.json"):
@@ -68,11 +68,11 @@ def get_config(cf="config.json"):
 
     if os.path.exists(cf):
         mtime = os.path.getmtime(cf)
-        if CACHE_CONFIG_MTIME is None or mtime != CACHE_CONFIG_MTIME:
+        if CACHE_CONFIG_MTIME.get(cf) is None or mtime != CACHE_CONFIG_MTIME[cf]:
             with open(cf) as h:
                 config = json.loads(h.read())
                 CACHE_CONFIG[cf] = config
-                CACHE_CONFIG_MTIME = mtime
+                CACHE_CONFIG_MTIME[cf] = mtime
 
     if cf in CACHE_CONFIG:
         return CACHE_CONFIG[cf]
@@ -93,7 +93,7 @@ def save_config(config, cf="config.json"):
     with open(cf, "w") as h:
         h.write(json.dumps(config, indent=4, sort_keys=True))
         CACHE_CONFIG[cf] = config
-        CACHE_CONFIG_MTIME = os.path.getmtime(cf)
+        CACHE_CONFIG_MTIME[cf] = os.path.getmtime(cf)
 
 
 def get_config_key(key, default=None, cf="config.json"):
@@ -121,7 +121,8 @@ def get_voice_language_codes():
     filtering voices in any engine.
     """
     language = get_config_key('language', default="English")
-    return LANGUAGES[language][1]
+    return LANGUAGES[language][1]  
+
 
 CACHE_DIR = "cache"
 

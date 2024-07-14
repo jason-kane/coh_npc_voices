@@ -3,19 +3,20 @@ import logging
 import os
 import sys
 import tkinter as tk
-from tkinter import font, ttk
+from tkinter import ttk
 
 import customtkinter as ctk
 import voicebox
 from cnv.database import db, models
 from cnv.effects import effects
 from cnv.engines import engines
+from cnv.engines.base import USE_SECONDARY
 from cnv.lib import audio, settings
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from scipy.io import wavfile
 from sqlalchemy import delete, desc, select
-from tkfeather import Feather
+from cnv.lib.gui import Feather
 from translate import Translator
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from voicebox.tts.utils import get_audio_from_wav_file
@@ -284,13 +285,12 @@ class WavfileMajorFrame(ctk.CTkFrame):
                     )
                 ).all()
         else:
-            phrase_id = self.phrase_id[self.options.current()]
-            with models.db() as session:
-                all_phrases = session.scalars(
-                        select(models.Phrases).where(
-                            models.Phrases.id == phrase_id
-                        )
-                    ).all()
+            phrase = models.get_or_create_phrase(
+                name=character.name,
+                category=character.category,
+                message=message
+            )
+            all_phrases = [ phrase, ]
 
         for phrase in all_phrases:
             msg, is_translated = models.get_translated(phrase.id)
@@ -348,14 +348,6 @@ class WavfileMajorFrame(ctk.CTkFrame):
                 message=message
             ), ]
 
-            # phrase_id = self.phrase_id[self.options.current()]
-            # with models.db() as session:
-            #     all_phrases = session.scalars(
-            #             select(models.Phrases).where(
-            #                 models.Phrases.id == phrase_id
-            #             )
-            #         ).all()
-
         for phrase in all_phrases:           
             log.debug(f'{phrase=}')
 
@@ -381,10 +373,8 @@ class WavfileMajorFrame(ctk.CTkFrame):
             # None because we aren't attaching any widgets
             try:                
                 ttsengine(None, self.rank, name=character.name, category=character.category).say(msg, effect_list, sink=sink)
-            except engines.USE_SECONDARY:
+            except USE_SECONDARY:
                 return
-                ENGINE_OVERRIDE[character.engine] = True
-                return self.say_it(use_secondary=True)
                     
             self.show_wave(cachefile + ".wav")
 
@@ -931,42 +921,10 @@ class DetailSide(ctk.CTkScrollableFrame):
 
         self.parent = parent
         self.listside = None
-        self.trashcan = Feather("trash-2", size=24)
-
-        #self.scrollable_frame = ctk.CTkScrollableFrame(self)
-
-        #self.vsb = ctk.CTkScrollbar(self)
-        #self.vsb.pack(side="right", fill="y", expand=False)
-
-        #self.canvas = tk.Canvas(
-        #     self, 
-        #     borderwidth=0, 
-        #     background="#ffffff",
-        #     yscrollcommand=self.vsb.set
-        # )
-        # self.canvas.pack(side="left", fill="both", expand=True)
-
-        # drag the scrollbar, see the canvas slide
-        #self.vsb.configure(command=self.canvas.yview)
-
-        #self.canvas.xview_moveto(0)
-        #self.canvas.yview_moveto(0)
-
-        # this is the scrollable thing
-        # self.frame = ttk.Frame(self.canvas)
-        # self.frame_id = self.canvas.create_window(
-        #     (0, 0), window=self.frame, anchor="nw",
-        #     tags="self.frame"
-        # )
-
-        # self.frame.bind("<Configure>", self.onFrameConfigure)
-        # self.canvas.bind("<Configure>", self.onCanvasConfigure)
-
-        # style = ttk.Style()
-        # style.configure(
-        #     "RemoveCharacter.TButton",
-        #     width=1
-        # )
+        self.trashcan = Feather(
+            'trash-2',
+            size=22
+        )
 
         # biography
         self.rowconfigure(0, weight=0)
@@ -990,13 +948,11 @@ class DetailSide(ctk.CTkScrollableFrame):
             biography,
             image=self.trashcan.icon,
             text="",
-            width=45,
-            #style="RemoveCharacter.TButton",
+            width=40,
             command=self.remove_character
         ).place(relx=1, rely=0, anchor='ne')
 
         biography.grid(column=0, row=0, sticky='nsew')
-        #.pack(side="top", fill="both", expand=True)
 
         engine_notebook = ctk.CTkTabview(
             self,

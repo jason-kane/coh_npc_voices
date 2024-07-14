@@ -1,12 +1,10 @@
 import argparse
-import concurrent.futures
 import glob
 import io
 import logging
 import os
 import queue
 import re
-import sys
 import threading
 import time
 from datetime import datetime
@@ -178,8 +176,9 @@ class TightTTS(threading.Thread):
             found = False
             for rank in ['primary', 'secondary']:
                 cachefile = settings.get_cachefile(name, message, category, rank)
-            
-                if os.path.exists(cachefile):
+
+                # if primary exists, play that.  else secondary.
+                if not found and os.path.exists(cachefile):
                     found = True
                     log.debug(f"(tighttts) Cache HIT: {cachefile}")
                     # requires pydub?
@@ -197,7 +196,8 @@ class TightTTS(threading.Thread):
 
                     voicebox.sinks.SoundDevice().play(audio)
 
-            if not found:               
+            # neither primary nor secondary exist.
+            if not found:
                 # building session out here instead of inside get_character
                 # keeps character alive and properly tied to the database as we
                 # pass it into update_character_last_spoke and voice_builder.
@@ -205,13 +205,13 @@ class TightTTS(threading.Thread):
                     character = models.Character.get(name, category, session)
 
                     models.update_character_last_spoke(character.id, session)
+
                     # it isn't very well named, but this will speak "message" as
                     # character and cache a copy into cachefile.
-                    
                     voice_builder.create(character, message, session)
 
             # we've said our piece.
-            self.speaking_queue.task_done()
+            # self.speaking_queue.task_done()
 
 
 def plainstring(dialog):
