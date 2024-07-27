@@ -3,6 +3,7 @@ import logging
 import random
 import re
 import sys
+import copy
 import tkinter as tk
 from contextlib import contextmanager
 from datetime import datetime
@@ -72,15 +73,14 @@ def category_int2str(inint):
     except ValueError:
         return ''
 
-# obsolete?
 ENGINE_COSMETIC_TO_ID = {
-    'Google Text-to-Speech': 'googletts',
-    'Windows TTS': 'windowstts',
+    'Amazon Polly': 'amazonpolly',
+    'Azure': 'azure',
     'Eleven Labs': 'elevenlabs',
-    'Amazon Polly': 'amazonpolly'
+    'Google Text-to-Speech': 'googletts',
+    'OpenAI': 'openai',
+    'Windows TTS': 'windowstts',
 }
-
-language_code_regex = "en-.*"
 
 class Character(Base):
     __tablename__ = "character"
@@ -213,15 +213,26 @@ class Character(Base):
                     # in TK baggage. 
 
                     # but.. we can accesss the cache?.  does that introduce a
-                    # sequence dependency?
-                    all_values = diskcache(f"{engine_key}_{config_meta.key}")
+                    # sequence dependency (yes)
+                    all_values = list(
+                        diskcache(f"{engine_key}_{config_meta.key}")
+                    )
                     
                     if all_values is None:
                         log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
                         value = "<Cache Failure>"
-                    else:
-                        # it's a dict, keyey on voice_name
-                        # language_code_regex = "en-.*"
+
+                        # just creating this should be enough to populate the
+                        # engine cache.
+                        engine.get_engine(engine_key)(None, None, None, None)
+                        all_values = list(
+                            diskcache(f"{engine_key}_{config_meta.key}")
+                        )
+
+                    if all_values:
+                        # it's a dict, key in a voice_name
+                        language_code_regex = settings.get_language_code_regex()
+
                         if language_code_regex and 'language_code' in all_values[0].keys():
                             # pass through languages that satisfy the regex
                             out = []
@@ -229,26 +240,32 @@ class Character(Base):
                                 code = v.get('language_code', '')
                                 if re.match(language_code_regex, code):
                                     out.append(v)
-                            all_values = out
+                            all_values = list(out)
                         
                         # if we have a gender, filter out the voices that don't
                         # have the same gender.
+                        pre_gender_filter = copy.copy(all_values)
                         if gender and 'gender' in all_values[0].keys():
                             def gender_filter(voice):
-                                return voice['gender'] == gender
-                            all_values = filter(gender_filter, all_values)
+                                return voice['gender'].title() == gender.title()
+                            all_values = list(filter(gender_filter, all_values))
+                        
+                        if len(all_values) == 0:
+                            log.debug('Gender filter removed all voice name entries')
+                            all_values = pre_gender_filter
 
                         # does the preset have any more guidance?
                         # use the preset if there is one.  Otherwise
                         # choose randomly from the available options.
-                        log.debug(f"{all_values=}")
+                        log.debug(f"{all_values=} {engine_key}/{config_meta.key}")
 
                         if config_meta.key in preset:
                             value = preset[config_meta.key]
                         else:
-                            chosen_row = random.choice(list(all_values))
-                            log.debug(f'Random selection: {chosen_row}')
-                            value = chosen_row[config_meta.key]
+                            if all_values:
+                                chosen_row = random.choice(all_values)
+                                log.debug(f'Random selection: {chosen_row}')
+                                value = chosen_row[config_meta.key]
 
                 # do we have a numeric value, with a min/max and some
                 # hints about useful granularity?
@@ -669,6 +686,17 @@ class EffectSetting(Base):
 
     def __str__(self):
         return f"<EffectSetting {self.effect_id} {self.key}={self.value}/>"
+
+class Damage(Base):
+    __tablename__ = "damage"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    hero_id = mapped_column(ForeignKey("hero.id"))
+    target: Mapped[str] = mapped_column(String(256))
+    power: Mapped[str] = mapped_column(String(256))
+    damage: Mapped[int] = mapped_column(Integer)
+    damage_type: Mapped[str] = mapped_column(String(64))
+    # assassin strike, critical, etc..
+    special: Mapped[str] = mapped_column(String(32))
 
 class Hero(Base):
     __tablename__ = "hero"

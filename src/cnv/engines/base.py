@@ -114,6 +114,7 @@ class TTSEngine(ctk.CTkFrame):
     def __init__(self, parent, rank, name, category, *args, **kwargs):
         log.debug(f'Initializing TTSEngine {parent=} {rank=} {name=} {category=}')
         super().__init__(parent, *args, **kwargs)
+
         self.rank = rank
         self.parent = parent
         self.name = name
@@ -124,8 +125,8 @@ class TTSEngine(ctk.CTkFrame):
         self.widget = {}
 
         self.set_config_meta(self.config)
-
         self.draw_config_meta(self)
+
         self.load_character(category=category, name=name)
         self.repopulate_options()
 
@@ -209,6 +210,8 @@ class TTSEngine(ctk.CTkFrame):
         # Retrieve configuration settings from the DB
         # and use them to set values on widgets
         # settings.how_did_i_get_here()
+        if name is None:
+            return
 
         self.loading = True
         self.name = name
@@ -311,28 +314,39 @@ class TTSEngine(ctk.CTkFrame):
 
             # create the tk.var for the value of this widget
             varfunc = getattr(tk, m.varfunc)
-            self.config_vars[m.key] = varfunc(value=m.default)
+            log.debug(f'Stashing {varfunc} in config_vars[{m.key}]')
+            
+            if m.key in self.config_vars:
+                for trace in self.config_vars[m.key].trace_info():
+                    log.debug('Removing duplicate trace...')
+                    self.config_vars[m.key].trace_remove(trace[0], trace[1])
+
+            self.config_vars[m.key] = varfunc()
+            self.config_vars[m.key].set(m.default)
 
             # create the widget itself
             if m.varfunc == "StringVar":
                 self._tkStringVar(index + 1, m.key, parent)
             elif m.varfunc == "DoubleVar":
                 self._tkDoubleVar(index + 1, m.key, parent, m.cfgdict)
+                self.config_vars[m.key].trace_add("write", self.reconfig)
             elif m.varfunc == "BooleanVar":
                 self._tkBooleanVar(index + 1, m.key, parent)
+                self.config_vars[m.key].trace_add("write", self.reconfig)
             else:
                 # this will fail, but at least it will fail with a log message.
                 log.error(f'No widget defined for variables like {varfunc}')
 
             # changes to the value of this widget trip a generic 'reconfig'
             # handler.
-            self.config_vars[m.key].trace_add("write", self.reconfig)
+            
 
     def _tkStringVar(self, index, key, frame):
         # combo widget for strings
         self.widget[key] = ctk.CTkComboBox(
             frame,
             variable=self.config_vars[key],
+            command=self.reconfig,
             state="readonly"
         )
         # self.widget[key]["state"] = "readonly"
@@ -401,9 +415,10 @@ class TTSEngine(ctk.CTkFrame):
         combo widgets need to repopulate.
         """
         if self.loading:
+            log.warning('Voice config change while loading... (ignoring)')
             return
         
-        # log.info(f'reconfig({args=}, {kwargs=})')
+        log.debug(f'reconfig({args=}, {kwargs=})')
         with models.db() as session:
             character = models.Character.get(
                 name=self.name, 
@@ -414,6 +429,8 @@ class TTSEngine(ctk.CTkFrame):
         config = {}
         for m in self.get_config_meta():
             config[m.key] = self.config_vars[m.key].get()
+        
+        log.debug(f'GUI config values are: {config}')
         
         models.set_engine_config(character.id, self.rank, config)
         self.repopulate_options()
@@ -429,15 +446,17 @@ class TTSEngine(ctk.CTkFrame):
                 if not all_options:
                     log.error(f'{m.gatherfunc=} returned no options ({self.cosmetic})')
 
-                self.widget[m.key].configure(values=all_options)
+                if m.key in self.widget:
+                    # log.info(f'{all_options=}')
+                    self.widget[m.key].configure(values=all_options)
             
-                if self.config_vars[m.key].get() not in all_options:
-                    # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')                    
-                    self.config_vars[m.key].set(all_options[0])
+                    if self.config_vars[m.key].get() not in all_options:
+                        # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')                    
+                        self.config_vars[m.key].set(all_options[0])
             
     def _gender_filter(self, voice):
         if hasattr(self, 'gender') and self.gender:
-            log.debug(f'{self.gender.title()} ?= {voice["gender"].title()}')
+            # log.debug(f'{self.gender.title()} ?= {voice["gender"].title()}')
             try:
                 return self.gender.title() == voice["gender"].title()
             except KeyError:

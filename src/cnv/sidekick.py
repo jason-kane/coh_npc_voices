@@ -8,22 +8,19 @@ import queue
 import sys
 from datetime import datetime, timedelta
 
+import cnv.lib.settings as settings
 import cnv.logger
-from cnv.database import models
 import colorama
 import customtkinter as ctk
-import lib.settings as settings
-import pyautogui as p
-import win32api
-import win32con
-import win32process
+
+from cnv.database import models
+from cnv.lib.proc import send_chatstring
 from tabs import (
     automation,
     character,
     configuration,
     voices,
 )
-from win32gui import GetForegroundWindow, GetWindowText
 
 # this unlinks us from python so windows will
 # use our icon instead of the python icon in the
@@ -63,14 +60,19 @@ class MainTabView(ctk.CTkTabview):
 
 def main():
     colorama.init()
-    #root = tk.Tk()  
     root = ctk.CTk()
+
+    event_queue = multiprocessing.Queue()
+    speaking_queue = multiprocessing.Queue()
 
     def on_closing():
         global EXIT
         EXIT = True
         log.info('Exiting...')
-        root.destroy()
+        event_queue.close()
+        speaking_queue.close()
+        sys.exit()
+        # root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.iconbitmap("sidekick.ico")
@@ -78,22 +80,18 @@ def main():
     root.geometry("720x640+200+200")
     root.resizable(True, True)
     root.title("City of Heroes Sidekick")
-
-    event_queue = multiprocessing.Queue()
-    speaking_queue = multiprocessing.Queue()
-    #queue.Queue()
-
+   
     root.grid_columnconfigure(0, weight=1)
     root.grid_rowconfigure(0, weight=1)
     
     buffer = ctk.CTkFrame(root)
     buffer.grid_columnconfigure(0, weight=1)
     buffer.grid_rowconfigure(0, weight=1)
-
+    
     mtv = MainTabView(
         buffer, 
         event_queue=event_queue,
-        speaking_queue=speaking_queue
+        speaking_queue=speaking_queue,
     )
     mtv.grid(
         column=0, row=0, sticky="new"
@@ -128,7 +126,7 @@ def main():
                 #     (None, f"Welcome back {value}", "system")
                 # )
                 models.set_hero(name=value)
-                mtv.tabdict['Character'].set_hero()
+                mtv.tabdict['Character'].set_progress_chart()
 
                 #log.debug('path set_chraracter')
                 #char.chatter.hero = npc_chatter.Hero(value)
@@ -143,36 +141,18 @@ def main():
                 log.debug(f'Power {value} has recharged.')
                 if value in ["Hasten", "Domination"]:
                     if settings.get_config_key(f'auto_{value.lower()}'):
-                        # only send keyboard activity to the city of heroes window
-                        # if it is not the foreground window do not do anything.
-                        foreground_window_handle = GetForegroundWindow()
-                        pid = win32process.GetWindowThreadProcessId(foreground_window_handle)
-                        handle = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid[1])
-                        
-                        proc_name = win32process.GetModuleFileNameEx(handle, 0)
-                        zone = GetWindowText(foreground_window_handle)
-                        log.info(f'{zone=}')
-
-                        if proc_name.split("\\")[-1] == "cityofheroes.exe":
-                            log.info(f'Triggering {value}')
-                            p.press("enter")
-                            p.typewrite(f"/powexec_name \"{value}\"\n")
-                        else:
-                            log.info(f'Not touch the keyboard of {proc_name!r}.  That would be rude.')
+                        send_chatstring(f"/powexec_name \"{value}\"\n")
                     else:
                         log.info(f'auto_{value.lower()} is disabled')
-
-            # else:
-            #     log.error('Unknown event_queue key: %s', key)
 
         except Exception as err:
             log.error(f"{err=}")
             raise
-        
+
         if last_character_update:
             elapsed = datetime.now() - last_character_update
             if elapsed > update_frequency:
-                mtv.tabdict['Character'].set_hero()
+                mtv.tabdict['Character'].set_progress_chart()
                 last_character_update = datetime.now()
 
         root.update_idletasks()

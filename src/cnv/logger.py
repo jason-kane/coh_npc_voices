@@ -46,7 +46,17 @@ LOGGING_CONFIG = {
             'handlers': ['default', ],
             'level': 'DEBUG',
             'propagate': False
-        },        
+        },
+        'cnv.engines.base': {
+            'handlers': ['default', ],
+            'level': 'INFO',
+            'propagate': False
+        },
+        'cnv.effects.effects': {
+            'handlers': ['default', ],
+            'level': 'INFO',
+            'propagate': False
+        },
     } 
 }
 

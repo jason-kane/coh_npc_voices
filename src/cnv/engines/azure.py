@@ -225,7 +225,7 @@ class ttsOpenAI(voicebox.tts.TTS):
             audio_buffer = bytes(10000000)
             size = stream.read_data(audio_buffer)
 
-            log.info('Creating numpy buffer')
+            log.debug('Creating numpy buffer')
             samples = np.frombuffer(
                 audio_buffer[:size],
                 dtype=np.int16

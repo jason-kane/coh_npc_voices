@@ -224,7 +224,7 @@ class GoogleCloud(TTSEngine):
             voice_name = self.config_vars["voice_name"].get()
             if voice_name not in out:
                 # our currently selected voice is invalid.  Pick a new one.
-                log.error(f'Voice {voice_name} is now invalid')
+                log.error(f'Voice {voice_name} is now invalid ({gender})')
                 self.config_vars["voice_name"].set(out[0])
             return out
         else:

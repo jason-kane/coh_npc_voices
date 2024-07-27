@@ -1,24 +1,18 @@
 
 import logging
 import os
-import sys
 from contextlib import contextmanager
 from pathlib import Path
 
 import alembic.config
 import cnv.database.models as models
+import cnv.lib.settings as settings
 from sqlalchemy import create_engine
 from sqlalchemy_utils import create_database, database_exists
 
 sqlite_database_filename = "voices.db"
 engine = create_engine(f"sqlite:///{sqlite_database_filename}", echo=True)
 
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
 
 log = logging.getLogger(__name__)
 
@@ -85,3 +79,11 @@ if not database_exists(engine.url):
 else:
     log.info('Checking for database migration...')
     alembic.config.main(argv=alembicArgs)
+
+    if not settings.REPLAY or settings.SESSION_CLEAR_IN_REPLAY:
+        log.info('Clearing session storage...')   
+        
+        with models.Session(models.engine) as session:
+            # delete all Damage table rows
+            session.query(models.Damage).delete()       
+            session.commit()

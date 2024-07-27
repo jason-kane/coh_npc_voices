@@ -275,7 +275,8 @@ class AmazonPolly(TTSEngine):
                 log.debug(f'Excluding {voice["Name"]}')
 
         if not out:
-            log.warning('No voices exist that support this language/gender.  Ignoring gender.')
+            allowed_language_codes = settings.get_voice_language_codes()
+            log.warning(f'No voices exist that support language={allowed_language_codes}/gender={self.gender}.  Ignoring gender.')
             out = secondary
 
         out = sorted(list(out))

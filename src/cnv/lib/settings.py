@@ -1,6 +1,5 @@
 import logging
 import inspect
-import sys
 import json
 import os
 import hashlib
@@ -42,12 +41,9 @@ LANGUAGES = {
 PERSIST_PLAYER_CHAT = True
 
 REPLAY = False
-
-logging.basicConfig(
-    level=LOGLEVEL,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+XP_IN_REPLAY = False
+SPEECH_IN_REPLAY = False
+SESSION_CLEAR_IN_REPLAY = False
 
 log = logging.getLogger(__name__)
 
@@ -108,12 +104,17 @@ def get_alias(group):
 def get_preset(group):
     return get_config_key(key=group, default={}, cf="presets.json")
 
+
 def get_language_code():
     """
     Returns the two character language code for feeding the translator
     """
     language = get_config_key('language', default="English")
     return LANGUAGES[language][0]
+
+def get_language_code_regex():
+    code = get_language_code()
+    return f"{code}-.*"
 
 def get_voice_language_codes():
     """

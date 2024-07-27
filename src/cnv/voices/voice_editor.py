@@ -1,7 +1,6 @@
 """Voice Editor component"""
 import logging
 import os
-import sys
 import tkinter as tk
 from tkinter import ttk
 
@@ -20,12 +19,6 @@ from cnv.lib.gui import Feather
 from translate import Translator
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from voicebox.tts.utils import get_audio_from_wav_file
-
-logging.basicConfig(
-    level=settings.LOGLEVEL,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
 
 log = logging.getLogger(__name__)
 ENGINE_OVERRIDE = {}
@@ -63,7 +56,10 @@ class WavfileMajorFrame(ctk.CTkFrame):
         self.options.pack(side="left", fill="x", expand=True)
 
         self.play_btn = ctk.CTkButton(
-            frame, text="Play", width=80, command=self.play_cache
+            frame, 
+            text="Play", 
+            width=80, 
+            command=self.play_cache
         )
 
         regen_btn = ctk.CTkButton(
@@ -88,7 +84,6 @@ class WavfileMajorFrame(ctk.CTkFrame):
 
         # must be called after self.play_btn exists
         self.populate_phrases()
-        
 
     def set_translated(self, *args, **kwargs):
         """
@@ -134,14 +129,14 @@ class WavfileMajorFrame(ctk.CTkFrame):
             wavfilename = audio.mp3file_to_wavfile(
                 mp3filename=cachefile
             )
-            self.play_btn["state"] = "normal"
+            self.play_btn.configure(state="normal")
             # and display the wav
             self.show_wave(wavfilename)
             return
     
         log.debug(f'Cached mp3 {cachefile} does not exist.')
         self.clear_wave()
-        self.play_btn["state"] = "disabled"
+        self.play_btn.configure(state="disabled")
 
     def populate_phrases(self):
         log.debug('** populate_phrases() called **')
@@ -348,7 +343,10 @@ class WavfileMajorFrame(ctk.CTkFrame):
                 message=message
             ), ]
 
-        for phrase in all_phrases:           
+        for phrase in all_phrases:
+            if phrase.text in ["", ]:
+                continue
+
             log.debug(f'{phrase=}')
 
             # this is an existing phrase
@@ -366,6 +364,9 @@ class WavfileMajorFrame(ctk.CTkFrame):
                 SoundDevice(),
                 WaveFile(cachefile + '.wav')
             ])
+
+            # make sure the destination directory exists
+            os.makedirs(os.path.dirname(cachefile), exist_ok=True)
 
             log.debug(f'effect_list: {effect_list}')
             log.debug(f"Creating ttsengine for {character.name}")
@@ -533,7 +534,7 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
 
         if not engine_cls:
             # that didn't work.. try the default engine
-            log.warning(f'Invalid Engine: {engine_name}.  Using default {settings.DEFAULT_ENGINE} engine.')
+            log.warning(f'Invalid Engine: {engine_name!r}.  Using default {settings.DEFAULT_ENGINE} engine.')
             engine_cls = engines.get_engine(settings.DEFAULT_ENGINE)
 
         self.engine_parameters = engine_cls(
@@ -676,12 +677,7 @@ class EffectList(ctk.CTkFrame):
                 )
 
                 # not very DRY
-                effect_config_frame = effect_class(
-                    self, 
-                    # borderwidth=1,                     
-                    # relief="groove",
-                    # style="Effect.TFrame"
-                )
+                effect_config_frame = effect_class(self)
                 effect_config_frame.grid(row=index, column=0, sticky="new")
                 #pack(side="top", fill="x", expand=True)
                 effect_config_frame.effect_id.set(effect.id)
@@ -691,12 +687,6 @@ class EffectList(ctk.CTkFrame):
             
             self.next_effect_row = index + 1
 
-            # if not has_effects:
-            #     self.buffer = ttk.Frame(self, width=1, height=1).pack(side="top")
-            # else:
-            #     if self.buffer:
-            #         self.buffer.pack_forget()
-
             log.debug("Rebuilding add_effect")
             self.add_effect_combo.grid_forget()
             self.add_effect_combo = AddEffect(self, self)
@@ -705,8 +695,8 @@ class EffectList(ctk.CTkFrame):
                 column=0, 
                 sticky="new"
             )
-            #(side="top", fill='x', expand=True)
-            
+
+
     def add_effect(self, effect_name):
         """
         Add the chosen effect to the list of effects the user can manipulate.
@@ -737,16 +727,7 @@ class EffectList(ctk.CTkFrame):
             # with an apply(Audio) that returns an Audio; An "Audio" is a pretty
             # simple object wrapping a np.ndarray of [-1 to 1] samples.
             #
-            # ttk.Style().configure(
-            #     "EffectConfig.TFrame",
-            #     highlightbackground="black", 
-            #     relief="groove"
-            # )
-            effect_config_frame = effect(
-                self, 
-                # style="EffectConfig.TFrame",
-                # borderwidth=1
-            )
+            effect_config_frame = effect(self)
             self.add_effect_combo.grid_forget()
             effect_config_frame.grid(
                 column=0, 
@@ -777,10 +758,10 @@ class EffectList(ctk.CTkFrame):
                 session.commit()
                 session.refresh(effect)
 
-            for key in effect_config_frame.parameters:
-                # save the current effect configuration
-                tkvar = getattr(effect_config_frame, key)
-                value = tkvar.get()
+            for key in effect_config_frame.tkvars:
+                # save the current effect configuration, these will presumably
+                # just be the defaults.
+                value = effect_config_frame.tkvars[key].get()
 
                 new_setting = models.EffectSetting(
                     effect_id=effect.id,
@@ -790,7 +771,8 @@ class EffectList(ctk.CTkFrame):
                 session.add(new_setting)
             session.commit()
             
-            effect_config_frame.effect_id.set(effect.id)      
+            effect_config_frame.effect_id.set(effect.id)
+            effect_config_frame.load()
     
     def remove_effect(self, effect_obj):
         log.debug(f'Removing effect {effect_obj}')

@@ -4,6 +4,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from tkinter import ttk
 from typing import Union
+from cnv.lib.settings import diskcache
 
 import numpy as np
 import voicebox
@@ -95,34 +96,76 @@ class OpenAI(TTSEngine):
     auth_ui_class = OpenAIAuthUI
 
     config = (
-        ('Voice Name', 'voice', "StringVar", "<unconfigured>", {}, "get_voice_names"),
+        ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Voice Model', 'model', "StringVar", "<unconfigured>", {}, "get_models"),
         ('Speed', 'speed', "DoubleVar", 1.0, {'min': 0.25, 'max': 4.0, 'resolution': 0.25}, None),
     )
 
     def get_models(self):
-        return [
-            'tts-1',
-            'tts-1-hd'
-        ]
+        all_models = diskcache(
+            f"{self.key}_model"
+        )
+        if all_models is None:
+            all_models = diskcache(
+                f"{self.key}_model", [
+                    {'model': 'tts-1'},
+                    {'model': 'tts-1-hd'}
+                ]
+            )
+        return [k['model'] for k in all_models]
+
+    def get_voices(self):
+        all_voices = diskcache(
+            f"{self.key}_voice"
+        )
+        if all_voices is None:
+            all_voices = diskcache(
+                f"{self.key}_voice", [{
+                'name': 'alloy',
+                'gender': 'Female'
+            }, {
+                'name': 'nova',
+                'gender': 'Female'
+            }, {
+                'name': 'shimmer',
+                'gender': 'Female'
+            }, {
+                'name': 'fable',
+                'gender': 'Female'
+            }, {
+                'name': 'echo',
+                'gender': 'Male'
+            }, {
+                'name': 'onyx',
+                'gender': 'Male'
+            }, {
+                'name': 'fable',
+                'gender': 'Male'
+            }])
+
+        return all_voices
 
     def get_voice_names(self, gender=None):
-        if gender and gender.upper() == "FEMALE":
-            return ['alloy', 'nova', 'shimmer', 'fable']
-        elif gender and gender.upper() == "MALE":
-            return ['echo', 'onyx', 'fable']
+        all_voices = self.get_voices()
+
+        out = set()
+        for voice in all_voices:
+            if self._gender_filter(voice):
+                out.add(voice['name'])
+
+        out = sorted(list(out))
+
+        if out:
+            # voice_name = self.config_vars["voice_name"].get()
+            # if voice_name not in out:
+            #     # our currently selected voice is invalid.  Pick a new one.
+            #     self.config_vars["voice_name"].set(out[0])
+            return out
         else:
-            return [
-                'alloy',
-                'echo',
-                'fable',
-                'onyx',
-                'nova',
-                'shimmer'
-            ]
+            return []    
     
     def get_tts(self):
-        voice = self.override.get('voice', self.config_vars["voice"].get())
+        voice = self.override.get('voice_name', self.config_vars["voice_name"].get())
         model = self.override.get('model', self.config_vars["model"].get())
 
         return ttsOpenAI(
