@@ -435,6 +435,9 @@ class DamageFrame(ctk.CTkScrollableFrame):
             
             p['typed'][('Total', '')] = {'total': total_damage, 'count': hits}
             for damage_type, special in p['typed']:
+                if damage_type == "":
+                    continue
+
                 key = (damage_type, special)
                 if damage_type == "Total":
                     hline = tk.Frame(self, borderwidth=1, relief="solid", height=1)
