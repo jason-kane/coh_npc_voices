@@ -83,7 +83,4 @@ else:
     if not settings.REPLAY or settings.SESSION_CLEAR_IN_REPLAY:
         log.info('Clearing session storage...')   
         
-        with models.Session(models.engine) as session:
-            # delete all Damage table rows
-            session.query(models.Damage).delete()       
-            session.commit()
+        models.clear_damage()

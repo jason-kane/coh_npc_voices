@@ -415,7 +415,7 @@ class TTSEngine(ctk.CTkFrame):
         combo widgets need to repopulate.
         """
         if self.loading:
-            log.warning('Voice config change while loading... (ignoring)')
+            log.debug('Voice config change while loading... (ignoring)')
             return
         
         log.debug(f'reconfig({args=}, {kwargs=})')

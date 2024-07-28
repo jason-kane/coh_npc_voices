@@ -512,8 +512,10 @@ class LogStream:
 
         with self.open_latest_log() as handle:
             if self.first_tail:
+                # New character selected
                 log.debug(f'Found new logfile {self.logfile}')
                 self.find_character_login()
+                models.clear_damage()
             
             if settings.REPLAY:
                 # start at the beginning of the log
@@ -655,7 +657,7 @@ class LogStream:
                     elif lstring[0] == "MISSED":
                         # MISSED Mamba Blade!! Your Contaminated Strike power had a 95.00% chance to hit, you rolled a 95.29.
                         m = re.fullmatch(
-                            r"MISSED (?P<target>.*)!! Your (?P<power>.*) power had a (?P<chance_to_hit>[0-9\.]*)% change to hit, you rolled a (?P<roll>[0-9\.]*).",
+                            r"MISSED (?P<target>.*)!! Your (?P<power>.*) power had a (?P<chance_to_hit>[0-9\.]*)% chance to hit, you rolled a (?P<roll>[0-9\.]*).",
                             " ".join(lstring)
                         )
                         if m:
@@ -667,13 +669,15 @@ class LogStream:
                                 target=target,
                                 power=power,
                                 damage=0,
-                                damage_type=None,
-                                special=None
+                                damage_type="",
+                                special=""
                             )
                             
                             with models.db() as session:
                                 session.add(d)
                                 session.commit()
+                        else:
+                            log.warning('String failed regex:\n%s' % " ".join(lstring))
 
                     elif lstring[0] == "Welcome":
                         # Welcome to City of Heroes, <HERO NAME>

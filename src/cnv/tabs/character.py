@@ -356,7 +356,7 @@ class DamageFrame(ctk.CTkScrollableFrame):
 
 
     def refresh_damage_panel(self):
-        log.warning("refresh_damage_panel")
+        log.debug("refresh_damage_panel")
         # clear any old data
         for widget in self.winfo_children():
             widget.destroy()
@@ -418,7 +418,7 @@ class DamageFrame(ctk.CTkScrollableFrame):
                 # if we do it across all damage types it seem more accurate than
                 # it really is, but unless we know the "base" type?
                 # TODO: this should be better
-                if damage_type is not None:
+                if damage_type != "":
                     hits += p['typed'][key]['count']
                 tries += p['typed'][key]['count']
                 total_damage += p['typed'][key]['total']

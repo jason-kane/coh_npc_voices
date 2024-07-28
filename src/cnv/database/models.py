@@ -698,6 +698,14 @@ class Damage(Base):
     # assassin strike, critical, etc..
     special: Mapped[str] = mapped_column(String(32))
 
+
+def clear_damage():
+    with db() as session:
+        # delete all Damage table rows
+        session.query(Damage).delete()       
+        session.commit()
+
+
 class Hero(Base):
     __tablename__ = "hero"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
