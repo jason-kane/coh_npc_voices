@@ -375,17 +375,18 @@ class LogStream:
 
             if dialog.split()[0] == "[SIDEKICK]":
                 # player attribute self-reporting
-                try:
-                    key, value = dialog.split()[1].split('=')
-                except ValueError:
-                    log.warning(f'Invalid SIDEKICK: {dialog}')
-                    return "__self__", None    
+                for keyvalue in dialog.split(';'):
+                    try:
+                        key, value = keyvalue.split('=')
+                    except ValueError:
+                        log.warning(f'Invalid SIDEKICK: {dialog}')
+                        return "__self__", None    
 
-                settings.set_config_key(
-                    key, 
-                    value.strip('"'),
-                    cf='state.json'
-                )
+                    settings.set_config_key(
+                        key, 
+                        value.strip('"'),
+                        cf='state.json'
+                    )
 
                 # don't try and speak it.
                 return "__self__", None
@@ -394,19 +395,26 @@ class LogStream:
         else:
             # ["[Tell]", ":Dressy Bessie:", "I", "can", "bump", "you"]
             # ["[Tell]", ":StoneRipper:", "it:s", "underneath"]
+            speaker = None
+            dialog = None
             try:
                 # ["", "Dressy Bessie", "I can bump you"]
                 # ['', 'StoneRipper', ' it:s underneath']
-                _, speaker, dialog = " ".join(lstring[1:]).split(
-                    ":", maxsplit=2
-                )
-                # ignore SIDEKICK self-tells 
-                if dialog.split()[0] == "[SIDEKICK]":
-                    
-                    return "__self__", None
+                full_string = " ".join(lstring[1:])
+
+                if ':' in full_string:
+                    _, speaker, dialog = full_string.split(
+                        ":", maxsplit=2
+                    )
+                    # ignore SIDEKICK self-tells 
+                    try:
+                        if dialog.split()[0] == "[SIDEKICK]":
+                            return "__self__", None
+                    except IndexError:
+                        pass
 
             except ValueError:
-                # I didn't note the string that caused me to add this.  Oops.
+                # 2024-07-27 17:17:07 [Tell] You are banned from talking for 2 minutes, 0 seconds.
                 # logging at info so I can maybe catch it in the future.
                 log.info(f'1 ADD DOC: {lstring=}')
                 speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
@@ -545,6 +553,13 @@ class LogStream:
                         self.speaking_queue.put((None, (" ".join(lstring[4:])), "system"))
 
                     elif lstring[0] == "You":
+                        if lstring[1] == "found":
+                            # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
+                            dialog = plainstring(" ".join(lstring))
+                            if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
+                                self.speaking_queue.put((None, dialog, "system"))
+
+
                     #     # ["You", "have", "quit", "your", "team"]
                     #     # ["Pew Pew Die Die Die has quit the league.
                     #     # ["Ice-Mech", "has", "quit", "the", "team"]
@@ -572,7 +587,7 @@ class LogStream:
                     #                 )
                     #             )
 
-                        if self.hero and lstring[1] == "gain":
+                        elif self.hero and lstring[1] == "gain":
                             # You gain 104 experience and 36 influence.
                             # You gain 15 experience, work off 15 debt, and gain 14 influence.
                             # You gain 26 experience and work off 2,676 debt.
@@ -687,7 +702,7 @@ class LogStream:
                         dialog = plainstring(" ".join(lstring))
                         self.speaking_queue.put((None, dialog, "system"))
 
-                    elif lstring[0:1] == ["Your", "combat"]:
+                    elif lstring[0:2] == ["Your", "combat"]:
                         # 2024-07-26 19:01:05 Your combat improves to level 23! Seek a trainer to further your abilities.
                         level = int(lstring[5].strip('!'))
                         self.speaking_queue.put(
