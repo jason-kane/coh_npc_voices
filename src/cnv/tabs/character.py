@@ -594,17 +594,11 @@ class CharacterTab(ctk.CTkFrame):
         self.damageframe = DamageFrame(damage)
         self.damageframe.grid(column=0, row=0, sticky="nsew")
 
-        experience = self.character_subtabs.add('Experience')
-        influence = self.character_subtabs.add('Influence')
+        # experience = self.character_subtabs.add('Experience')
+        # influence = self.character_subtabs.add('Influence')
 
         self.character_subtabs.grid(column=0, row=0, sticky="new")
         buffer.grid(column=0, row=1, sticky="nsew")
-
-        #frame = ctk.CTkFrame(self)
-        #ctk.CTkLabel(frame, text="Experience:").grid(column=0, row=0)
-        #ctk.CTkLabel(frame, textvariable=self.total_exp).grid(column=1, row=0, padx=(15, 0))
-        #ctk.CTkLabel(frame, text="Influence:").grid(column=2, row=0, padx=(30, 0))
-        #ctk.CTkLabel(frame, textvariable=self.total_inf).grid(column=3, row=0, padx=(15, 0))
 
         self.start_time = datetime.now()
         
