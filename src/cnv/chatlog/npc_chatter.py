@@ -553,39 +553,12 @@ class LogStream:
                         self.speaking_queue.put((None, (" ".join(lstring[4:])), "system"))
 
                     elif lstring[0] == "You":
-                        if lstring[1] == "found":
+                        if lstring[1] in ["found", "stole"]:
                             # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
+                            # You stole the money!
                             dialog = plainstring(" ".join(lstring))
                             if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
                                 self.speaking_queue.put((None, dialog, "system"))
-
-
-                    #     # ["You", "have", "quit", "your", "team"]
-                    #     # ["Pew Pew Die Die Die has quit the league.
-                    #     # ["Ice-Mech", "has", "quit", "the", "team"]
-                    #     # ["You", "are", "now", "fighting", "at", "level", "9."]
-                    #     # ["You", carefully remove an odd piece of paper from a pile of medical refuse."]
-                    #     if lstring[1] == "are":
-                    #         if (
-                    #             self.announce_levels and lstring[2:3] == ["now", "fighting"]
-                    #         ) and (
-                    #             " ".join(previous[-4:]).strip(".")
-                    #             not in [
-                    #                 "have quit your team", 
-                    #                 "has quit the team", 
-                    #                 "has joined the team",
-                    #                 "has joined the league", 
-                    #                 "has quit the league",
-                    #             ]
-                    #         ):
-                    #             level = lstring[-1].strip(".")
-                    #             self.speaking_queue.put(
-                    #                 (
-                    #                     None,
-                    #                     f"Congratulations.  You have reached Level {level}",
-                    #                     "system",
-                    #                 )
-                    #             )
 
                         elif self.hero and lstring[1] == "gain":
                             # You gain 104 experience and 36 influence.
@@ -678,6 +651,29 @@ class LogStream:
                         elif lstring[1] in ["carefully", "look", "find"]:
                             dialog = plainstring(" ".join(lstring))
                             self.speaking_queue.put((None, dialog, "system"))
+
+                    elif lstring[0] == "MISSED":
+                        # MISSED Mamba Blade!! Your Contaminated Strike power had a 95.00% chance to hit, you rolled a 95.29.
+                        m = re.fullmatch(
+                            r"MISSED (?P<target>.*)!! Your (?P<power>.*) power had a (?P<chance_to_hit>[0-9\.]*)% change to hit, you rolled a (?P<roll>[0-9\.]*).",
+                            " ".join(lstring)
+                        )
+                        if m:
+                            target, power, change_to_hit, roll = m.groups()
+                            
+                            # Okay to tuck a "miss" in here?
+                            d = models.Damage(
+                                hero_id=self.hero.id,
+                                target=target,
+                                power=power,
+                                damage=0,
+                                damage_type=None,
+                                special=None
+                            )
+                            
+                            with models.db() as session:
+                                session.add(d)
+                                session.commit()
 
                     elif lstring[0] == "Welcome":
                         # Welcome to City of Heroes, <HERO NAME>

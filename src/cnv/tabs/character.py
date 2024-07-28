@@ -329,6 +329,9 @@ class DamageFrame(ctk.CTkScrollableFrame):
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
+        self.create_grid_header()
+        
+    def create_grid_header(self):
         self.grid_rowconfigure(0, weight=0)
         self.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(self, text="Power Name").grid(column=0, row=0, sticky='ew')
@@ -349,12 +352,16 @@ class DamageFrame(ctk.CTkScrollableFrame):
         ctk.CTkLabel(self, text="Total").grid(column=5, row=0, sticky='ew')
 
         hline = tk.Frame(self, borderwidth=1, relief="solid", height=2)
-        hline.grid(column=0, row=1, columnspan=6, sticky="ew")
+        hline.grid(column=0, row=1, columnspan=6, sticky="ew")        
 
 
-    def log_damage(self):
-        # is 'Damage' the selected tab?
-        log.warning("log_damage")
+    def refresh_damage_panel(self):
+        log.warning("refresh_damage_panel")
+        # clear any old data
+        for widget in self.winfo_children():
+            widget.destroy()
+        self.create_grid_header()
+
         # how much of the math in python vs sqlite?
         with models.db() as session:
             all_damage = session.scalars(
@@ -411,13 +418,15 @@ class DamageFrame(ctk.CTkScrollableFrame):
                 # if we do it across all damage types it seem more accurate than
                 # it really is, but unless we know the "base" type?
                 # TODO: this should be better
-                hits += p['typed'][key]['count']
+                if damage_type is not None:
+                    hits += p['typed'][key]['count']
+                tries += p['typed'][key]['count']
                 total_damage += p['typed'][key]['total']
 
             # Hit Rate
-            perc = 100
+            perc = 100 * float(hits) / float(tries)
             ctk.CTkLabel(
-                self, text=f"{hits} of {tries}: {perc}%"
+                self, text=f"{hits} of {tries}: {perc:0.2f}%"
             ).grid(
                 column=1, 
                 row=row_index,
@@ -443,12 +452,12 @@ class DamageFrame(ctk.CTkScrollableFrame):
                 # avg
                 ctk.CTkLabel(
                     self, 
-                    text=f"{p['typed'][key]["total"] / p['typed'][key]["count"]:.2f}",
+                    text=f"{p['typed'][key]["total"] / p['typed'][key]["count"]:,.2f}",
                     corner_radius=0, padx=0
                 ).grid(column=4, row=row_index)
 
                 ctk.CTkLabel(
-                    self, text=p['typed'][key]["total"],
+                    self, text=f"{p['typed'][key]["total"]:,}",
                     corner_radius=0, padx=0
                 ).grid(column=5, row=row_index)
 
@@ -605,7 +614,7 @@ class CharacterTab(ctk.CTkFrame):
     def subtab_selected(self, *args, **kwargs):
         selected_tab = self.character_subtabs.get()
         if selected_tab == "Damage":
-            self.damageframe.log_damage()
+            self.damageframe.refresh_damage_panel()
             self.damageframe.pack(fill="both", expand=True)
         else:
             log.warning(f'Unknown tab: {selected_tab}')
@@ -644,6 +653,11 @@ class CharacterTab(ctk.CTkFrame):
             #self.total_inf.set(0)
         try:
             self.update_xpinf()
+        except Exception as err:
+            log.error(err)
+
+        try:
+            self.damageframe.refresh_damage_panel()
         except Exception as err:
             log.error(err)
 
