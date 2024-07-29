@@ -116,7 +116,6 @@ class TTSEngine(ctk.CTkFrame):
         super().__init__(parent, *args, **kwargs)
 
         self.rank = rank
-        self.parent = parent
         self.name = name
         self.category = category
         self.override = {}
@@ -125,7 +124,7 @@ class TTSEngine(ctk.CTkFrame):
         self.widget = {}
 
         self.set_config_meta(self.config)
-        self.draw_config_meta(self)
+        self.draw_config_meta()
 
         self.load_character(category=category, name=name)
         self.repopulate_options()
@@ -301,7 +300,7 @@ class TTSEngine(ctk.CTkFrame):
                             session.add(new_config_setting)
                             session.commit()
 
-    def draw_config_meta(self, parent):
+    def draw_config_meta(self):
         # now we build it.  Row 0 is taken by the engine selector, the rest is ours.
         # column sizing is handled upstream, we need to stay clean 
         self.columnconfigure(0, minsize=125, weight=0, uniform="ttsengine")
