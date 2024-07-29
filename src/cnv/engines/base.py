@@ -303,12 +303,12 @@ class TTSEngine(ctk.CTkFrame):
 
     def draw_config_meta(self, parent):
         # now we build it.  Row 0 is taken by the engine selector, the rest is ours.
-        # column sizing is handled upstream, we need to stay clean with 
-        parent.columnconfigure(0, minsize=125, uniform="ttsengine")
-        parent.columnconfigure(1, weight=2, uniform="ttsengine")
+        # column sizing is handled upstream, we need to stay clean 
+        self.columnconfigure(0, minsize=125, weight=0, uniform="ttsengine")
+        self.columnconfigure(1, weight=2, uniform="ttsengine")
 
         for index, m in enumerate(self.get_config_meta()):
-            ctk.CTkLabel(parent, text=m.cosmetic, anchor="e").grid(
+            ctk.CTkLabel(self, text=m.cosmetic, anchor="e").grid(
                 row=index + 1, column=0, sticky="e", padx=10
             )
 
@@ -326,12 +326,12 @@ class TTSEngine(ctk.CTkFrame):
 
             # create the widget itself
             if m.varfunc == "StringVar":
-                self._tkStringVar(index + 1, m.key, parent)
+                self._tkStringVar(index + 1, m.key, self)
             elif m.varfunc == "DoubleVar":
-                self._tkDoubleVar(index + 1, m.key, parent, m.cfgdict)
+                self._tkDoubleVar(index + 1, m.key, self, m.cfgdict)
                 self.config_vars[m.key].trace_add("write", self.reconfig)
             elif m.varfunc == "BooleanVar":
-                self._tkBooleanVar(index + 1, m.key, parent)
+                self._tkBooleanVar(index + 1, m.key, self)
                 self.config_vars[m.key].trace_add("write", self.reconfig)
             else:
                 # this will fail, but at least it will fail with a log message.
@@ -339,7 +339,6 @@ class TTSEngine(ctk.CTkFrame):
 
             # changes to the value of this widget trip a generic 'reconfig'
             # handler.
-            
 
     def _tkStringVar(self, index, key, frame):
         # combo widget for strings

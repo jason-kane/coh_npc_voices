@@ -555,7 +555,7 @@ class LogStream:
                         self.speaking_queue.put((None, (" ".join(lstring[4:])), "system"))
 
                     elif lstring[0] == "You":
-                        if lstring[1] in ["found", "stole"]:
+                        if lstring[1] in ["found", "stole", "begin", "finished"]:
                             # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
                             # You stole the money!
                             dialog = plainstring(" ".join(lstring))
@@ -632,7 +632,7 @@ class LogStream:
                                 if special is None:
                                     special = ""
                                 else:
-                                    special = special.strip("()").title()
+                                    special = special.strip("() \t\n\r\x0b\x0c").title()
 
                                 d = models.Damage(
                                     hero_id=self.hero.id,
@@ -697,7 +697,7 @@ class LogStream:
                         action = lstring[-3]  # joined or quit
                         self.speaking_queue.put((None, f"Player {name} has {action} the team", "system"))
 
-                    elif lstring[:2] == ["The", "name"]:
+                    elif lstring[:2] in ["The", "name", "The", "whiteboard"]:
                         # The name <color red>Toothbreaker Jones</color> keeps popping up, and these Skulls were nice enough to tell you where to find him. Time to pay him a visit.
                         dialog = plainstring(" ".join(lstring))
                         self.speaking_queue.put((None, dialog, "system"))
@@ -719,7 +719,7 @@ class LogStream:
                         )
 
                     # single word things to speak, mostly clicky descriptions
-                    elif lstring[0] in ["Something's", "This", "You've"]:
+                    elif lstring[0] in ["Something's", "In", "Jones", "This", "You've", "Where"]:
                         # Something's not right with this spot on the floor...
                         # This blotch of petroleum on the ground seems fresh, perhaps leaked by a 'zoombie' and a sign that they're near. You take a photo and send it to Watkins.
                         # You've found a photocopy of a highly detailed page from a medical notebook, with wildly complex notes about cybernetics. 

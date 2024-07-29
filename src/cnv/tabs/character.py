@@ -223,6 +223,10 @@ class ChartFrame(ctk.CTkFrame):
 
                 data_xp.append(xp_gain)
                 data_inf.append(inf_gain)
+
+                if xp_gain is None:
+                    xp_gain = 0
+
                 rolling_xp_list.append(xp_gain)
 
                 log.debug(f'{rolling_xp_list=}')
@@ -433,7 +437,9 @@ class DamageFrame(ctk.CTkScrollableFrame):
                 rowspan=height
             )
             
-            p['typed'][('Total', '')] = {'total': total_damage, 'count': hits}
+            if len(p['typed']) > 1:
+                p['typed'][('Total', '')] = {'total': total_damage, 'count': hits}
+
             for damage_type, special in p['typed']:
                 if damage_type == "":
                     continue

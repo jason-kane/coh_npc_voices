@@ -407,24 +407,28 @@ class WavfileMajorFrame(ctk.CTkFrame):
                 tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
 
 
-class EngineSelectAndConfigure(ttk.LabelFrame):
+class EngineSelectAndConfigure(ctk.CTkFrame):
     """
     Responsible for everything inside the "Engine" section
     of the detailside.  There is one instance of this object per
     layer of engine (primary, secondary, etc..)
     """
     def __init__(self, rank, *args, **kwargs):
-        kwargs['text'] = 'Engine'
         super().__init__(*args, **kwargs)
         log.debug(f'EngineSelectAndConfigure.__init__({rank=}')
         self.rank = rank
         self.engine_parameters = None
-        
-        self.columnconfigure(0, minsize=125, uniform="ttsengine")
-        self.columnconfigure(1, weight=2, uniform="ttsengine")
-        
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
         #-- Row 0 --------------------------------------
-        ctk.CTkLabel(self, text="Text to Speech Engine", anchor="e").grid(
+        speech_engine_selection = ctk.CTkFrame(self)
+
+        speech_engine_selection.columnconfigure(0, minsize=125, weight=0, uniform="ttsengine")
+        speech_engine_selection.columnconfigure(1, weight=2, uniform="ttsengine")
+        
+        ctk.CTkLabel(speech_engine_selection, text="Speech Engine", anchor="e").grid(
             row=0, column=0, sticky="e", padx=10
         )
 
@@ -433,20 +437,27 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
             "write", 
             self.change_selected_engine
         )
+
         base_tts = ctk.CTkComboBox(
-            self, 
+            speech_engine_selection, 
             variable=self.selected_engine,
             state='readonly',
             values=[e.cosmetic for e in engines.ENGINE_LIST]
         )
-        # base_tts["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
-        # base_tts["state"] = "readonly"
+
         base_tts.grid(
             column=1, row=0, sticky="new"
         )
-        #-- Row 1 --------------------------------------
+        speech_engine_selection.grid(
+            column=0, row=0, sticky="new"
+        )
+        #########################################
+        # end of row 0
         
-        #-- Row 2 --------------------------------------
+        # gap for engine parameters.  load_character_engines will
+        # call set_engine which will fill this in.
+
+        # start of row 2
         self.engine_parameters = None           
         self.phrase_selector = WavfileMajorFrame(
             self.rank, self
@@ -469,7 +480,6 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         # this set() will trip change_selected_engine
         # which will in turn set a value for engine_parameters
         self.selected_engine.set(engine_name)  
-
 
     def change_selected_engine(self, a, b, c):
         """
