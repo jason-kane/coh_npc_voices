@@ -3,7 +3,7 @@
 
 #define SourcePath "\\?\Volume{cc498e86-0000-0000-0000-602200000000}\Users\jason\Desktop\coh_npc_voices"
 #define MyAppName "Sidekick"
-#define MyAppVersion "3.0"
+#define MyAppVersion "3.1"
 #define MyAppPublisher "Jason Kane"
 #define MyAppURL "https://github.com/jason-kane/coh_npc_voices"
 #define MyAppExeName "Sidekick.bat"
@@ -46,33 +46,42 @@ Source: "{#SourcePath}\config.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\sidekick.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\win_install.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourcePath}\src\cnv\__init__.py"; DestDir: "{app}\src\cnv\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\chatlog\__init__.py"; DestDir: "{app}\src\cnv\chatlog\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\chatlog\npc_chatter.py"; DestDir: "{app}\src\cnv\chatlog\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\database\__init__.py"; DestDir: "{app}\src\cnv\database\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\database\db.py"; DestDir: "{app}\src\cnv\database\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\database\models.py"; DestDir: "{app}\src\cnv\database\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\effects\__init__.py"; DestDir: "{app}\src\cnv\effects\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\effects\effects.py"; DestDir: "{app}\src\cnv\effects\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\engines\__init__.py"; DestDir: "{app}\src\cnv\engines\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\engines\engines.py"; DestDir: "{app}\src\cnv\engines\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\lib\__init__.py"; DestDir: "{app}\src\cnv\lib\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\lib\audio.py"; DestDir: "{app}\src\cnv\lib\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\lib\settings.py"; DestDir: "{app}\src\cnv\lib\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\tabs\__init__.py"; DestDir: "{app}\src\cnv\tabs\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\tabs\automation.py"; DestDir: "{app}\src\cnv\tabs\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\tabs\character.py"; DestDir: "{app}\src\cnv\tabs\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\tabs\configuration.py"; DestDir: "{app}\src\cnv\tabs\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\tabs\voices.py"; DestDir: "{app}\src\cnv\tabs\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\voices\__init__.py"; DestDir: "{app}\src\cnv\voices\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\voices\generate_defaults.py"; DestDir: "{app}\src\cnv\voices\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\voices\voice_builder.py"; DestDir: "{app}\src\cnv\voices\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\voices\voice_editor.py"; DestDir: "{app}\src\cnv\voices\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\__init__.py"; DestDir: "{app}\src\cnv\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\alembic.ini"; DestDir: "{app}\src\cnv\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\logger.py"; DestDir: "{app}\src\cnv\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\cnv\sidekick.py"; DestDir: "{app}\src\cnv\"; Flags: ignoreversion 
-Source: "{#SourcePath}\src\__init__.py"; DestDir: "{app}\src\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\__init__.py"; DestDir: "{app}\cnv\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\chatlog\__init__.py"; DestDir: "{app}\cnv\chatlog\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\chatlog\npc_chatter.py"; DestDir: "{app}\cnv\chatlog\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\database\__init__.py"; DestDir: "{app}\cnv\database\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\database\db.py"; DestDir: "{app}\cnv\database\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\database\models.py"; DestDir: "{app}\cnv\database\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\effects\__init__.py"; DestDir: "{app}\cnv\effects\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\effects\effects.py"; DestDir: "{app}\cnv\effects\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\__init__.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\amazonpolly.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\azure.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\base.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\elevenlabs.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\engines.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\googlecloud.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\openai.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\engines\windowstts.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\lib\icons\*.png"; DestDir: "{app}\cnv\lib\icons"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\lib\__init__.py"; DestDir: "{app}\cnv\lib\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\lib\audio.py"; DestDir: "{app}\cnv\lib\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\lib\gui.py"; DestDir: "{app}\cnv\lib\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\lib\proc.py"; DestDir: "{app}\cnv\lib\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\lib\settings.py"; DestDir: "{app}\cnv\lib\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\tabs\__init__.py"; DestDir: "{app}\cnv\tabs\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\tabs\automation.py"; DestDir: "{app}\cnv\tabs\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\tabs\character.py"; DestDir: "{app}\cnv\tabs\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\tabs\configuration.py"; DestDir: "{app}\cnv\tabs\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\tabs\voices.py"; DestDir: "{app}\cnv\tabs\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\voices\__init__.py"; DestDir: "{app}\cnv\voices\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\voices\generate_defaults.py"; DestDir: "{app}\cnv\voices\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\voices\voice_builder.py"; DestDir: "{app}\cnv\voices\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\voices\voice_editor.py"; DestDir: "{app}\cnv\voices\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\__init__.py"; DestDir: "{app}\cnv\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\alembic.ini"; DestDir: "{app}\cnv\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\logger.py"; DestDir: "{app}\cnv\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\sidekick.py"; DestDir: "{app}\cnv\"; Flags: ignoreversion 
 Source: "{#SourcePath}\aliases.json"; DestDir: "{app}\"; Flags: ignoreversion 
 Source: "{#SourcePath}\all_npcs.json"; DestDir: "{app}\"; Flags: ignoreversion 
 Source: "{#SourcePath}\migrations\*"; DestDir: "{app}\migrations\"; Flags: ignoreversion recursesubdirs createallsubdirs

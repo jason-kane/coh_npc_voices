@@ -1,74 +1,77 @@
 """Voice Editor component"""
 import logging
-import multiprocessing
 import os
-import queue
-import sys
 import tkinter as tk
-from tkinter import font, ttk
-from translate import Translator
+from tkinter import ttk
 
+import customtkinter as ctk
 import voicebox
-from cnv.chatlog import npc_chatter
 from cnv.database import db, models
 from cnv.effects import effects
 from cnv.engines import engines
-from cnv.lib import settings, audio
+from cnv.engines.base import USE_SECONDARY
+from cnv.lib import audio, settings
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from scipy.io import wavfile
 from sqlalchemy import delete, desc, select
-from tkfeather import Feather
+from cnv.lib.gui import Feather
+from translate import Translator
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from voicebox.tts.utils import get_audio_from_wav_file
-
-logging.basicConfig(
-    level=settings.LOGLEVEL,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
 
 log = logging.getLogger(__name__)
 ENGINE_OVERRIDE = {}
 
 #class ChoosePhrase(ttk.Frame):
-class WavfileMajorFrame(ttk.LabelFrame):    
+class WavfileMajorFrame(ctk.CTkFrame):    
     ALL_PHRASES = "⪡  Rebuild all phrases  ⪢"
     
-    def __init__(self, parent, detailside, *args, **kwargs):
-        kwargs['text'] = 'Wavefile(s)'
-        super().__init__(parent, *args, **kwargs)
+    def __init__(self, rank, *args, **kwargs):
+        log.debug(f"Initializing WavfileMajorFrame({rank=})")
+        # kwargs['text'] = 'Wavefile(s)'
+        super().__init__(*args, **kwargs)
         self.phrase_id = []
-
-        frame = ttk.Frame(self)
+        self.rank = rank
+        self.visualize_wav = None
         
-        self.detailside = detailside
+        self.fig = None
+        self.plt = None
+        self.spec = None
+        self.canvas = None
 
+        frame = ctk.CTkFrame(self)
+        
         self.translated = tk.StringVar(value="")
 
         self.chosen_phrase = tk.StringVar(
             value="<Choose or type a phrase>"
         )
         self.chosen_phrase.trace_add('write', self.choose_phrase)
-        self.options = ttk.Combobox(
+        self.options = ctk.CTkComboBox(
             frame, 
-            textvariable=self.chosen_phrase
+            values=[],
+            variable=self.chosen_phrase
         )
-        self.options["values"] = []
-
-        self.populate_phrases()
         self.options.pack(side="left", fill="x", expand=True)
 
-        self.play_btn = ttk.Button(frame, text="Play", command=self.play_cache)
+        self.play_btn = ctk.CTkButton(
+            frame, 
+            text="Play", 
+            width=80, 
+            command=self.play_cache
+        )
 
-        regen_btn = ttk.Button(frame, text="Regen", command=self.say_it)
+        regen_btn = ctk.CTkButton(
+            frame, text="Regen", width=80, command=self.say_it
+        )
         regen_btn.pack(side="left")
-        self.play_btn.pack(side="left")        
+        self.play_btn.pack(side="left")
 
         frame.pack(side="top", expand=True, fill="x")
 
         # NOT inside the frame
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             textvariable=self.translated,
             wraplength=350,
@@ -76,7 +79,11 @@ class WavfileMajorFrame(ttk.LabelFrame):
             justify="left"
         ).pack(side="top", fill="x")    
 
-        self.visualize_wav = None
+        # Wavfile visualizations
+        self.visualize_wav = ctk.CTkFrame(self)
+
+        # must be called after self.play_btn exists
+        self.populate_phrases()
 
     def set_translated(self, *args, **kwargs):
         """
@@ -89,46 +96,52 @@ class WavfileMajorFrame(ttk.LabelFrame):
         """
         a phrase was chosen.
         """
-        # make sure this characters is the one selected in the charcter list
-        character = self.detailside.parent.get_selected_character()
+        # make sure this characters is the one selected in the character list
+        character = models.get_selected_character()
         
         # retrieve the selected phrase
-        selected_index = self.options.current()
+        message = self.options.get()
+        if message in [self.ALL_PHRASES, ]:
+            return
+
+        # determine the id of this phrase
+        phrase = models.get_or_create_phrase(
+            character.name,
+            character.category,
+            message
+        )
         
-        if selected_index >= 0:
-            log.debug(f'Retrieving phrase at index {selected_index}')
-            phrase_id = self.phrase_id[selected_index]
+        # we want to work with the translated string
+        message, is_translated = models.get_translated(phrase.id)
 
-            # we want to work with the translated string
-            message, is_translated = models.get_translated(phrase_id)                
+        if is_translated:
+            self.translated.set(message)
+        else:
+            self.translated.set("")
 
-            if is_translated:
-                self.translated.set(message)
-            else:
-                self.translated.set("")
+        # find the file associated with this phrase
+        cachefile = self.get_cachefile(
+            character, message, self.rank
+        )
 
-            # find the file associated with this phrase
-            cachefile = self.get_cachefile(character, message)
-
-            if os.path.exists(cachefile):
-                wavfilename = audio.mp3file_to_wavfile(
-                    mp3filename=cachefile
-                )
-                self.play_btn["state"] = "normal"
-                # and display the wav
-                self.show_wave(wavfilename)
-                return
-        
-            log.debug(f'Cached mp3 {cachefile} does not exist.')
-
+        if os.path.exists(cachefile):
+            # activate the play button and display the waveform
+            wavfilename = audio.mp3file_to_wavfile(
+                mp3filename=cachefile
+            )
+            self.play_btn.configure(state="normal")
+            # and display the wav
+            self.show_wave(wavfilename)
+            return
+    
+        log.debug(f'Cached mp3 {cachefile} does not exist.')
         self.clear_wave()
-        self.play_btn["state"] = "disabled"
-
+        self.play_btn.configure(state="disabled")
 
     def populate_phrases(self):
         log.debug('** populate_phrases() called **')
         
-        character = self.detailside.parent.get_selected_character()
+        character = models.get_selected_character()
         if character is None:
             # no character selected
             return 
@@ -154,7 +167,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
             values.append(phrase.text)
         
         values.append(self.ALL_PHRASES)
-        self.options["values"] = values
+        self.options.configure(values=values)
 
         if character_phrases:
             # default to the first phrase
@@ -176,35 +189,52 @@ class WavfileMajorFrame(ttk.LabelFrame):
     def clear_wave(self):
         if hasattr(self, 'canvas'):
             log.debug('*** clear_wave() called ***')
-            self.plt.clear()
-            self.spec.clear()
-            self.canvas.draw_idle()
+            if self.plt:
+                self.plt.clear()
+
+            if self.spec:
+                self.spec.clear()
+            
+            if self.canvas:
+                #for item in self.canvas.get_tk_widget().find_all():
+                #    self.canvas.get_tk_widget().delete(item)
+    
+                self.canvas.draw_idle()
 
     def show_wave(self, cachefile):
         """
         Visualize a wav file
 
-        # I know, not very efficient to just jam this in here
-        # https://learnpython.com/blog/plot-waveform-in-python/
-        # https://matplotlib.org/3.1.0/gallery/user_interfaces/embedding_in_tk_sgskip.html        
+        I know, not very efficient to just jam this in here
+        * https://learnpython.com/blog/plot-waveform-in-python/
+        * https://matplotlib.org/3.1.0/gallery/user_interfaces/embedding_in_tk_sgskip.html        
         """
-        sampling_rate, data = wavfile.read(cachefile)
-        if self.visualize_wav is None:
-            # our widget hasn't been rendered.  Do be a sweetie and take
-            # care of that for me.
-            self.visualize_wav = ttk.Frame(self, padding = 0)
+        if self.fig is None:
             self.fig = Figure(
-                figsize=(3, 2), # (width, height) figsize in inches (not kidding)
+                figsize=(3, 4), # (width, height) figsize in inches (not kidding)
                 dpi=100, # but we get dpi too so... sane?
                 layout='constrained'
             )
 
+        if self.plt is None:
             self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
+        else:
+            self.plt.remove()
+            self.plt = self.fig.add_subplot(211, facecolor=('xkcd:light grey'))
+
+        if self.spec is None:
             self.spec = self.fig.add_subplot(212)
+        else:
+            self.spec.clear()
+
+        # 211 = rows=2 columns=1 index=1
+        if self.canvas is None:
             self.canvas = FigureCanvasTkAgg(self.fig, self.visualize_wav)
             self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=1)
-        else:
-            self.clear_wave()
+
+        sampling_rate, data = wavfile.read(cachefile)
+        
+        log.debug(f'*** show_wave({cachefile=}) called ***')
 
         # if channels == 1:
         self.plt.plot(data)
@@ -218,9 +248,9 @@ class WavfileMajorFrame(ttk.LabelFrame):
         # self.plt.set_xlim(0, duration)
         self.visualize_wav.pack(side='top', fill=tk.BOTH, expand=1)
 
-    def get_cachefile(self, character, msg):
+    def get_cachefile(self, character, msg, rank):
         _, clean_name = settings.clean_customer_name(character.name)
-        filename = settings.cache_filename(character.name, msg)
+        filename = settings.cache_filename(character.name, msg, rank)
         
         return os.path.abspath(
             os.path.join(
@@ -238,7 +268,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
         global ENGINE_OVERRIDE
         message = self.chosen_phrase.get()
         
-        character = self.detailside.parent.get_selected_character()
+        character = models.get_selected_character()
 
         if message == self.ALL_PHRASES:
             with models.db() as session:
@@ -250,17 +280,16 @@ class WavfileMajorFrame(ttk.LabelFrame):
                     )
                 ).all()
         else:
-            phrase_id = self.phrase_id[self.options.current()]
-            with models.db() as session:
-                all_phrases = session.scalars(
-                        select(models.Phrases).where(
-                            models.Phrases.id == phrase_id
-                        )
-                    ).all()
+            phrase = models.get_or_create_phrase(
+                name=character.name,
+                category=character.category,
+                message=message
+            )
+            all_phrases = [ phrase, ]
 
         for phrase in all_phrases:
             msg, is_translated = models.get_translated(phrase.id)
-            cachefile = self.get_cachefile(character, msg)
+            cachefile = self.get_cachefile(character, msg, self.rank)
 
             wavfilename = audio.mp3file_to_wavfile(
                 mp3filename=cachefile
@@ -279,27 +308,24 @@ class WavfileMajorFrame(ttk.LabelFrame):
         """
         Speak aloud whatever is in the chosen_phrase tk.Variable, using whatever
         TTS engine is selected.
+
+        doing this with the selected value instead of the db value for the current
+        character was a bad idea.  sorry.
         """
         global ENGINE_OVERRIDE
         message = self.chosen_phrase.get()    
 
         log.debug(f"Speak: {message}")
-        # parent is the frame inside DetailSide
-        if use_secondary:
-            rank = 'secondary'
-            engine_name = self.detailside.secondary_tab.selected_engine.get()
-        else:
-            rank = 'primary'
-            engine_name = self.detailside.primary_tab.selected_engine.get()
-
+        
+        engine_name = models.get_engine(self.rank)
         ttsengine = engines.get_engine(engine_name)
         log.debug(f"Engine: {ttsengine}")
 
         effect_list = [
-            e.get_effect() for e in self.detailside.effect_list.effects
+            e.get_effect() for e in models.get_effects()
         ]
 
-        character = self.detailside.parent.get_selected_character()
+        character = models.get_selected_character()
         
         if message == self.ALL_PHRASES:
             with models.db() as session:
@@ -311,15 +337,16 @@ class WavfileMajorFrame(ttk.LabelFrame):
                         )
                     ).all()
         else:
-            phrase_id = self.phrase_id[self.options.current()]
-            with models.db() as session:
-                all_phrases = session.scalars(
-                        select(models.Phrases).where(
-                            models.Phrases.id == phrase_id
-                        )
-                    ).all()
+            all_phrases = [ models.get_or_create_phrase(
+                name=character.name,
+                category=character.category,
+                message=message
+            ), ]
 
-        for phrase in all_phrases:           
+        for phrase in all_phrases:
+            if phrase.text in ["", ]:
+                continue
+
             log.debug(f'{phrase=}')
 
             # this is an existing phrase
@@ -329,7 +356,8 @@ class WavfileMajorFrame(ttk.LabelFrame):
             cachefile = settings.get_cachefile(
                 character.name,
                 msg,
-                character.cat_str()
+                character.cat_str(),
+                rank=self.rank
             )
 
             sink = Distributor([
@@ -337,19 +365,17 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 WaveFile(cachefile + '.wav')
             ])
 
+            # make sure the destination directory exists
+            os.makedirs(os.path.dirname(cachefile), exist_ok=True)
+
             log.debug(f'effect_list: {effect_list}')
             log.debug(f"Creating ttsengine for {character.name}")
 
             # None because we aren't attaching any widgets
-            try:
-                rank = 'primary'
-                if use_secondary or ENGINE_OVERRIDE.get(character.engine, False):
-                    rank = 'secondary'
-                
-                ttsengine(None, rank, name=character.name, category=character.category).say(msg, effect_list, sink=sink)
-            except engines.USE_SECONDARY:
-                ENGINE_OVERRIDE[character.engine] = True
-                return self.say_it(use_secondary=True)
+            try:                
+                ttsengine(None, self.rank, name=character.name, category=character.category).say(msg, effect_list, sink=sink)
+            except USE_SECONDARY:
+                return
                     
             self.show_wave(cachefile + ".wav")
 
@@ -357,6 +383,8 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 cachefile + ".wav",
                 mp3filename=cachefile
             )
+            
+            self.play_btn["state"] = "normal"
             # unlink the wav file?
 
         if not all_phrases:
@@ -371,7 +399,7 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 msg = translator.translate(msg)
 
             try:
-                ttsengine(None, rank, character.name, character.category).say(msg, effect_list)
+                ttsengine(None, self.rank, character.name, character.category).say(msg, effect_list)
             except engines.DISABLE_ENGINES:
                 # I'm not even sure what we want to do.  The user clicked 'play' but
                 # we don't have any quota left for the selected engine.
@@ -379,91 +407,123 @@ class WavfileMajorFrame(ttk.LabelFrame):
                 tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
 
 
-class EngineSelection(ttk.Frame):
+class EngineSelectAndConfigure(ctk.CTkFrame):
     """
-    Frame for just the Text to speech labal and
-    a combobox to choose a different engine.  We are
-    tracing on the variable, not binding the widget.
+    Responsible for everything inside the "Engine" section
+    of the detailside.  There is one instance of this object per
+    layer of engine (primary, secondary, etc..)
     """
-
-    def __init__(self, parent, selected_engine, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-        self.selected_engine = selected_engine
-        
-        self.columnconfigure(0, minsize=125, uniform="ttsengine")
-        self.columnconfigure(1, weight=2, uniform="ttsengine")
-        ttk.Label(self, text="Text to Speech Engine", anchor="e").grid(
-            column=0, row=0, sticky="e"
-        )
-
-        base_tts = ttk.Combobox(self, textvariable=self.selected_engine)
-        base_tts["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
-        base_tts["state"] = "readonly"
-
-        base_tts.grid(
-            column=1, row=0, sticky="ew"
-        )
-
-
-class EngineSelectAndConfigure(ttk.LabelFrame):
-    """
-    two element stack, the first has the engine selection,
-    the second has all the parameters supported by the seleted engine
-    """
-
-    def __init__(self, rank, parent, *args, **kwargs):
-        kwargs['text'] = 'Engine'
-        super().__init__(parent, *args, **kwargs)
+    def __init__(self, rank, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        log.debug(f'EngineSelectAndConfigure.__init__({rank=}')
         self.rank = rank
-        self.parent = parent
-        
-        self.selected_engine = tk.StringVar()
         self.engine_parameters = None
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        #-- Row 0 --------------------------------------
+        speech_engine_selection = ctk.CTkFrame(self)
+
+        speech_engine_selection.columnconfigure(0, minsize=125, weight=0, uniform="ttsengine")
+        speech_engine_selection.columnconfigure(1, weight=2, uniform="ttsengine")
         
+        ctk.CTkLabel(speech_engine_selection, text="Speech Engine", anchor="e").grid(
+            row=0, column=0, sticky="e", padx=10
+        )
+
+        self.selected_engine = tk.StringVar()
         self.selected_engine.trace_add(
             "write", 
             self.change_selected_engine
         )
-        with models.Session(models.engine) as session:
-            self.load_character(session)
 
-        es = EngineSelection(self, self.selected_engine)
-        es.pack(side="top", fill="x", expand=True)
+        base_tts = ctk.CTkComboBox(
+            speech_engine_selection, 
+            variable=self.selected_engine,
+            state='readonly',
+            values=[e.cosmetic for e in engines.ENGINE_LIST]
+        )
+
+        base_tts.grid(
+            column=1, row=0, sticky="new"
+        )
+        speech_engine_selection.grid(
+            column=0, row=0, sticky="new"
+        )
+        #########################################
+        # end of row 0
+        
+        # gap for engine parameters.  load_character_engines will
+        # call set_engine which will fill this in.
+
+        # start of row 2
+        self.engine_parameters = None           
+        self.phrase_selector = WavfileMajorFrame(
+            self.rank, self
+        )
+        self.phrase_selector.grid(
+            columnspan=2, column=0, row=2, sticky="new"
+        )
+
+        with models.Session(models.engine) as session:
+            self.load_character_engines(session)      
 
     def set_engine(self, engine_name):
+        """
+        When a character is loading (detailside.load_character()) this is
+        called.  We can expect models.get_selected_character() to provide
+        a character object for whomever we are working on.
+        """
+        log.debug(f'[{self.rank}] ESC.set_engine({engine_name})')
+
         # this set() will trip change_selected_engine
         # which will in turn set a value for engine_parameters
         self.selected_engine.set(engine_name)  
 
     def change_selected_engine(self, a, b, c):
         """
-        the user changed the engine.
+        1. the user changed the engine for this character. 
+         
+        or 
+        
+        2. we swapped the character out from under this, then did an engine.set
+        which is triggered here to configure a totally different character.
+
+        Having this one function handle both those states is a poor design,
+        since only state #1 should write anything to the database.
         """
         # No problem.
         # clear the old engine configuration
         # show the selected engine configuration
         log.debug('EngineSelectAndConfigure.change_selected_engine()')
-
-        character = self.parent.get_selected_character()
+        
+        character = models.get_selected_character()
+        engine_name = self.selected_engine.get()
+        
         clear = False
 
         if character is None:
             return
 
         if self.rank == "primary":
-            if character.engine != self.selected_engine.get():
+            if character.engine != engine_name:
                 clear = True
-                log.debug(f'{self.rank} engine changing from {character.engine!r} to {self.selected_engine.get()!r}')
+                log.debug(f'{self.rank} engine changing from {character.engine!r} to {engine_name!r}')
         elif self.rank == "secondary":
-            if character.engine_secondary != self.selected_engine.get():
+            if character.engine_secondary != engine_name:
                 clear = True
-                log.debug(f'{self.rank} engine changing from {character.engine_secondary!r} to {self.selected_engine.get()!r}')
+                log.debug(f'{self.rank} engine changing from {character.engine_secondary!r} to {engine_name!r}')
 
         if self.engine_parameters:
-            self.engine_parameters.pack_forget()
+            log.debug('Clearing prior engine_parameters')
+            for w in self.engine_parameters.winfo_children():
+                w.destroy()
+            self.engine_parameters.destroy()
 
         # remove any existing engine level configuration
         if clear:
+            log.debug(f'Deleting BaseTTS for {character.id=} {self.rank=}')
             with models.db() as session:
                 rows = session.scalars(
                     select(models.BaseTTSConfig).where(
@@ -474,29 +534,29 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
 
                 for row in rows:
                     log.debug(f'Deleting {row}...')
-                    # if row.key in self.config_vars:
-                    #     # remove traces
-                    #     info = self.config_vars[row.key].trace_info()
-                    #     for i in info:
-                    #         self.config_vars[row.key].trace_remove(*i)
-                    #     del self.config_vars[row.key]
                     session.delete(row)
                 session.commit()
-
-        engine_cls = engines.get_engine(self.selected_engine.get())
-
-        if engine_cls:
-            self.engine_parameters = engine_cls(
-                self, 
-                rank=self.rank, 
-                category=character.category,
-                name=character.name
-            )
-            self.engine_parameters.pack(side="top", fill="x", expand=True)
         else:
+            log.debug(f'Not changing the {self.rank} character engines ({engine_name})')
+
+        models.set_engine(self.rank, engine_name)
+        engine_cls = engines.get_engine(engine_name)
+
+        if not engine_cls:
+            # that didn't work.. try the default engine
+            log.warning(f'Invalid Engine: {engine_name!r}.  Using default {settings.DEFAULT_ENGINE} engine.')
             engine_cls = engines.get_engine(settings.DEFAULT_ENGINE)
-            self.engine_parameters = engine_cls(self, self.rank, [character.category, character.name])
-            self.engine_parameters.pack(side="top", fill="x", expand=True)
+
+        self.engine_parameters = engine_cls(
+            self,
+            rank=self.rank, 
+            category=character.category,
+            name=character.name
+        )
+        self.engine_parameters.grid(column=0, row=1, columnspan=2, sticky='new')
+        
+        # update the phrase selector
+        self.phrase_selector.populate_phrases()
 
         self.save_character()
 
@@ -505,13 +565,8 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         save this engine selection to the database
         """
         log.debug('EngineSelectAndConfig.save_character()')
-        character = self.parent.get_selected_character()
-
-        #raw_name = self.selected_character
-        #if not raw_name:
-        #    log.warning('Name is required to save a character')
-        #    return
-        
+        character = models.get_selected_character()
+       
         category_str = models.category_int2str(character.category)
         name = character.name
 
@@ -529,33 +584,35 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         with models.Session(models.engine) as session:
             character = models.Character.get(name, category_str, session)
 
-            log.debug(
-                f'''Saving {self.rank} changed engine_string {character.name}
-                    {character.engine} {character.engine_secondary} {engine_string}
-                ''', 
-            )
-
+            change = False
             if self.rank == "primary" and character.engine != engine_string:
                 character.engine = engine_string
+                change = True
             elif self.rank == "secondary" and character.engine_secondary != engine_string:
                 character.engine_secondary = engine_string
+                change = True
 
-            session.commit()
+            if change:
+                log.debug(
+                    f'''Saving {self.rank} changed engine_string {character.name}
+                        {character.engine=} 
+                        {character.engine_secondary=} 
+                        {self.rank=}
+                        {engine_string=}
+                    ''', 
+                )
 
-    def load_character(self, session):
+                session.commit()
+
+    def load_character_engines(self, session):
         """
         We've set the character name, we want the rest of the metadata to
         populate.  Setting the engine name will domino the rest.
         """
-        selected_character = self.parent.get_selected_character()
-
-        character = models.get_character_from_rawname(
-            selected_character,
-            session=session
-        )
+        character = models.get_selected_character()
 
         if character is None:
-            log.error('Character %s does not exist.' % selected_character)
+            log.error('Character %s does not exist.' % character)
             return None
        
         if character.engine in ["", None]:
@@ -577,32 +634,31 @@ class EngineSelectAndConfigure(ttk.LabelFrame):
         return character
 
 
-class EffectList(ttk.LabelFrame):
+class EffectList(ctk.CTkFrame):
     def __init__(self, parent, *args, **kwargs):       
-        kwargs['text'] = "Effects",
         super().__init__(parent, *args, **kwargs)
 
-        self.effects = []
-        self.buffer = False
-        
         self.name = None
         self.category = None
+        self.next_effect_row = 0
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
         self.add_effect_combo = AddEffect(self, self)
-        self.add_effect_combo.pack(side="top", fill="x", expand=True)
+        self.add_effect_combo.grid(
+            column=0, row=0, sticky="new"
+        )
 
     def load_effects(self, name, category):
         log.debug('EffectList.load_effects()')
-        has_effects = False
 
         self.name = name
         self.category = category
 
         # teardown any effects already in place
-        while self.effects:
-            effect = self.effects.pop()
-            effect.clear_traces()
-            effect.pack_forget()
+        #for effect in models.get_effects():
+
+        models.wipe_all_effects()
 
         with models.db() as session:
             character = models.Character.get(name, category, session)
@@ -620,8 +676,8 @@ class EffectList(ttk.LabelFrame):
                 )
             ).all()
 
-            for effect in voice_effects:
-                has_effects = True
+            index = -1
+            for index, effect in enumerate(voice_effects):
                 log.debug(f'Adding effect {effect} found in the database')
                 effect_class = effects.EFFECTS[effect.effect_name]
 
@@ -631,29 +687,26 @@ class EffectList(ttk.LabelFrame):
                 )
 
                 # not very DRY
-                effect_config_frame = effect_class(
-                    self, 
-                    borderwidth=1,                     
-                    relief="groove",
-                    style="Effect.TFrame"
-                )
-                effect_config_frame.pack(side="top", fill="x", expand=True)
+                effect_config_frame = effect_class(self)
+                effect_config_frame.grid(row=index, column=0, sticky="new")
+                #pack(side="top", fill="x", expand=True)
                 effect_config_frame.effect_id.set(effect.id)
-                self.effects.append(effect_config_frame)
+                models.add_effect(effect_config_frame)
 
                 effect_config_frame.load()
-                        
-            if not has_effects:
-                self.buffer = ttk.Frame(self, width=1, height=1).pack(side="top")
-            else:
-                if self.buffer:
-                    self.buffer.pack_forget()
+            
+            self.next_effect_row = index + 1
 
             log.debug("Rebuilding add_effect")
-            self.add_effect_combo.pack_forget()
+            self.add_effect_combo.grid_forget()
             self.add_effect_combo = AddEffect(self, self)
-            self.add_effect_combo.pack(side="top", fill='x', expand=True)
-            
+            self.add_effect_combo.grid(
+                row=self.next_effect_row, 
+                column=0, 
+                sticky="new"
+            )
+
+
     def add_effect(self, effect_name):
         """
         Add the chosen effect to the list of effects the user can manipulate.
@@ -684,18 +737,23 @@ class EffectList(ttk.LabelFrame):
             # with an apply(Audio) that returns an Audio; An "Audio" is a pretty
             # simple object wrapping a np.ndarray of [-1 to 1] samples.
             #
-            ttk.Style().configure(
-                "EffectConfig.TFrame",
-                highlightbackground="black", 
-                relief="groove"
+            effect_config_frame = effect(self)
+            self.add_effect_combo.grid_forget()
+            effect_config_frame.grid(
+                column=0, 
+                row=self.next_effect_row, 
+                sticky="new"
             )
-            effect_config_frame = effect(
-                self, 
-                style="EffectConfig.TFrame",
-                borderwidth=1
+
+            self.next_effect_row += 1
+            log.debug("Rebuilding add_effect")
+            self.add_effect_combo.grid(
+                row=self.next_effect_row, 
+                column=0, 
+                sticky="new"
             )
-            effect_config_frame.pack(side="top", fill="x", expand=True)
-            self.effects.append(effect_config_frame)
+
+            models.add_effect(effect_config_frame)
 
             with models.Session(models.engine) as session:
                 # retrieve this character
@@ -710,10 +768,10 @@ class EffectList(ttk.LabelFrame):
                 session.commit()
                 session.refresh(effect)
 
-            for key in effect_config_frame.parameters:
-                # save the current effect configuration
-                tkvar = getattr(effect_config_frame, key)
-                value = tkvar.get()
+            for key in effect_config_frame.tkvars:
+                # save the current effect configuration, these will presumably
+                # just be the defaults.
+                value = effect_config_frame.tkvars[key].get()
 
                 new_setting = models.EffectSetting(
                     effect_id=effect.id,
@@ -723,13 +781,14 @@ class EffectList(ttk.LabelFrame):
                 session.add(new_setting)
             session.commit()
             
-            effect_config_frame.effect_id.set(effect.id)      
+            effect_config_frame.effect_id.set(effect.id)
+            effect_config_frame.load()
     
     def remove_effect(self, effect_obj):
         log.debug(f'Removing effect {effect_obj}')
         
         # remove it from the effects list
-        self.effects.remove(effect_obj)
+        models.remove_effect(effect_obj)
         effect_id = effect_obj.effect_id.get()
         # remove it from the database
         with models.Session(models.engine) as session:
@@ -749,8 +808,8 @@ class EffectList(ttk.LabelFrame):
             session.commit()
 
         # forget the widgets for this object
-        effect_obj.pack_forget()
-        self.pack()
+        effect_obj.grid_forget()
+        # self.grid()
 
 
 class AddEffect(ttk.Frame):
@@ -758,7 +817,7 @@ class AddEffect(ttk.Frame):
     # hell buddy.  This is the shit that causing errors when people
     # use an app at different resolutions.  This will center at one spot
     # and all the other entries will be different.
-    add_an_effect = "⪡  Add an Effect  ⪢"
+    ADD_AN_EFFECT = "⪡  Add an Effect  ⪢"
 
     def __init__(self, parent, effect_list, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -768,7 +827,7 @@ class AddEffect(ttk.Frame):
         # this combobox.  That only gives us the scope of what can see this
         # selected_effect to either read the current value or trace_add to 
         # trigger whenever selected_effect is written to.       
-        self.selected_effect = tk.StringVar(value=self.add_an_effect)
+        self.selected_effect = tk.StringVar(value=self.ADD_AN_EFFECT)
         self.selected_effect.trace_add("write", self.add_effect)
 
         effect_combobox = ttk.Combobox(
@@ -780,7 +839,7 @@ class AddEffect(ttk.Frame):
         effect_combobox["state"] = "readonly"
 
         #  <-[XXX    ]
-        effect_combobox.pack(side="left", fill="x", expand=True)
+        effect_combobox.pack(side="top", fill="x", expand=True)
 
         #  [XXX]->
         # ttk.Button(self, text="Add Effect", command=self.add_effect).pack(side="right")
@@ -795,10 +854,57 @@ class AddEffect(ttk.Frame):
         self.effect_list.add_effect(effect_name)
                
         # reset the UI back to the "add an effect" prompt
-        self.selected_effect.set(self.add_an_effect)
+        self.selected_effect.set(self.ADD_AN_EFFECT)
 
 
-class DetailSide(ttk.Frame):
+class BiographyFrame(ctk.CTkFrame):
+    def __init__(
+            self, 
+            parent, 
+            character_name, 
+            group_name, 
+            character_description, 
+            *args, 
+            **kwargs
+        ):
+        super().__init__(parent, *args, **kwargs)
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure((0, 1), weight=0)
+        self.rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            self,
+            textvariable=character_name,
+            anchor="center",
+            font=ctk.CTkFont(
+                size=22,
+                weight="bold"
+            )
+        ).grid(column=0, row=0, sticky="ew")
+
+        # which group is this npc a member of.  this will
+        # frequently not have a value
+        ctk.CTkLabel(
+            self,
+            textvariable=group_name,
+            wraplength=220,
+            anchor="n",
+            justify="center"
+        ).grid(column=0, row=1, sticky="ew")
+
+        # description of the character (if there is one)
+        ctk.CTkLabel(
+            self,
+            textvariable=character_description,
+            wraplength=350,
+            anchor="nw",
+            justify="left"
+        ).grid(column=0, row=2, sticky="nsew")
+
+
+
+class DetailSide(ctk.CTkScrollableFrame):
     """
     Primary frame for the "detail" side of the application.
     """
@@ -807,119 +913,78 @@ class DetailSide(ttk.Frame):
 
         self.parent = parent
         self.listside = None
-        self.trashcan = Feather("trash-2", size=24)
-
-        self.vsb = tk.Scrollbar(self, orient="vertical")
-        self.vsb.pack(side="right", fill="y", expand=False)
-
-        self.canvas = tk.Canvas(
-            self, 
-            borderwidth=0, 
-            background="#ffffff",
-            yscrollcommand=self.vsb.set
+        self.trashcan = Feather(
+            'trash-2',
+            size=22
         )
-        self.canvas.pack(side="left", fill="both", expand=True)
 
-        # drag the scrollbar, see the canvas slide
-        self.vsb.config(command=self.canvas.yview)
-
-        self.canvas.xview_moveto(0)
-        self.canvas.yview_moveto(0)
-
-        # this is the scrollable thing
-        self.frame = ttk.Frame(self.canvas)
-        self.frame_id = self.canvas.create_window(
-            (0, 0), window=self.frame, anchor="nw",
-            tags="self.frame"
-        )
-        # if you pack it, it won't scroll.
-        # self.frame.pack(side='top')
-
-        # TODO: get rid of this shite
-        self.frame.get_selected_character = parent.get_selected_character
-
-        self.frame.bind("<Configure>", self.onFrameConfigure)
-        self.canvas.bind("<Configure>", self.onCanvasConfigure)
-        ###
-
-        name_frame = ttk.Frame(self.frame)
+        # biography
+        self.rowconfigure(0, weight=0)
+        
+        # enginenotebook
+        self.rowconfigure(1, weight=1)
+        self.columnconfigure(0, weight=1)
 
         self.character_name = tk.StringVar()
-        ttk.Label(
-            name_frame,
-            textvariable=self.character_name,
-            anchor="center",
-            font=font.Font(
-                size=24,
-                weight="bold"
-            )
-        ).pack(side="left", fill="x", expand=True)
+        self.group_name = tk.StringVar()
+        self.character_description = tk.StringVar()
 
-        style = ttk.Style()
-        style.configure(
-            "RemoveCharacter.TButton",
-            width=1
+        biography = BiographyFrame(
+            self, 
+            character_name=self.character_name,
+            group_name=self.group_name,
+            character_description=self.character_description
         )
 
-        ttk.Button(
-            name_frame,
-            image=self.trashcan.icon,
-            style="RemoveCharacter.TButton",
+        ctk.CTkButton(
+            biography,
+            image=self.trashcan.CTkImage,
+            text="",
+            width=40,
             command=self.remove_character
         ).place(relx=1, rely=0, anchor='ne')
 
-        name_frame.pack(side="top", fill="x", expand=True)
+        biography.grid(column=0, row=0, sticky='nsew')
 
-        self.group_name = tk.StringVar()
-        # which group is this npc a member of.  this will
-        # frequently not have a value
-        ttk.Label(
-            self.frame,
-            textvariable=self.group_name,
-            wraplength=220,
-            anchor="n",
-            justify="center"
-        ).pack(side="top", fill="x")
-
-        self.character_description = tk.StringVar()
-        # description of the character (if there is one)
-        ttk.Label(
-            self.frame,
-            textvariable=self.character_description,
-            wraplength=350,
-            anchor="nw",
-            justify="left"
-        ).pack(side="top", fill="x")
-
-        self.phrase_selector = WavfileMajorFrame(
-            self.frame, self,
+        engine_notebook = ctk.CTkTabview(
+            self,
+            anchor="nw"
         )
-        self.phrase_selector.pack(side="top", fill="x", expand=True)
+        engine_notebook.grid_rowconfigure(0, weight=1)
+        engine_notebook.grid_rowconfigure(1, weight=1)
+        engine_notebook.grid_columnconfigure(0, weight=1)
 
-        # self.presetSelect = PresetSelector(
-        #     self.frame, self, self.selected_character
-        # )
-        # self.presetSelect.pack(side="top", fill="x", expand=True)
+        primary = engine_notebook.add('Primary')
+        primary.grid_rowconfigure(0, weight=1)
+        primary.grid_columnconfigure(0, weight=1)
 
-        engine_notebook = ttk.Notebook(self.frame)
+        secondary = engine_notebook.add('Secondary')
+        secondary.grid_rowconfigure(0, weight=1)
+        secondary.grid_columnconfigure(0, weight=1)
+        
+        effects = engine_notebook.add('Effects')
+        effects.grid_rowconfigure(0, weight=1)
+        effects.grid_columnconfigure(0, weight=1)
+
         self.primary_tab = EngineSelectAndConfigure(
-            'primary', self.frame, 
+            'primary', primary, 
         )
+        self.primary_tab.grid(column=0, row=0, sticky="nsew")
+
         self.secondary_tab = EngineSelectAndConfigure(
-            'secondary', self.frame, 
+            'secondary', secondary, 
         )
-        engine_notebook.add(self.primary_tab, text='Primary')
-        engine_notebook.add(self.secondary_tab, text='Secondary')
+        self.secondary_tab.grid(column=0, row=0, sticky="nsew")
 
-        engine_notebook.pack(side="top", fill="x", expand=True)
+        # list of effects already configured
+        self.effect_list = EffectList(effects)
+        self.effect_list.grid(column=0, row=0, sticky="nsew")
 
-        # list of effects already configured, but .. we don't
-        # actually _have_ a character yet, so this is kind of stupid.
-        self.effect_list = EffectList(self.frame, name=None, category=None)
-        self.effect_list.pack(side="top", fill="x", expand=True)
+        engine_notebook.grid(column=0, row=1, sticky="nsew")
+        #.pack(side="top", fill="x", expand=True)
 
-        self.bind('<Enter>', self._bound_to_mousewheel)
-        self.bind('<Leave>', self._unbound_to_mousewheel)
+        #self.bind('<Enter>', self._bound_to_mousewheel)
+        #self.bind('<Leave>', self._unbound_to_mousewheel)
 
     def selected_category_and_name(self):
         """
@@ -927,39 +992,39 @@ class DetailSide(ttk.Frame):
         """
         return self.listside.selected_category_and_name()
 
-    def _bound_to_mousewheel(self, event):
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+    # def _bound_to_mousewheel(self, event):
+    #     self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
 
-    def _unbound_to_mousewheel(self, event):
-        self.canvas.unbind_all("<MouseWheel>")
+    # def _unbound_to_mousewheel(self, event):
+    #     self.canvas.unbind_all("<MouseWheel>")
 
-    def _on_mousewheel(self, event):
-        top, bottom = self.vsb.get()
-        if top > 0.0 or bottom < 1.0:
-            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    # def _on_mousewheel(self, event):
+    #     top, bottom = self.vsb.get()
+    #     if top > 0.0 or bottom < 1.0:
+    #         self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
     def remove_character(self):
         if self.listside:
             self.listside.delete_selected_character()
 
-    def onFrameConfigure(self, event):
-        """Reset the scroll region to encompass the inner frame"""
-        # Update the scrollbars to match the size of the inner frame.
-        size = (self.frame.winfo_reqwidth(), self.frame.winfo_reqheight())
-        self.canvas.config(scrollregion="0 0 %s %s" % size)
-        if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
-            # Update the canvas's width to fit the inner frame.
-            self.canvas.config(width=self.frame.winfo_reqwidth())        
+    # def onFrameConfigure(self, event):
+    #     """Reset the scroll region to encompass the inner frame"""
+    #     # Update the scrollbars to match the size of the inner frame.
+    #     size = (self.frame.winfo_reqwidth(), self.frame.winfo_reqheight())
+    #     self.canvas.config(scrollregion="0 0 %s %s" % size)
+    #     if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
+    #         # Update the canvas's width to fit the inner frame.
+    #         self.canvas.config(width=self.frame.winfo_reqwidth())        
 
-        # self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+    #     # self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
-    def onCanvasConfigure(self, event):
-        if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
-            # Update the frame width to fill the canvas.
-            self.canvas.itemconfigure(
-                self.frame_id, 
-                width=self.canvas.winfo_width()
-            )
+    # def onCanvasConfigure(self, event):
+    #     if self.frame.winfo_reqwidth() != self.canvas.winfo_width():
+    #         # Update the frame width to fill the canvas.
+    #         self.canvas.itemconfigure(
+    #             self.frame_id, 
+    #             width=self.canvas.winfo_width()
+    #         )
 
     def load_character(self, category, name):
         """
@@ -973,8 +1038,11 @@ class DetailSide(ttk.Frame):
         log.debug(f'DetailSide.load_character({name})')
            
         # TODO: "choose" and highlight this character on the listside
-
         group_name = ""
+
+        models.set_selected_character(
+            name, category
+        )
 
         self.character_name.set(name)
 
@@ -990,7 +1058,7 @@ class DetailSide(ttk.Frame):
             return
         else:
             self.character_description.set("")
-            self.group_name.set("")
+            self.group_name.set("Unaffiliated")
 
         # load the character 
         with models.db() as session:
@@ -1000,16 +1068,12 @@ class DetailSide(ttk.Frame):
                 character.group_name = group_name
                 session.commit()
 
-        # update the phrase selector
-        self.phrase_selector.populate_phrases()
-
         # set the engines itself
         # log.debug('b character: %s | %s | %s', character, character.engine, character.engine_secondary)
         self.primary_tab.set_engine(character.engine)
         self.secondary_tab.set_engine(character.engine_secondary)
 
         # set engine and parameters
-        # log.debug(f'{dir(self.primary_tab)=}')
         if self.primary_tab.engine_parameters:
             self.primary_tab.engine_parameters.load_character(category, name)
         
@@ -1026,8 +1090,8 @@ class DetailSide(ttk.Frame):
         # self.presetSelect.reset()
 
         # scroll to the top
-        self.vsb.set(0, 1)
-        self.canvas.yview_moveto(0)
+        # self.vsb.set(0, 1)
+        # self.canvas.yview_moveto(0)
 
 
 # class PresetSelector(ttk.Frame):
@@ -1118,31 +1182,47 @@ class Character:
         cursor.close()
         return phrases
 
-class ListSide(ttk.Frame):
+class ListSide(ctk.CTkFrame):
     def __init__(self, parent, detailside, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.detailside = detailside
         #wait, what?
         self.detailside.listside = self
 
-        self.list_filter = tk.StringVar(value="")
-        listfilter = ttk.Entry(self, width=40, textvariable=self.list_filter)
-        listfilter.pack(side="top", fill=tk.X)
-        self.list_filter.trace_add('write', self.apply_list_filter)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=0)
+        self.rowconfigure(1, weight=1)
+        self.rowconfigure(2, weight=0)
 
-        listarea = ttk.Frame(self)
-        columns = ('name', )
-        self.character_tree = ttk.Treeview(
-            listarea, selectmode="browse", columns=columns, show=''
+        self.list_filter = tk.StringVar(value="")
+        listfilter = ctk.CTkEntry(
+            self,
+            width=40,
+            textvariable=self.list_filter
+        )
+        listfilter.grid(
+            column=0, 
+            row=0, 
+            columnspan=2, 
+            sticky="ew"
         )
 
+        self.list_filter.trace_add('write', self.apply_list_filter)
+
+        #listarea = ctk.CTkFrame(self)
+        columns = ('name', )
+        self.character_tree = ttk.Treeview(
+            self,  # listarea, 
+            selectmode="browse", 
+            columns=columns, 
+            show=''
+        )
         self.character_tree.column('name', width=200, stretch=tk.YES)       
         self.refresh_character_list()
-        self.character_tree.pack(side="left", expand=True, fill=tk.BOTH)
+        self.character_tree.grid(column=0, row=1, sticky='nsew')
 
-        vsb = tk.Scrollbar(
-            listarea,
-            orient='vertical',
+        vsb = ctk.CTkScrollbar(
+            self,
             command=self.character_tree.yview
         )
         self.character_tree.configure(yscrollcommand=vsb.set)
@@ -1150,19 +1230,14 @@ class ListSide(ttk.Frame):
         self.bind('<Enter>', self._bound_to_mousewheel)
         self.bind('<Leave>', self._unbound_to_mousewheel)
 
-        vsb.pack(side='right', fill=tk.Y)
-        listarea.pack(side="top", expand=True, fill=tk.BOTH)
+        vsb.grid(column=2, row=1, sticky='ns')
 
-        action_frame = ttk.Frame(self)
-        ttk.Button(
-            action_frame,
+        ctk.CTkButton(
+            self,
             text="Refresh",
             command=self.refresh_character_list
-        ).pack(
-            side="right"
-        )
+        ).grid(column=0, columnspan=3, row=2, sticky='e')
 
-        action_frame.pack(side="top", expand=False, fill=tk.X)
         self.character_tree.bind("<<TreeviewSelect>>", self.character_selected)
 
     def _bound_to_mousewheel(self, event):
@@ -1196,6 +1271,7 @@ class ListSide(ttk.Frame):
 
     def character_selected(self, event=None):
         category, name, item = self.selected_category_and_name()
+
         if name is None:
             return
 
@@ -1406,95 +1482,6 @@ class ListSide(ttk.Frame):
        
         return item
         
-
-class ChatterService:
-    def start(self, event_queue):
-        self.speaking_queue = queue.Queue()
-
-        npc_chatter.TightTTS(self.speaking_queue, event_queue)
-        self.speaking_queue.put((None, "Attaching to most recent log...", 'system'))
-
-        logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
-        #logdir = "g:/CoH/homecoming/accounts/VVonder/Logs"
-        badges = True
-        team = True
-        npc = True
-
-        ls = npc_chatter.LogStream(
-            logdir, self.speaking_queue, event_queue, badges, npc, team
-        )
-        while True:
-            ls.tail()
-
-
-class Chatter(ttk.Frame):
-    attach_label = 'Attach to Log'
-    detach_label = "Detach from Log"
-
-    def __init__(self, parent, event_queue, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
-        self.event_queue = event_queue
-        self.button_text = tk.StringVar(value=self.attach_label)
-        self.attached = False
-        self.hero = None
-        
-        self.logdir = tk.StringVar(
-            value=settings.get_config_key('logdir', default='')
-        )
-        self.logdir.trace_add('write', self.save_logdir)
-
-        ttk.Button(
-            self, 
-            textvariable=self.button_text, 
-            command=self.attach_chatter
-        ).pack(
-            side="left"
-        )
-        tk.Entry(
-            self, 
-            textvariable=self.logdir
-        ).pack(
-            side="left",
-            fill='x',
-            expand=True
-        )
-         
-        ttk.Button(
-            self,
-            text="Set Log Dir",
-            command=self.ask_directory
-        ).pack(side="left")
-        
-        self.cs = ChatterService()
-
-    def save_logdir(self, *args):
-        logdir = self.logdir.get()
-        log.debug(f'Persisting setting logdir={logdir}')
-        settings.set_config_key('logdir', logdir)
-
-    def ask_directory(self):
-        dirname = tk.filedialog.askdirectory()
-        self.logdir.set(dirname)
-
-    def attach_chatter(self):
-        """
-        Not sure exactly how I want to do this.  I think the best long term
-        option is to just launch a process and be done with it.
-        """
-        if self.attached:
-            # we are already attached, I guess we want to stop.
-            self.p.terminate()
-            self.button_text.set(self.attach_label)
-            self.attached = False
-            log.debug('Detached')
-        else:
-            # we are not attached, lets do that.
-            self.attached = True
-            self.button_text.set(self.detach_label)
-            self.p = multiprocessing.Process(target=self.cs.start, args=(self.event_queue, ))
-            self.p.start()
-            log.debug('Attached')
-
 
 # def main():
 #     root = tk.Tk()

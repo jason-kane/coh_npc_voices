@@ -1,6 +1,5 @@
 import logging
 import inspect
-import sys
 import json
 import os
 import hashlib
@@ -42,12 +41,9 @@ LANGUAGES = {
 PERSIST_PLAYER_CHAT = True
 
 REPLAY = False
-
-logging.basicConfig(
-    level=LOGLEVEL,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+XP_IN_REPLAY = False
+SPEECH_IN_REPLAY = False
+SESSION_CLEAR_IN_REPLAY = False
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +55,7 @@ def how_did_i_get_here():
 
 
 CACHE_CONFIG = {}
-CACHE_CONFIG_MTIME = None
+CACHE_CONFIG_MTIME = {}
 
 
 def get_config(cf="config.json"):
@@ -68,11 +64,11 @@ def get_config(cf="config.json"):
 
     if os.path.exists(cf):
         mtime = os.path.getmtime(cf)
-        if CACHE_CONFIG_MTIME is None or mtime != CACHE_CONFIG_MTIME:
+        if CACHE_CONFIG_MTIME.get(cf) is None or mtime != CACHE_CONFIG_MTIME[cf]:
             with open(cf) as h:
                 config = json.loads(h.read())
                 CACHE_CONFIG[cf] = config
-                CACHE_CONFIG_MTIME = mtime
+                CACHE_CONFIG_MTIME[cf] = mtime
 
     if cf in CACHE_CONFIG:
         return CACHE_CONFIG[cf]
@@ -93,7 +89,7 @@ def save_config(config, cf="config.json"):
     with open(cf, "w") as h:
         h.write(json.dumps(config, indent=4, sort_keys=True))
         CACHE_CONFIG[cf] = config
-        CACHE_CONFIG_MTIME = os.path.getmtime(cf)
+        CACHE_CONFIG_MTIME[cf] = os.path.getmtime(cf)
 
 
 def get_config_key(key, default=None, cf="config.json"):
@@ -108,6 +104,7 @@ def get_alias(group):
 def get_preset(group):
     return get_config_key(key=group, default={}, cf="presets.json")
 
+
 def get_language_code():
     """
     Returns the two character language code for feeding the translator
@@ -115,13 +112,18 @@ def get_language_code():
     language = get_config_key('language', default="English")
     return LANGUAGES[language][0]
 
+def get_language_code_regex():
+    code = get_language_code()
+    return f"{code}-.*"
+
 def get_voice_language_codes():
     """
     Returns a list of language codes that would be acceptable for allow-list
     filtering voices in any engine.
     """
     language = get_config_key('language', default="English")
-    return LANGUAGES[language][1]
+    return LANGUAGES[language][1]  
+
 
 CACHE_DIR = "cache"
 
@@ -138,20 +140,21 @@ def clean_customer_name(in_name):
     return in_name, clean_name
 
 
-def cache_filename(name, message):
+def cache_filename(name, message, rank):
     clean_message = re.sub(r'[^\w]', '', message)
     clean_message = hashlib.sha256(message.encode()).hexdigest()[:5] + f"_{clean_message[:10]}"
+    clean_message += rank[0]
     return clean_message + ".mp3"
 
 
-def get_cachefile(name, message, category):
+def get_cachefile(name, message, category, rank):
     name, clean_name = clean_customer_name(name)
-    log.debug(f"{name=} {clean_name=} {message=}")
+    log.debug(f"{name=} {clean_name=} {message=} {rank=}")
 
     # ie: abcde_timetodan.mp3
     # this should be unique to this messags, it's only
     # a 5 character hash, collisions are possible.
-    filename = cache_filename(name, message)
+    filename = cache_filename(name, message, rank)
 
     # do we already have this NPC/Message rendered to an audio file?
     # first we need the path the file ought to have

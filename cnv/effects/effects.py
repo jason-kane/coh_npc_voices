@@ -1,19 +1,19 @@
 import logging
 import tkinter as tk
-from tkinter import font, ttk
+import customtkinter as ctk
 
 import cnv.database.models as models
 import numpy as np
 import pedalboard
 import voicebox
 from sqlalchemy import select
-from tkfeather import Feather
+from cnv.lib.gui import Feather
 
 log = logging.getLogger(__name__)
 
 WRAPLENGTH=350
 
-class LScale(ttk.Frame):
+class LScale(ctk.CTkFrame):
     """
     Labeled choose-a-number
     """
@@ -27,49 +27,71 @@ class LScale(ttk.Frame):
         from_,
         to,
         _type=float,
-        *args, digits=None, resolution=0, **kwargs
+        *args, 
+        digits=None, 
+        resolution=0, 
+        **kwargs
     ):
         super().__init__(parent, *args, **kwargs)
         self.columnconfigure(0, minsize=125, uniform="effect")
         self.columnconfigure(1, weight=2, uniform="effect")
         
-        if _type == int:
-            variable = tk.IntVar(
+        if isinstance(_type, int) or digits==0:
+            parent.tkvars[pname] = tk.IntVar(
                 name=f"{parent.label.lower()}_{pname}",
                 value=default
             )
         else:
-            variable = tk.DoubleVar(
+            parent.tkvars[pname] = tk.DoubleVar(
                 name=f"{parent.label.lower()}_{pname}",
                 value=default
             )
 
+        parent.display_tkvars[pname] = tk.StringVar(
+            name=f"{parent.label.lower()}_{pname}_display",
+            value=str(default)
+        )
+
+        if digits is not None:
+            parent.digits[pname] = digits
+
         # label for the setting
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text=label,
             anchor="e",
             justify='right'
-        ).grid(row=0, column=0, sticky='e')
+        ).grid(row=0, column=0, sticky='e', padx=5)
 
-        # widget for viewing/changing the value
-        tk.Scale(
+        # TODO:
+        # mark ticks/steps?
+        if resolution:
+            steps = (to - from_) / resolution
+        else:
+            steps = 20
+        
+        if steps > 100:
+            highest_recommended = (to - from_) / 100
+            log.warning(f'[{parent.label}] Resolution {resolution} for {label} is too detailed.  Maybe {highest_recommended}?')
+
+        # widget for changing the value
+        ctk.CTkSlider(
             self,
+            variable=parent.tkvars[pname],
             from_=from_,
             to=to,
-            orient='horizontal',
-            variable=variable,
-            *args,
-            digits=digits,
-            resolution=resolution,
-            **kwargs
+            orientation='horizontal',
+            number_of_steps=steps
         ).grid(row=0, column=1, sticky='ew')
 
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)
+        # label for the current value
+        ctk.CTkLabel(
+            self,
+            textvariable=parent.display_tkvars[pname]
+        ).grid(row=0, column=2, sticky='e')
 
 
-class LCombo(ttk.Frame):
+class LCombo(ctk.CTkFrame):
     """
     Combo widget to select a string from a set of possible values
     """
@@ -84,10 +106,12 @@ class LCombo(ttk.Frame):
     ): 
         super().__init__(parent, *args, **kwargs)
 
-        variable = tk.StringVar(value=default)
+        parent.tkvars[pname] = tk.StringVar(value=default)
+        self.columnconfigure(0, minsize=125, uniform="effect")
+        self.columnconfigure(1, weight=2, uniform="effect")
 
         # label for the setting
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text=label,
             anchor="e",
@@ -95,20 +119,17 @@ class LCombo(ttk.Frame):
         ).grid(row=0, column=0, sticky='e')
 
         # widget for viewing/changing the value
-        options = ttk.Combobox(
+        options = ctk.CTkComboBox(
             self, 
-            textvariable=variable
+            values=list(choices),
+            variable=parent.tkvars[pname],
+            state='readonly'
         )
-        options['values'] = list(choices)
-        options['state'] = 'readonly'
             
         options.grid(row=0, column=1, sticky='ew')
 
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)        
 
-
-class LBoolean(ttk.Frame):
+class LBoolean(ctk.CTkFrame):
     def __init__(
         self,
         parent,
@@ -120,13 +141,16 @@ class LBoolean(ttk.Frame):
     ):
         super().__init__(parent, *args, **kwargs)
 
-        variable = tk.BooleanVar(
+        self.columnconfigure(0, minsize=125, uniform="effect")
+        self.columnconfigure(1, weight=2, uniform="effect")
+
+        parent.tkvars[pname] = tk.BooleanVar(
             name=f"{pname}",
             value=default
         )
 
         # label for the setting
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text=label,
             anchor="e",
@@ -134,61 +158,71 @@ class LBoolean(ttk.Frame):
         ).grid(row=0, column=0, sticky='e')
 
         # widget for viewing/changing the value
-        ttk.Checkbutton(
+        ctk.CTkSwitch(
             self, 
             text="",
-            variable=variable,
+            variable=parent.tkvars[pname],
             onvalue=True,
             offvalue=False
-        ).grid(row=0, column=0, sticky='ew')
-
-        setattr(parent, pname, variable)
-        parent.parameters.append(pname)  
+        ).grid(row=0, column=1, sticky='ew')
 
 
-class EffectParameterEditor(ttk.Frame):
+class EffectParameterEditor(ctk.CTkFrame):
     label = "Label"
     desc = "Description of effect"
 
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.parent = parent  # parent is the effectlist
+        # parent is the effectlist, it allows us to remove ourselves.
+        self.parent = parent  
+        
+        # database id for this unique, configured effect (why is this a tk.?)
         self.effect_id = tk.IntVar()
-        self.parameters = []
-        self.traces = {}
-        self.trashcan = Feather("trash-2", size=24)
+               
+        # tk.var for each parameter
+        self.tkvars = {}
 
-        topbar = ttk.Frame(self)
+        # tk.var for how the value of each parameter should be displayed
+        self.display_tkvars = {}
+
+        # storage bucket for tkVar traces for each parameter
+        self.traces = {}
+
+        # how many digits should we display after the decimal point?        
+        self.digits = {}
+
+        # delete icon
+        self.trashcan = Feather(
+            'trash-2',
+            size=22
+        )
+
+        topbar = ctk.CTkFrame(self)
         # the name of this effect
-        ttk.Label(
+        ctk.CTkLabel(
             topbar,
-            text=self.label.title(),
+            text=self.label.title() + " ",
             anchor="n",
-            font=font.Font(
-                size=18,
-                weight="bold"
+            font=ctk.CTkFont(
+                size=24,
+                # weight="bold",
+                slant='italic'
             )
         ).pack(side='left', fill='x', expand=True)
     
-        ttk.Style().configure(
-            "CloseFrame.TButton",
-            anchor="center",
-            width=1,
-            height=1
-        )
-
         # delete button
-        ttk.Button(
+        ctk.CTkButton(
             topbar,
-            image=self.trashcan.icon,
-            style="CloseFrame.TButton",
+            image=self.trashcan.CTkImage,
+            text="",
+            width=40,
             command=self.remove_effect
         ).place(relx=1, rely=0, anchor='ne')
 
         topbar.pack(side="top", fill='x', expand=True)
 
         # the descriptive text for this effect
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text=self.desc,
             anchor="n",
@@ -221,7 +255,7 @@ class EffectParameterEditor(ttk.Frame):
         persist that change.  Make the database reflect
         the UI.
         """
-        log.debug(f'reconfig triggered by {varname}/{lindex}/{operation}')
+        log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
 
         with models.Session(models.engine) as session:
@@ -233,12 +267,19 @@ class EffectParameterEditor(ttk.Frame):
                 )
             ).all()
 
-            log.debug(f'Sync to db {effect_settings}')
             found = set()
             for effect_setting in effect_settings:
+                log.info(f'Sync to db {effect_setting}')
                 found.add(effect_setting.key)
                 try:
-                    new_value = str(getattr(self, effect_setting.key).get())
+                    new_value = self.tkvars[effect_setting.key].get()
+                    
+                    if effect_setting.key in self.digits:
+                        formatted_value = self.cosmetic(effect_setting.key, new_value)
+                        log.info(f'Setting widget to {formatted_value} (!= {new_value})')
+                        self.display_tkvars[effect_setting.key].set(formatted_value)
+                    else:
+                        log.debug(f'{effect_setting.key} not in digits {self.digits}')
                 except AttributeError:
                     log.error(f'Invalid configuration.  Cannot set {effect_setting.key} on a {self} effect.')
                     continue
@@ -270,6 +311,11 @@ class EffectParameterEditor(ttk.Frame):
                 if change:
                     session.commit()
 
+    def cosmetic(self, key, value):
+        digits = self.digits.get(key, None)
+        formatstr = "{:.%sf}" % digits
+        formatted_value = formatstr.format(float(value))
+        return formatted_value
 
     def load(self):
         """
@@ -299,11 +345,14 @@ class EffectParameterEditor(ttk.Frame):
 
                 found.add(setting.key)
 
-                tkvar = getattr(self, setting.key, None)
+                tkvar = self.tkvars.get(setting.key, None)
 
                 if setting.key not in self.traces:
                     if tkvar:
                         tkvar.set(setting.value)
+                        if setting.key in self.digits:
+                            formatted_string = self.cosmetic(setting.key, setting.value)
+                            self.display_tkvars[setting.key].set(formatted_string)
                     else:
                         log.error(
                             f'Invalid configuration.  '
@@ -329,7 +378,7 @@ class BandpassFilter(EffectParameterEditor):
         LScale(
             self,
             pname='low_frequency',
-            label='Low Frequency', 
+            label='Low Frequency (Hz)', 
             desc="Filter frequency in Hz",
             default=100,
             from_=100,
@@ -340,7 +389,7 @@ class BandpassFilter(EffectParameterEditor):
         LScale(
             self,
             pname="high_frequency",
-            label='High Frequency', 
+            label='High Frequency (Hz)', 
             desc="Filter frequency in Hz",
             default=0,
             from_=0,
@@ -361,7 +410,7 @@ class BandpassFilter(EffectParameterEditor):
         LCombo(
             self,
             pname="type_",
-            label='Type',
+            label='IIR Filter Type',
             desc='type of IIR filter to design',
             default="butter",
             choices=IIR_FILTERS,
@@ -375,11 +424,14 @@ class BandpassFilter(EffectParameterEditor):
         log.debug('get_effect()')
         effect = voicebox.effects.Filter.build(
             btype='bandpass',
-            freq=(self.low_frequency.get(), self.high_frequency.get()),
-            order=self.order.get(),
+            freq=(
+                self.tkvars['low_frequency'].get(), 
+                self.tkvars['high_frequency'].get()
+            ),
+            order=self.tkvars['order'].get(),
             rp=None,
             rs=None,
-            ftype=self.type_.get()
+            ftype=self.tkvars['type_'].get()
         )
         return effect
 
@@ -445,7 +497,10 @@ class BandstopFilter(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.Filter.build(
             btype='bandstop',
-            freq=(self.low_frequency.get(), self.high_frequency.get()),
+            freq=(
+                self.tkvars['low_frequency'].get(), 
+                self.tkvars['high_frequency'].get()
+            ),
             order=self.order.get(),
             rp=None,
             rs=None,
@@ -503,11 +558,11 @@ class LowpassFilter(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.Filter.build(
             btype='lowpass',
-            freq=self.frequency.get(),
-            order=self.order.get(),
+            freq=self.tkvars['frequency'].get(),
+            order=self.tkvars['order'].get(),
             rp=None,
             rs=None,
-            ftype=self.type_.get()
+            ftype=self.tkvars['type_'].get()
         )
         return effect
 
@@ -562,11 +617,11 @@ class HighpassFilter(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.Filter.build(
             btype='highpass',
-            freq=self.frequency.get(),
-            order=self.order.get(),
+            freq=self.tkvars['frequency'].get(),
+            order=self.tkvars['order'].get(),
             rp=None,
             rs=None,
-            ftype=self.type_.get()
+            ftype=self.tkvars['type_'].get()
         )
         return effect
 
@@ -616,9 +671,9 @@ class Glitch(EffectParameterEditor):
     def get_effect(self):
         log.debug('get_effect()')
         effect = voicebox.effects.Glitch(
-            chunk_time=self.chunk_time.get(),
-            p_repeat=self.p_repeat.get(),
-            max_repeats=int(self.max_repeats.get())
+            chunk_time=self.tkvars['chunk_time'].get(),
+            p_repeat=self.tkvars['p_repeat'].get(),
+            max_repeats=int(self.tkvars['max_repeats'].get())
         )
         return effect
 
@@ -634,11 +689,11 @@ class Normalize(EffectParameterEditor):
             self,
             pname="max_amplitude",
             label='Max-Amplitude', 
-            desc="Maximum amplitude in Hz",
+            desc="Maximum amplitude",
             default=0.0,
             from_=-1,
             to=1,
-            digits=2,
+            digits=1,
             resolution=0.1
         ).pack(side='top', fill='x', expand=True)
 
@@ -652,8 +707,8 @@ class Normalize(EffectParameterEditor):
 
     def get_effect(self):
         effect = voicebox.effects.Normalize(
-            max_amplitude=self.max_amplitude.get(),
-            remove_dc_offset=self.remove_dc_offset.get(),
+            max_amplitude=self.tkvars['max_amplitude'].get(),
+            remove_dc_offset=self.tkvars['remove_dc_offset'].get(),
         )
         return effect
 
@@ -680,7 +735,7 @@ class PitchShift(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.PitchShift(
-                semitones=self.semitones.get(), 
+                semitones=self.tkvars['semitones'].get(), 
             )
         )
         return effect
@@ -769,12 +824,12 @@ class Reverb(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Reverb(
-                room_size=self.room_size.get(), 
-                damping=self.damping.get(), 
-                wet_level=self.wet_level.get(),
-                dry_level=self.dry_level.get(), 
-                width=self.width.get(), 
-                freeze_mode= 1 if self.freeze_mode.get() else 0
+                room_size=self.tkvars['room_size'].get(), 
+                damping=self.tkvars['damping'].get(), 
+                wet_level=self.tkvars['wet_level'].get(),
+                dry_level=self.tkvars['dry_level'].get(), 
+                width=self.tkvars['width'].get(), 
+                freeze_mode= 1 if self.tkvars['freeze_mode'].get() else 0
             )
         )
         return effect
@@ -802,7 +857,7 @@ class Bitcrush(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Bitcrush(
-                bit_depth=self.bit_depth.get()
+                bit_depth=self.tkvars['bit_depth'].get()
             )
         )
         return effect
@@ -827,7 +882,7 @@ class Chorus(EffectParameterEditor):
             from_=0,
             to=100,
             digits=0,
-            resolution=1
+            resolution=5
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
@@ -851,7 +906,7 @@ class Chorus(EffectParameterEditor):
             from_=0,
             to=50,
             digits=1,
-            resolution=0.5
+            resolution=1
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
@@ -881,11 +936,11 @@ class Chorus(EffectParameterEditor):
     def get_effect(self, values=None):
         if values is None:
             values = {
-                'rate_hz': self.rate_hz.get(), 
-                'depth': self.depth.get(), 
-                'centre_delay_ms': self.centre_delay_ms.get(), 
-                'feedback': self.feedback.get(), 
-                'mix': self.mix.get()
+                'rate_hz': self.tkvars['rate_hz'].get(), 
+                'depth': self.tkvars['depth'].get(), 
+                'centre_delay_ms': self.tkvars['centre_delay_ms'].get(), 
+                'feedback': self.tkvars['feedback'].get(), 
+                'mix': self.tkvars['mix'].get()
             }
 
         # The returned array may contain up to (but not more than) the same
@@ -921,7 +976,7 @@ class Clipping(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Clipping(
-                threshold_db=self.threshold_db.get(), 
+                threshold_db=self.tkvars['threshold_db'].get(), 
             )
         )
         return effect
@@ -985,10 +1040,10 @@ class Compressor(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Compressor(
-                threshold_db=self.threshold_db.get(), 
-                ratio=self.ratio.get(),
-                attack_ms=self.attack_ms.get(),
-                release_ms=self.release_ms.get()
+                threshold_db=self.tkvars['threshold_db'].get(), 
+                ratio=self.tkvars['ratio'].get(),
+                attack_ms=self.tkvars['attack_ms'].get(),
+                release_ms=self.tkvars['release_ms'].get()
             )
         )
         return effect
@@ -1040,9 +1095,9 @@ class Delay(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Delay(
-                delay_seconds=self.delay_seconds.get(), 
-                feedback=self.feedback.get(),
-                mix=self.mix.get(),
+                delay_seconds=self.tkvars['delay_seconds'].get(), 
+                feedback=self.tkvars['feedback'].get(),
+                mix=self.tkvars['mix'].get(),
             )
         )
         return effect
@@ -1070,7 +1125,7 @@ class Distortion(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Distortion(
-                drive_db=self.drive_db.get(), 
+                drive_db=self.tkvars['drive_db'].get(), 
             )
         )
         return effect
@@ -1099,7 +1154,7 @@ class Gain(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.Gain(
-                gain_db=self.gain_db.get(), 
+                gain_db=self.tkvars['gain_db'].get(), 
             )
         )
         return effect
@@ -1153,9 +1208,9 @@ class HighShelfFilter(EffectParameterEditor):
     def get_effect(self):
         effect = voicebox.effects.PedalboardEffect(
             pedalboard.HighShelfFilter(
-                cutoff_frequency_hz=self.cutoff_frequency_hz.get(),
-                gain_db=self.gain_db.get(), 
-                q=self.q.get()
+                cutoff_frequency_hz=self.tkvars['cutoff_frequency_hz'].get(),
+                gain_db=self.tkvars['gain_db'].get(), 
+                q=self.tkvars['q'].get()
             )
         )
         return effect
@@ -1228,9 +1283,9 @@ Depending on the filter’s mode, frequencies above, below, or on both sides of 
             pedalboard.LadderFilter(
                 mode=getattr(pedalboard.LadderFilter.Mode, self.mode.get().split()[0]),
                 # self.mode_choices.index(),
-                cutoff_hz=self.cutoff_hz.get(), 
-                resonance=self.resonance.get(),
-                drive=self.drive.get()
+                cutoff_hz=self.tkvars['cutoff_hz'].get(), 
+                resonance=self.tkvars['resonance'].get(),
+                drive=self.tkvars['drive'].get()
             )
         )
         return effect
@@ -1254,7 +1309,7 @@ class RingMod(EffectParameterEditor):
             from_=0,
             to=1000,
             digits=0,
-            resolution=1
+            resolution=10
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
@@ -1281,9 +1336,9 @@ class RingMod(EffectParameterEditor):
 
     def get_effect(self):
         effect = voicebox.effects.RingMod(
-            carrier_freq=self.carrier_freq.get(),
-            blend=self.blend.get(),
-            carrier_wave=getattr(np, self.carrier_wave.get())
+            carrier_freq=self.tkvars['carrier_freq'].get(),
+            blend=self.tkvars['blend'].get(),
+            carrier_wave=getattr(np, self.tkvars['carrier_wave'].get())
         )
         return effect
 
@@ -1304,7 +1359,7 @@ class Vocoder(EffectParameterEditor):
             from_=0,
             to=200,
             digits=0,
-            resolution=1
+            resolution=2
         ).pack(side='top', fill='x', expand=True)
 
         LScale(
@@ -1370,12 +1425,12 @@ class Vocoder(EffectParameterEditor):
 
     def get_effect(self):
         effect = voicebox.effects.Vocoder.build(
-            carrier_freq=self.carrier_freq.get(),
-            min_freq=self.min_freq.get(),
-            max_freq=self.max_freq.get(),
-            bands=self.bands.get(),
-            bandwidth=self.bandwidth.get(),
-            bandpass_filter_order=self.bandpass_filter_order.get()
+            carrier_freq=self.tkvars['carrier_freq'].get(),
+            min_freq=self.tkvars['min_freq'].get(),
+            max_freq=self.tkvars['max_freq'].get(),
+            bands=int(self.tkvars['bands'].get()),
+            bandwidth=self.tkvars['bandwidth'].get(),
+            bandpass_filter_order=self.tkvars['bandpass_filter_order'].get()
         )
         return effect
 

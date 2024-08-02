@@ -3,6 +3,8 @@ import logging
 import random
 import re
 import sys
+import copy
+import tkinter as tk
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional, Self
@@ -72,13 +74,13 @@ def category_int2str(inint):
         return ''
 
 ENGINE_COSMETIC_TO_ID = {
-    'Google Text-to-Speech': 'googletts',
-    'Windows TTS': 'windowstts',
+    'Amazon Polly': 'amazonpolly',
+    'Azure': 'azure',
     'Eleven Labs': 'elevenlabs',
-    'Amazon Polly': 'amazonpolly'
+    'Google Text-to-Speech': 'googletts',
+    'OpenAI': 'openai',
+    'Windows TTS': 'windowstts',
 }
-
-language_code_regex = "en-.*"
 
 class Character(Base):
     __tablename__ = "character"
@@ -117,7 +119,8 @@ class Character(Base):
         gender = None
         group_name = None
         preset = {}
-        
+        alias_name = ""
+
         # look up this character by name
         if str_category == "npc":
             npc_spec = settings.get_npc_data(name)
@@ -129,13 +132,13 @@ class Character(Base):
                 group_name = None
             
             if group_name:
-                group_name = settings.get_alias(group_name)               
+                alias_name = settings.get_alias(group_name)
             
             preset = settings.get_preset(group_name)
 
-        # based on the preset, and some random choices
-        # where the preset does not specify, create a voice
-        # for this NPC.
+        # we want to use the alias instead of the group name.
+        if alias_name not in ["", "Random Any"]:
+            group_name = alias_name
 
         # first we set the engine based on global defaults
         pkey = f'{str_category}_engine_primary'
@@ -151,15 +154,12 @@ class Character(Base):
             engine=primary_engine_name,
             engine_secondary=secondary_engine_name,
             category=category,
+            group_name=group_name
         )
         session.add(character)
         session.commit()
         session.refresh(character)
-        
-        # now for the preset and/or random choices
-        engine_key = ENGINE_COSMETIC_TO_ID[primary_engine_name]
-        rank = "primary"
-        
+               
         # if all_npc provided a gender, we will use that.
         if gender is None:
             # otherwise, use the gender value in preset.  IE: the preset gender
@@ -170,107 +170,141 @@ class Character(Base):
             if gender is None:
                 if name in ["Celestine", "Alessandra", ]:
                     gender = 'Female'
+                elif name in ["Matthew", "Toothbreaker Jones"]:
+                    gender = "Male"
                 else:
                     gender = random.choice(['Male', 'Female'])
 
+        # now for the preset and/or random choices
+        # engine_key = ENGINE_COSMETIC_TO_ID[primary_engine_name]
+        # rank = "primary"
+
         # all of the available _engine_ configuration values
-        engine_config_meta = session.scalars(
-            select(EngineConfigMeta).where(
-                EngineConfigMeta.engine_key==engine_key
-            )
-        ).all()
+        # engine_config_meta = session.scalars(
+        #     select(EngineConfigMeta).where(
+        #         EngineConfigMeta.engine_key==engine_key
+        #     )
+        # ).all()
 
-        log.debug(f'|-  The configuration fields relevant to the {engine_key} TTS Engine are:')
-        # loop through the availabe configuration settings
-        for config_meta in engine_config_meta:
-            log.debug(f"|-    {config_meta}")
-            # we want sensible defaults with some jitter
-            # for each voice engine config setting.
-            value = None
+        for rank, engine_key in [
+            ["primary", ENGINE_COSMETIC_TO_ID[primary_engine_name]],
+            ["secondary", ENGINE_COSMETIC_TO_ID[secondary_engine_name]]
+        ]:
+            # all of the available _engine_ configuration values
+            engine_config_meta = session.scalars(
+                select(EngineConfigMeta).where(
+                    EngineConfigMeta.engine_key==engine_key
+                )
+            ).all()            
 
-            # does this configuration setting take a string value from a list of
-            # possible choices?
-            if config_meta.varfunc == "StringVar":
-                # we don't know what the possible values are since we can't run
-                # the function without instantiating the engine, which will drag
-                # in TK baggage. 
+            log.debug(f'|-  The configuration fields relevant to the {engine_key} TTS Engine are:')
+            # loop through the availabe configuration settings
+            for config_meta in engine_config_meta:
+                log.debug(f"|-    {config_meta}")
+                # we want sensible defaults with some jitter
+                # for each voice engine config setting.
+                value = None
 
-                # but.. we can accesss the cache?.  does that introduce a
-                # sequence dependency?
-                all_values = diskcache(f"{engine_key}_{config_meta.key}")
-                
-                if all_values is None:
-                    log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
-                    value = "<Cache Failure>"
-                else:
-                    # it's a dict, keyey on voice_name
-                    # language_code_regex = "en-.*"
-                    if language_code_regex and 'language_code' in all_values[0].keys():
-                        # pass through languages that satisfy the regex
-                        out = []
-                        for v in all_values:
-                            code = v.get('language_code', '')
-                            if re.match(language_code_regex, code):
-                                out.append(v)
-                        all_values = out
-                    
-                    # if we have a gender, filter out the voices that don't
-                    # have the same gender.
-                    if gender and 'gender' in all_values[0].keys():
-                        def gender_filter(voice):
-                            return voice['gender'] == gender
-                        all_values = filter(gender_filter, all_values)
+                # does this configuration setting take a string value from a list of
+                # possible choices?
+                if config_meta.varfunc == "StringVar":
+                    # we don't know what the possible values are since we can't run
+                    # the function without instantiating the engine, which will drag
+                    # in TK baggage. 
 
-                    # does the preset have any more guidance?
-                    # use the preset if there is one.  Otherwise
-                    # choose randomly from the available options.
-                    log.debug(f"{all_values=}")
-
-                    if config_meta.key in preset:
-                        value = preset[config_meta.key]
-                    else:
-                        chosen_row = random.choice(list(all_values))
-                        log.debug(f'Random selection: {chosen_row}')
-                        value = chosen_row[config_meta.key]
-
-            # do we have a numeric value, with a min/max and some
-            # hints about useful granularity?
-            elif config_meta.varfunc == "DoubleVar":
-                # no cache, use the preset or a random choice in the range.
-                # this shouldn't be .uniform, it should be more likely 
-                # for the values that are more common.
-                value = preset.get(
-                    config_meta.key,
-                    random.uniform(
-                        config_meta.cfgdict['min'], 
-                        config_meta.cfgdict['max']
+                    # but.. we can accesss the cache?.  does that introduce a
+                    # sequence dependency (yes)
+                    all_values = list(
+                        diskcache(f"{engine_key}_{config_meta.key}")
                     )
-                )
+                    
+                    if all_values is None:
+                        log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
+                        value = "<Cache Failure>"
 
-                # round to nearest multiple of 'resolution'
-                resolution = config_meta.cfgdict.get('resolution', 1.0)
-                value = (
-                    resolution * round(value / resolution)
-                )
+                        # just creating this should be enough to populate the
+                        # engine cache.
+                        engine.get_engine(engine_key)(None, None, None, None)
+                        all_values = list(
+                            diskcache(f"{engine_key}_{config_meta.key}")
+                        )
 
-            # do we have a true/false, enable/disable sort thing?
-            elif config_meta.varfunc == "BooleanVar":
-                # to be or not to be, that is the question.
-                value = preset.get(
-                    config_meta.key,
-                    random.choice([True, False])
-                )
+                    if all_values:
+                        # it's a dict, key in a voice_name
+                        language_code_regex = settings.get_language_code_regex()
 
-            # write our value for this configuration setting to the database
-            log.debug(f'Configuring {rank} engine {engine_key}:  Setting {config_meta.key} to {value}')
-            new_config_entry = BaseTTSConfig(
-                character_id=character.id,
-                rank=rank,
-                key=config_meta.key,
-                value=value
-            )
-            session.add(new_config_entry)
-            session.commit()
+                        if language_code_regex and 'language_code' in all_values[0].keys():
+                            # pass through languages that satisfy the regex
+                            out = []
+                            for v in all_values:
+                                code = v.get('language_code', '')
+                                if re.match(language_code_regex, code):
+                                    out.append(v)
+                            all_values = list(out)
+                        
+                        # if we have a gender, filter out the voices that don't
+                        # have the same gender.
+                        pre_gender_filter = copy.copy(all_values)
+                        if gender and 'gender' in all_values[0].keys():
+                            def gender_filter(voice):
+                                return voice['gender'].title() == gender.title()
+                            all_values = list(filter(gender_filter, all_values))
+                        
+                        if len(all_values) == 0:
+                            log.debug('Gender filter removed all voice name entries')
+                            all_values = pre_gender_filter
+
+                        # does the preset have any more guidance?
+                        # use the preset if there is one.  Otherwise
+                        # choose randomly from the available options.
+                        log.debug(f"{all_values=} {engine_key}/{config_meta.key}")
+
+                        if config_meta.key in preset:
+                            value = preset[config_meta.key]
+                        else:
+                            if all_values:
+                                chosen_row = random.choice(all_values)
+                                log.debug(f'Random selection: {chosen_row}')
+                                value = chosen_row[config_meta.key]
+
+                # do we have a numeric value, with a min/max and some
+                # hints about useful granularity?
+                elif config_meta.varfunc == "DoubleVar":
+                    # no cache, use the preset or a random choice in the range.
+                    # this shouldn't be .uniform, it should be more likely 
+                    # for the values that are more common.
+                    value = preset.get(
+                        config_meta.key,
+                        random.uniform(
+                            config_meta.cfgdict['min'], 
+                            config_meta.cfgdict['max']
+                        )
+                    )
+
+                    # round to nearest multiple of 'resolution'
+                    resolution = config_meta.cfgdict.get('resolution', 1.0)
+                    value = (
+                        resolution * round(value / resolution)
+                    )
+
+                # do we have a true/false, enable/disable sort thing?
+                elif config_meta.varfunc == "BooleanVar":
+                    # to be or not to be, that is the question.
+                    value = preset.get(
+                        config_meta.key,
+                        random.choice([True, False])
+                    )
+
+                # write our value for this configuration setting to the database
+                log.debug(f'Configuring {rank} engine {engine_key}:  Setting {config_meta.key} to {value}')
+                new_config_entry = BaseTTSConfig(
+                    character_id=character.id,
+                    rank=rank,
+                    key=config_meta.key,
+                    value=value
+                )
+                session.add(new_config_entry)
+                session.commit()
 
         # add effects but only if there is a preset, no random effects.
         for effect_dict in preset.get('Effects', []):
@@ -332,6 +366,65 @@ class Character(Base):
 
         log.debug(f'\\-- Character.get() returning {character}')
         return character
+
+
+#selected_character = None
+TKVAR = {}
+#selected_category = None
+
+def set_selected_character(name, category):
+    if TKVAR.get('character') is None:
+        TKVAR['character'] = tk.StringVar()
+    
+    if TKVAR.get('category') is None:
+        TKVAR['category'] = tk.StringVar()
+
+    TKVAR['character'].set(name)
+    TKVAR['category'].set(category)
+
+def get_selected_character():
+    if 'character' not in TKVAR:
+        return None
+
+    with db() as session:
+        character = Character.get(
+            name=TKVAR['character'].get(),
+            category=TKVAR['category'].get(), 
+            session=session
+        )
+    return character
+
+def get_engine(rank):
+    if ('engine', rank) not in TKVAR:
+        return None
+    else:
+        return TKVAR[('engine', rank)].get()
+
+def set_engine(rank, value):
+    if TKVAR.get(('engine', rank)) is None:
+        TKVAR[('engine', rank)] = tk.StringVar()
+
+    TKVAR[('engine', rank)].set(value)
+
+# list of instantiated effect classes
+ACTIVE_EFFECTS = []
+def get_effects():
+    return ACTIVE_EFFECTS
+
+def pop_effect():
+    return ACTIVE_EFFECTS.pop()
+
+def add_effect(new_effect):
+    ACTIVE_EFFECTS.append(new_effect)
+
+def remove_effect(effect):
+    ACTIVE_EFFECTS.remove(effect)
+
+def wipe_all_effects():
+    while ACTIVE_EFFECTS:
+        effect = pop_effect()
+        effect.clear_traces()
+        effect.grid_forget()    
 
 
 def get_character_from_rawname(raw_name, session):
@@ -501,9 +594,7 @@ class Translation(Base):
     text: Mapped[str] = mapped_column(String(256))
 
 
-def get_or_create_phrase_id(name, category, message):
-    """
-    """
+def get_or_create_phrase(name, category, message):
     with db() as session:
         character = Character().get(
             name=name, category=category, session=session)
@@ -522,7 +613,10 @@ def get_or_create_phrase_id(name, category, message):
             session.add(phrase)
             session.commit()
         
-        return phrase.id
+    return phrase
+
+def get_or_create_phrase_id(name, category, message):
+    return get_or_create_phrase(name, category, message).id
 
 
 def get_translated(phrase_id):
@@ -590,10 +684,64 @@ class EffectSetting(Base):
     key: Mapped[str] = mapped_column(String(256))
     value: Mapped[str] = mapped_column(String(256))
 
+    def __str__(self):
+        return f"<EffectSetting {self.effect_id} {self.key}={self.value}/>"
+
+class Damage(Base):
+    __tablename__ = "damage"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    hero_id = mapped_column(ForeignKey("hero.id"))
+    target: Mapped[str] = mapped_column(String(256))
+    power: Mapped[str] = mapped_column(String(256))
+    damage: Mapped[int] = mapped_column(Integer)
+    damage_type: Mapped[str] = mapped_column(String(64))
+    # assassin strike, critical, etc..
+    special: Mapped[str] = mapped_column(String(32))
+
+
+def clear_damage():
+    with db() as session:
+        # delete all Damage table rows
+        session.query(Damage).delete()       
+        session.commit()
+
+
 class Hero(Base):
     __tablename__ = "hero"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(256))
+
+
+def get_hero():
+    hero_id = settings.get_config_key('hero_id', cf='state.json')
+    if hero_id:
+        with db() as session:
+            hero = session.scalar(
+                select(Hero).where(
+                    Hero.id==hero_id
+                )
+            )
+    
+        return hero
+
+def set_hero(hero_id=None, name=None):
+    if hero_id:
+        with db() as session:
+            hero = session.scalar(
+                select(Hero).where(
+                    Hero.id==hero_id
+                )
+            )
+    elif name:
+        with db() as session:
+            hero = session.scalar(
+                select(Hero).where(
+                    Hero.name==name
+                )
+            )        
+    
+    settings.set_config_key('hero_id', hero.id, cf='state.json')
+
 
 class HeroStatEvent(Base):
     __tablename__ = "hero_stat_events"

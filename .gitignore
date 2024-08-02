@@ -4,8 +4,11 @@ raw_data/
 venv_backup/
 cache/
 
+openai.key
 eleven_labs.key
 config.json
+google_token.json
+azure.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
