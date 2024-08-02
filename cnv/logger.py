@@ -44,7 +44,7 @@ LOGGING_CONFIG = {
         },
         'cnv.chatlog.npc_chatter': {
             'handlers': ['default', ],
-            'level': 'DEBUG',
+            'level': 'INFO',
             'propagate': False
         },
         'cnv.engines.base': {

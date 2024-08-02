@@ -624,7 +624,7 @@ class LogStream:
                         if lstring[1] == "hit":
                             # You hit Abomination with your Assassin's Psi Blade for 43.22 points of Psionic damage.
                             m = re.fullmatch(
-                                r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>[0-9]*) points of (?P<damage_type>.*) damage(?P<ASTRIKE> over time| \(ASSASSIN STRIKE\)| \(CRITICAL\))?.?",
+                                r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>[0-9]*) points of (?P<damage_type>.*) damage(?P<ASTRIKE> over time| \(ASSASSIN STRIKE\)| \(CRITICAL\)| \(IMPACT!\))?.?",
                                 " ".join(lstring)
                             )
                             if m:

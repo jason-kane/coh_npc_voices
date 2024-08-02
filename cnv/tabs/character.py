@@ -396,7 +396,12 @@ class DamageFrame(ctk.CTkScrollableFrame):
         row_index = 2
         for powername in powers:
             p = powers[powername]
-            height = len(p['typed'])
+            # how many damaged types are there for this power?
+            height = 0
+            for damage_type, special in p['typed']:
+                if damage_type != "":
+                    height += 1
+
             if height > 1:
                 # one more for "all"
                 height += 1
