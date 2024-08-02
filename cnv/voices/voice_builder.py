@@ -3,7 +3,7 @@ import os
 import re
 
 import cnv.database.models as models
-import cnv.effects.effects as effects
+from cnv.effects import registry
 from cnv.engines.engines import get_engine
 from cnv.engines.base import USE_SECONDARY
 import cnv.lib.settings as settings
@@ -47,7 +47,7 @@ def create(character, message, session):
     effect_list = []
     for effect in voice_effects:
         log.debug(f'Adding effect {effect} found in the database')
-        effect_class = effects.EFFECTS[effect.effect_name]
+        effect_class = registry.get_effect(effect.effect_name)
         effect_instance = effect_class(None)
 
         effect_instance.effect_id.set(effect.id)

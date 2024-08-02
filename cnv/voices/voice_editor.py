@@ -7,7 +7,7 @@ from tkinter import ttk
 import customtkinter as ctk
 import voicebox
 from cnv.database import db, models
-from cnv.effects import effects
+from cnv.effects import registry
 from cnv.engines import engines
 from cnv.engines.base import USE_SECONDARY
 from cnv.lib import audio, settings
@@ -679,7 +679,7 @@ class EffectList(ctk.CTkFrame):
             index = -1
             for index, effect in enumerate(voice_effects):
                 log.debug(f'Adding effect {effect} found in the database')
-                effect_class = effects.EFFECTS[effect.effect_name]
+                effect_class = registry.get_effect(effect.effect_name)
 
                 ttk.Style().configure(
                     "Effect.TFrame",
@@ -718,7 +718,7 @@ class EffectList(ctk.CTkFrame):
 
         This call is for new effects which will start with default configurations.
         """
-        effect = effects.EFFECTS[effect_name]
+        effect = registry.get_effect(effect_name)
         
         # effect is one of the EffectParameterEditor objects in effects.py
         if effect:
@@ -835,7 +835,7 @@ class AddEffect(ttk.Frame):
             textvariable=self.selected_effect
         )
         #effect_combobox.option_add('*TCombobox*Listbox.Justify', 'center')
-        effect_combobox["values"] = list(effects.EFFECTS.keys())
+        effect_combobox["values"] = registry.effect_list()
         effect_combobox["state"] = "readonly"
 
         #  <-[XXX    ]
