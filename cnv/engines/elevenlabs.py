@@ -1,24 +1,26 @@
 import logging
 import os
 import tempfile
-from dataclasses import dataclass, field
 import tkinter as tk
+from dataclasses import dataclass, field
 from tkinter import ttk
 from typing import Union
 
-import cnv.database.models as models
-import cnv.lib.audio as audio
+import customtkinter as ctk
 import elevenlabs
 import voicebox
 from elevenlabs.client import ElevenLabs as ELABS
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
 
-from .base import TTSEngine, MarkdownLabel
+import cnv.database.models as models
+import cnv.lib.audio as audio
+
+from .base import MarkdownLabel, TTSEngine
 
 log = logging.getLogger(__name__)
 
-class ElevenLabsAuthUI(ttk.Frame):
+class ElevenLabsAuthUI(ctk.CTkFrame):
     label = "ElevenLabs"
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -39,24 +41,20 @@ class ElevenLabsAuthUI(ttk.Frame):
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 
-        s = ttk.Style()
-        s.configure('EngineAuth.TFrame', background='white')
-        s.configure('EngineAuth.TLabel', background='white')
-
-        auth_settings = ttk.Frame(self, style='EngineAuth.TFrame')
+        auth_settings = ctk.CTkFrame(self)
         auth_settings.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
         auth_settings.columnconfigure(1, weight=2, uniform="baseconfig")
 
-        ttk.Label(
+        ctk.CTkLabel(
             auth_settings,
             text="ElevenLabs API Key",
             anchor="e",
-            style='EngineAuth.TLabel'
+            # style='EngineAuth.TLabel'
         ).grid(column=0, row=0, sticky='e')
         
         self.elevenlabs_key = tk.StringVar(value=self.get_elevenlabs_key())
         self.elevenlabs_key.trace_add('write', self.change_elevenlabs_key)
-        ttk.Entry(
+        ctk.CTkEntry(
             auth_settings,
             textvariable=self.elevenlabs_key,
             show="*"

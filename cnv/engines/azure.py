@@ -4,6 +4,7 @@ import os
 import tkinter as tk
 from dataclasses import dataclass
 from tkinter import ttk
+import customtkinter as ctk
 from typing import Union
 
 import azure.cognitiveservices.speech as speechsdk
@@ -20,7 +21,7 @@ log = logging.getLogger(__name__)
 
 AZURE_AUTH_FILE = "azure.json"
 
-class AzureAuthUI(ttk.Frame):
+class AzureAuthUI(ctk.CTkFrame):
     label = "Azure"
     
     def __init__(self, *args, **kwargs):
@@ -35,42 +36,36 @@ class AzureAuthUI(ttk.Frame):
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 
-        s = ttk.Style()
-        s.configure('EngineAuth.TFrame', background='white')
-        s.configure('EngineAuth.TLabel', background='white')
-
-        auth_settings = ttk.Frame(self, style='EngineAuth.TFrame')
+        auth_settings = ctk.CTkFrame(self)
         auth_settings.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
         auth_settings.columnconfigure(1, weight=2, uniform="baseconfig")
 
-        ttk.Label(
+        ctk.CTkLabel(
             auth_settings,
             text="Azure Subscription Key",
             anchor="e",
-            style='EngineAuth.TLabel'
         ).grid(column=0, row=0, sticky='e')
         
         self.azure_subscription_key = tk.StringVar(value=self.get_azure_subscription_key())
         self.azure_subscription_key.trace_add('write', self.change_azure_authentication)
         
-        ttk.Entry(
+        ctk.CTkEntry(
             auth_settings,
             textvariable=self.azure_subscription_key,
             show="*"
         ).grid(column=1, row=0, sticky='ew')
         auth_settings.pack(side="top", fill="x", expand=True)
 
-        ttk.Label(
+        ctk.CTkLabel(
             auth_settings,
             text="Azure Region",
             anchor="e",
-            style='EngineAuth.TLabel'
         ).grid(column=0, row=1, sticky='e')
         
         self.region = tk.StringVar(value=self.get_region())
         self.region.trace_add('write', self.change_azure_authentication)
         
-        ttk.Entry(
+        ctk.CTkEntry(
             auth_settings,
             textvariable=self.region,
         ).grid(column=1, row=1, sticky='ew')

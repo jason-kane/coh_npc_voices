@@ -1,17 +1,18 @@
 import logging
 import os
-from tkinter import ttk, font
-
-import cnv.database.models as models
-import cnv.lib.settings as settings
-import voicebox
 import webbrowser
-from google.auth.transport.requests import Request
+
+import customtkinter as ctk
+import voicebox
 from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
 from google.cloud import texttospeech
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from sqlalchemy import select
+
+import cnv.database.models as models
+import cnv.lib.settings as settings
 
 from .base import MarkdownLabel, TTSEngine
 
@@ -20,21 +21,20 @@ log = logging.getLogger(__name__)
 # https://cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
-# the credentials are a secret in a typical oauth workflow
-# but we are a desktop applicaton, there are no secrets.
+# the credentials are a secret in a typical oauth workflow but we are a desktop
+# applicaton, there are no secrets.
 #
-# google auth uses this "secret" as a unique to identify our
-# application.  It pops open a browser, asks about auth to
-# give the application permission to utilize the users google
-# account for text-to-speech.
+# google auth uses this "secret" as a unique to identify our application.  It
+# pops open a browser, asks about auth to give the application permission to
+# utilize the users google account for text-to-speech.
 # 
-# The response is a 'code', which is sent to this application.
-# the code is then sent back to google to create a token.
-# that token can be used on every text-to-speech request until
-# it expires, then we refresh it to get the a token.
+# The response is a 'code', which is sent to this application. the code is then
+# sent back to google to create a token. that token can be used on every
+# text-to-speech request until it expires, then we refresh it to get a new
+# token.  The oauth library does all the heavy lifting.
 #
-# To completely remove access, delete the token.  If you delete
-# the credential you will have to re-install.
+# To completely remove access, delete the _token_.  If you delete the credential
+# you will have to re-install.
 credential_file = "google_credential.json"
 token_file = "google_token.json"
 
@@ -49,7 +49,10 @@ token_file = "google_token.json"
 # test user list.
 #
 # Since I'm not really sure oauth will work smoothly; I'll have ADC as an
-# alternative.
+# alternative.  That is Applicaton Default Credentials; it means creating a json
+# file that is essentially a username/password for your google cloud account.
+# You decide exactly what it has permission to do so it isn't as insecure as it
+# sounds.
 
 def get_credentials():
     """
@@ -93,7 +96,7 @@ def get_credentials():
     return creds
 
 
-class GoogleCloudAuthUI(ttk.Frame):
+class GoogleCloudAuthUI(ctk.CTkFrame):
     label = "Google Cloud"
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -112,53 +115,49 @@ class GoogleCloudAuthUI(ttk.Frame):
         mdlabel.on_link_click(self.link_click) 
         mdlabel.grid(column=0, row=0, sticky="nsew")
         #pack(side="top", fill="x", expand=False)
-        s = ttk.Style()
-        s.configure('EngineAuth.TFrame', background='white')
-        s.configure('EngineAuth.TLabel', background='white')
+        #s = ttk.Style()
+        #s.configure('EngineAuth.TFrame', background='white')
+        #s.configure('EngineAuth.TLabel', background='white')
 
-        frame = ttk.Frame(self, style='EngineAuth.TFrame')
+        frame = ctk.CTkFrame(self)
 
         frame.columnconfigure(0, weight=2)
         frame.columnconfigure(1, weight=1)
         frame.columnconfigure(2, weight=2)
 
-        ttk.Button(
+        ctk.CTkButton(
             frame,
             text="Browser oauth2 authentication",
             command=self.authenticate
         ).grid(column=0, row=0)
-        #pack(side="left")
 
-        ttk.Label(
+        ctk.CTkLabel(
             frame,
-            font=font.Font(
+            font=ctk.CTkFont(
                 size=12,
-                weight="bold"
-            ),            
+                weight="bold",
+                slant='italic'
+            ),
             text=" OR ",
             anchor="center",
-            style="EngineAuth.TLabel"
+            # style="EngineAuth.TLabel"
         ).grid(column=1, row=0, sticky="nsew")
-        #.pack(side="left")
 
-        adc = ttk.Frame(frame)
-        ttk.Button(
+        adc = ctk.CTkFrame(frame)
+        ctk.CTkButton(
             adc,
             text="Create a service account key",
             command=lambda: self.link_click('https://cloud.google.com/iam/docs/keys-create-delete#creating')
         ).pack(side="top", fill='x')
 
-        ttk.Button(
+        ctk.CTkButton(
             adc,
             text="Set GOOGLE_APPLICATION_CREDENTIALS",
             command=lambda: self.link_click('https://cloud.google.com/docs/authentication/provide-credentials-adc#local-key')
         ).pack(side="top", fill='x')
         adc.grid(column=2, row=0, sticky="n")
-        #.pack(side="left", fill="x")
 
         frame.grid(column=0, row=1, sticky="nsew")
-        #.pack(side="top", fill="x")
-
 
     def link_click(self, url):
         log.info('link click')

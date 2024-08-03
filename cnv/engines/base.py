@@ -26,7 +26,8 @@ class MarkdownLabel(HtmlLabel):  # Label
                 'html': True
             }
         )
-        text = f"""<body style="background-color:#FFF">
+        #  
+        text = f"""<body style="background-color:#CCC">
         {md.render(kwargs.pop('text'))}
         </body>"""
         

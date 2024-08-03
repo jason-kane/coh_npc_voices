@@ -5,7 +5,6 @@ from tkinter import ttk
 import customtkinter as ctk
 import cnv.lib.settings as settings
 from cnv.engines import engines
-from cnv.engines.base import Notebook
 
 log = logging.getLogger(__name__)
 

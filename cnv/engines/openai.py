@@ -4,13 +4,15 @@ import tkinter as tk
 from dataclasses import dataclass
 from tkinter import ttk
 from typing import Union
-from cnv.lib.settings import diskcache
 
+import customtkinter as ctk
 import numpy as np
 import voicebox
 from openai import OpenAI as OAI
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
+
+from cnv.lib.settings import diskcache
 
 from .base import MarkdownLabel, TTSEngine
 
@@ -18,7 +20,7 @@ log = logging.getLogger(__name__)
 
 OPENAI_KEY_FILE = "openai.key"
 
-class OpenAIAuthUI(ttk.Frame):
+class OpenAIAuthUI(ctk.CTkFrame):
     label = "OpenAI"
     
     def __init__(self, *args, **kwargs):
@@ -36,25 +38,20 @@ class OpenAIAuthUI(ttk.Frame):
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 
-        s = ttk.Style()
-        s.configure('EngineAuth.TFrame', background='white')
-        s.configure('EngineAuth.TLabel', background='white')
-
-        auth_settings = ttk.Frame(self, style='EngineAuth.TFrame')
+        auth_settings = ctk.CTkFrame(self)
         auth_settings.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
         auth_settings.columnconfigure(1, weight=2, uniform="baseconfig")
 
-        ttk.Label(
+        ctk.CTkLabel(
             auth_settings,
             text="OpenAI API Key",
             anchor="e",
-            style='EngineAuth.TLabel'
         ).grid(column=0, row=0, sticky='e')
         
         self.openai_key = tk.StringVar(value=self.get_openai_key())
         self.openai_key.trace_add('write', self.change_openai_key)
         
-        ttk.Entry(
+        ctk.CTkEntry(
             auth_settings,
             textvariable=self.openai_key,
             show="*"

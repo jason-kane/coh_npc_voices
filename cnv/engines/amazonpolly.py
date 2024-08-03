@@ -1,22 +1,22 @@
-import os
-import logging
-import tkinter as tk
-from tkinter import ttk
 import configparser
-
+import logging
+import os
+import tkinter as tk
 import webbrowser
-
+from tkinter import ttk
 
 import boto3
-import cnv.database.models as models
-import cnv.lib.settings as settings
+import customtkinter as ctk
 from voicebox.tts.amazonpolly import AmazonPolly as AmazonPollyTTS
 
-from .base import TTSEngine, MarkdownLabel
+import cnv.database.models as models
+import cnv.lib.settings as settings
+
+from .base import MarkdownLabel, TTSEngine
 
 log = logging.getLogger(__name__)
 
-class LinkList(ttk.Frame):
+class LinkList(ctk.CTkFrame):
     def __init__(self, parent, links, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
@@ -24,7 +24,7 @@ class LinkList(ttk.Frame):
 
         index = 0
         for text, link, docs in links:           
-            ttk.Button(
+            ctk.CTkButton(
                 self,
                 text=text,
                 command=lambda: webbrowser.open(link)
@@ -54,9 +54,9 @@ class AmazonPollyAuthUI(ttk.Frame):
         mdlabel.on_link_click(self.link_click) 
         mdlabel.pack(side="top", fill="x", expand=False)
 
-        s = ttk.Style()
-        s.configure('EngineAuth.TFrame', background='white')
-        s.configure('EngineAuth.TLabel', background='white')
+        #s = ttk.Style()
+        #s.configure('EngineAuth.TFrame', background='white')
+        #s.configure('EngineAuth.TLabel', background='white')
 
         # ok, so I'm amused by little things. 
         LinkList(
@@ -76,11 +76,12 @@ class AmazonPollyAuthUI(ttk.Frame):
                     of the minimal-access user we just created.
                     """
                 ]
-            ],
-            style="EngineAuth.TFrame"
+            ]
+            # style="EngineAuth.TFrame"
         ).pack(side="top", fill="both", expand=True)
 
-        auth_settings = ttk.Frame(self, style='EngineAuth.TFrame')
+        auth_settings = ctk.CTkFrame(self)
+        # , style='EngineAuth.TFrame')
         auth_settings.columnconfigure(0, minsize=125, weight=0, uniform="baseconfig")
         auth_settings.columnconfigure(1, weight=2, uniform="baseconfig")
 
@@ -99,22 +100,24 @@ class AmazonPollyAuthUI(ttk.Frame):
             self.set_secret_access_key,
             True
         )]:  
-            ttk.Label(
+            ctk.CTkLabel(
                 auth_settings,
                 text=text,
                 anchor="e",
-                style="EngineAuth.TLabel"
+                # style="EngineAuth.TLabel"
             ).grid(column=0, row=count, sticky='e')
             self.tkvars[key] = tk.StringVar(value=getter())
             self.tkvars[key].trace_add('write', setter)
         
-            entry = ttk.Entry(
+            kwargs = {}
+            if is_hidden:
+                kwargs['show'] = '*'
+                
+            entry = ctk.CTkEntry(
                 auth_settings,
                 textvariable=self.tkvars[key],
-                # show="*"
+                **kwargs                
             )
-            if is_hidden:
-                entry.config({'show': '*'})
             # TODO: config show based on is_hidden
             entry.grid(column=1, row=count, sticky='ew')
 
