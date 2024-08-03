@@ -217,7 +217,6 @@ class ttsOpenAI(voicebox.tts.TTS):
         )
 
         result = speech_synthesizer.speak_text(text)
-        log.info('speak_text complete')
 
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:   
             stream = speechsdk.AudioDataStream(result)

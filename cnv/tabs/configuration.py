@@ -17,19 +17,19 @@ class MasterVolume(ttk.Frame):
     """
 
 
-class SpokenLanguageSelection(ttk.Frame):
+class SpokenLanguageSelection(ctk.CTkFrame):
     """
     The user gets to decide which language they want to hear.  They may also
     need to decide which translation provider to utilize w/config for that
     provider.
     """
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)        
+        super().__init__(*args, **kwargs)
 
         self.columnconfigure(0, minsize=125, uniform="baseconfig")
         self.columnconfigure(1, weight=2, uniform="baseconfig")
 
-        ttk.Label(
+        ctk.CTkLabel(
             self,
             text="Spoken Language",
             anchor="e",   
@@ -38,9 +38,12 @@ class SpokenLanguageSelection(ttk.Frame):
         current = settings.get_config_key('language', "English")
         self.language = tk.StringVar(value=current)
 
-        default_engine_combo = ttk.Combobox(self, textvariable=self.language)
-        default_engine_combo["values"] = list(settings.LANGUAGES.keys())
-        default_engine_combo["state"] = "readonly"
+        default_engine_combo = ctk.CTkComboBox(
+            self, 
+            variable=self.language,
+            state='readonly',
+            values=list(settings.LANGUAGES.keys())
+        )
         default_engine_combo.grid(column=1, row=0, sticky='w')
 
         self.language.trace_add('write', self.change_language)
@@ -55,7 +58,7 @@ class SpokenLanguageSelection(ttk.Frame):
             # we should immediately translate and localize the UI       
 
 
-class EngineAuthentication(Notebook):
+class EngineAuthentication(ctk.CTkTabview):
     """
     Collects tabs for configuring authentication for each of the TTS engines.  The 
     actual tab contents are provided by the engine(s).
@@ -66,8 +69,12 @@ class EngineAuthentication(Notebook):
 
         for engine_ui in engines.ENGINE_LIST:
             if engine_ui.auth_ui_class:
-                auth_ui = engine_ui.auth_ui_class(self)
-                self.add(auth_ui, text=auth_ui.label)
+                                
+                tab = self.add(name=engine_ui.auth_ui_class.label)
+                panel = engine_ui.auth_ui_class(tab)
+                panel.pack(fill="both", expand=True)
+                
+                
 
 
 class ChannelToEngineMap(ttk.Frame):
