@@ -946,25 +946,33 @@ class DetailSide(ctk.CTkScrollableFrame):
 
         biography.grid(column=0, row=0, sticky='nsew')
 
-        engine_notebook = ctk.CTkTabview(
+        self.engine_notebook = ctk.CTkTabview(
             self,
             anchor="nw"
         )
-        engine_notebook.grid_rowconfigure(0, weight=1)
-        engine_notebook.grid_rowconfigure(1, weight=1)
-        engine_notebook.grid_columnconfigure(0, weight=1)
+        self.engine_notebook.grid_rowconfigure(0, weight=1)
+        self.engine_notebook.grid_rowconfigure(1, weight=1)
+        self.engine_notebook.grid_columnconfigure(0, weight=1)
 
-        primary = engine_notebook.add('Primary')
+        primary = self.engine_notebook.add('Primary')
         primary.grid_rowconfigure(0, weight=1)
         primary.grid_columnconfigure(0, weight=1)
 
-        secondary = engine_notebook.add('Secondary')
+        secondary = self.engine_notebook.add('Secondary')
         secondary.grid_rowconfigure(0, weight=1)
         secondary.grid_columnconfigure(0, weight=1)
         
-        effects = engine_notebook.add('Effects')
+        effects = self.engine_notebook.add('Effects')
         effects.grid_rowconfigure(0, weight=1)
         effects.grid_columnconfigure(0, weight=1)
+
+        randomize = ctk.CTkButton(
+            self.engine_notebook, 
+            text="Randomize", 
+            command=self.shuffle,
+            width=100
+        )
+        randomize.place(relx=1, rely=0.014, anchor='ne')
 
         self.primary_tab = EngineSelectAndConfigure(
             'primary', primary, 
@@ -980,11 +988,29 @@ class DetailSide(ctk.CTkScrollableFrame):
         self.effect_list = EffectList(effects)
         self.effect_list.grid(column=0, row=0, sticky="nsew")
 
-        engine_notebook.grid(column=0, row=1, sticky="nsew")
+        self.engine_notebook.grid(column=0, row=1, sticky="nsew")
         #.pack(side="top", fill="x", expand=True)
 
         #self.bind('<Enter>', self._bound_to_mousewheel)
         #self.bind('<Leave>', self._unbound_to_mousewheel)
+
+    def shuffle(self, *args, **kwargs):
+        """
+        Choose new random values for the currenty selected engine config
+        """
+        panel = self.engine_notebook.get()
+        log.info(f"{panel=}")
+        character = models.get_selected_character()
+        with models.db() as session:
+            models.Character.create_character(
+                name=character.name,
+                category=character.category,
+                session=session,
+                character=character
+            )
+        
+        self.load_character(character.category, character.name)
+        return
 
     def selected_category_and_name(self):
         """

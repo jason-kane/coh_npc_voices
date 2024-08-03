@@ -155,12 +155,12 @@ class Azure(TTSEngine):
                 gender_filtered.add(v)
 
         if gender_filtered:        
-            return [v['voice_name'] for v in gender_filtered]
+            return [v['voice'] for v in gender_filtered]
         else:
-            return [v['voice_name'] for v in language_filtered]
+            return [v['voice'] for v in language_filtered]
 
     def get_voices(self):
-        all_voices = models.diskcache(f'{self.key}_voice_name')
+        all_voices = models.diskcache(f'{self.key}_voice')
 
         if all_voices is None:
             speech_config = get_azure_config()
@@ -178,12 +178,12 @@ class Azure(TTSEngine):
                 # log.info(f"{entry.gender.name=} {dir(entry.gender)}")
 
                 all_voices.append({
-                    'voice_name': entry.short_name,
+                    'voice': entry.short_name,
                     'gender': entry.gender.name,
                     'locale': entry.locale
                 })
 
-            models.diskcache(f'{self.key}_voice_name', all_voices)
+            models.diskcache(f'{self.key}_voice', all_voices)
 
         return all_voices
    

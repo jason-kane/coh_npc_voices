@@ -102,7 +102,13 @@ class Character(Base):
         return f"<Character category={self.category!r} id={self.id!r} name={self.name!r} engine={self.engine!r}/>"
 
     @classmethod
-    def create_character(cls, name: str, category: int, session: Connectable) -> Self:
+    def create_character(
+        cls, 
+        name: str, 
+        category: int, 
+        session: Connectable,
+        character=None
+    ) -> Self:
         # go big or go home, right?
         if name is None:
             return
@@ -111,9 +117,10 @@ class Character(Base):
 
         log.debug("\n" + pyfiglet.figlet_format(f'New {str_category}', font="3d_diagonal", width=120))
         log.debug("\n" + pyfiglet.figlet_format(name, font="3d_diagonal", width=120))
-        log.info(f'|- Creating new {str_category} character {name} in database...')
-        # this is the first time we've gotten a message from this
-        # NPC, so they don't have a voice yet.
+        if character is None:
+            log.info(f'|- Creating new {str_category} character {name} in database...')
+        else:
+            log.info(f'|- Randomizing {str_category} character {name}...')
 
         # first we need to find out if we have a preset for this category of foe.
         gender = None
@@ -149,16 +156,42 @@ class Character(Base):
         log.debug(f"Secondary engine ({skey}): {secondary_engine_name}")
 
         # default to the primary voice engine for this category of character
-        character = cls(
-            name=name,
-            engine=primary_engine_name,
-            engine_secondary=secondary_engine_name,
-            category=category,
-            group_name=group_name
-        )
-        session.add(character)
-        session.commit()
-        session.refresh(character)
+        if character is not None:
+            # we want to re-create this character.
+            character = cls.get(
+                name=name,
+                category=category, 
+                session=session
+            )
+            character.engine = primary_engine_name
+            character.engine_secondary = secondary_engine_name
+            character.group_name=group_name
+            
+            # remove any existing tts config
+            session.execute(
+                delete(BaseTTSConfig).where(
+                    BaseTTSConfig.character_id==character.id
+                )
+            )
+
+            # remove any existing effects
+            session.execute(
+                delete(Effects).where(
+                    Effects.character_id==character.id
+                )
+            )
+            session.commit()
+        else:
+            character = cls(
+                name=name,
+                engine=primary_engine_name,
+                engine_secondary=secondary_engine_name,
+                category=category,
+                group_name=group_name
+            )
+            session.add(character)
+            session.commit()
+            session.refresh(character)
                
         # if all_npc provided a gender, we will use that.
         if gender is None:
@@ -174,17 +207,6 @@ class Character(Base):
                     gender = "Male"
                 else:
                     gender = random.choice(['Male', 'Female'])
-
-        # now for the preset and/or random choices
-        # engine_key = ENGINE_COSMETIC_TO_ID[primary_engine_name]
-        # rank = "primary"
-
-        # all of the available _engine_ configuration values
-        # engine_config_meta = session.scalars(
-        #     select(EngineConfigMeta).where(
-        #         EngineConfigMeta.engine_key==engine_key
-        #     )
-        # ).all()
 
         for rank, engine_key in [
             ["primary", ENGINE_COSMETIC_TO_ID[primary_engine_name]],
@@ -214,9 +236,9 @@ class Character(Base):
 
                     # but.. we can accesss the cache?.  does that introduce a
                     # sequence dependency (yes)
-                    all_values = list(
-                        diskcache(f"{engine_key}_{config_meta.key}")
-                    )
+                    raw_values = diskcache(f"{engine_key}_{config_meta.key}")
+                    log.info(f'{engine_key=} {config_meta.key=}')
+                    all_values = list(raw_values)
                     
                     if all_values is None:
                         log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
