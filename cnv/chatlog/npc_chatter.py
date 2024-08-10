@@ -555,8 +555,9 @@ class LogStream:
                         self.speaking_queue.put((None, (" ".join(lstring[4:])), "system"))
 
                     elif lstring[0] == "You":
-                        if lstring[1] in ["found", "stole", "begin", "finished"]:
+                        if lstring[1] in ["found", "have", "stole", "begin", "finished"]:
                             # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
+                            # You have cleared the Snakes from the Arachnos base, and learned something interesting.
                             # You stole the money!
                             dialog = plainstring(" ".join(lstring))
                             if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
