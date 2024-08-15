@@ -536,6 +536,8 @@ class LogStream:
             last_working = time.time()
             log.debug('Entering primary log evaluation loop')
             while settings.REPLAY or (time.time() - last_working < self.READ_TIMEOUT):
+                talking = (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY
+
                 # read the next line, or return "" if we're at EOF
                 line = handle.readline().strip()
 
@@ -555,12 +557,28 @@ class LogStream:
                         self.speaking_queue.put((None, (" ".join(lstring[4:])), "system"))
 
                     elif lstring[0] == "You":
-                        if lstring[1] in ["found", "have", "stole", "begin", "finished"]:
+                        if lstring[1] in ["found", "stole", "begin", "finished"]:
                             # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
                             # You have cleared the Snakes from the Arachnos base, and learned something interesting.
                             # You stole the money!
                             dialog = plainstring(" ".join(lstring))
-                            if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
+                            if talking:
+                                self.speaking_queue.put((None, dialog, "system"))
+                        
+                        elif lstring[1] == "have":
+                            # have is tricky.  lots of things use have.
+                            dialog = plainstring(" ".join(lstring))
+                            if lstring[2] == "defeated":
+                                enabled = settings.get_toggle(settings.taggify("Acknowledge each win"))
+                                if talking and enabled:
+                                    self.speaking_queue.put((None, dialog, "system"))
+                                else:
+                                    if not talking:
+                                        log.info(f'{talking=}')
+                                    else:
+                                        log.info(f'{enabled=}')
+
+                            elif talking:
                                 self.speaking_queue.put((None, dialog, "system"))
 
                         elif self.hero and lstring[1] == "gain":
@@ -625,7 +643,7 @@ class LogStream:
                         if lstring[1] == "hit":
                             # You hit Abomination with your Assassin's Psi Blade for 43.22 points of Psionic damage.
                             m = re.fullmatch(
-                                r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>[0-9]*) points of (?P<damage_type>.*) damage(?P<ASTRIKE> over time| \(ASSASSIN STRIKE\)| \(CRITICAL\)| \(IMPACT!\))?.?",
+                                r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>[0-9]*) points of (?P<damage_type>.*) damage(?P<ASTRIKE> over time| \(ASSASSIN STRIKE\)| \(CRITICAL\)| \(IMPACT!\)| \(ARCANE\))?.?",
                                 " ".join(lstring)
                             )
                             if m:

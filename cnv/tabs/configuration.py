@@ -3,6 +3,7 @@ import logging
 import tkinter as tk
 from tkinter import ttk
 import customtkinter as ctk
+import hashlib
 import cnv.lib.settings as settings
 from cnv.engines import engines
 
@@ -73,10 +74,8 @@ class EngineAuthentication(ctk.CTkTabview):
                 panel = engine_ui.auth_ui_class(tab)
                 panel.pack(fill="both", expand=True)
                 
-                
 
-
-class ChannelToEngineMap(ttk.Frame):
+class ChannelToEngineMap(ctk.CTkFrame):
     """
     Allows the user to choose a primary and secondary for each channel.  _Current_ channels are
     npc, player and system.
@@ -224,6 +223,42 @@ class ChannelToEngineMap(ttk.Frame):
         return frame
 
 
+class SpeakingToggles(ctk.CTkFrame):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.toggles = {}
+
+        index = 0
+        for toggle in [
+            "Acknowledge each win", 
+            "Persist player chat"
+        ]:
+            tag = settings.taggify(toggle)
+            self.toggles[tag] = tk.StringVar(
+                value="on" if settings.get_toggle(tag) else "off"
+            )
+
+            ctk.CTkCheckBox(
+                self,
+                command=self.toggle,
+                text=toggle,
+                variable=self.toggles[tag],
+                onvalue="on", 
+                offvalue="off"
+            ).grid(column=0, row=index, sticky='w')
+
+            index += 1
+
+    def toggle(self, *args, **kwargs):
+        for tag in self.toggles:
+            value = self.toggles[tag].get()
+            log.info(f"{tag} {value}")
+            settings.set_toggle(tag, value)
+        return
+
+
 class ConfigurationTab(ctk.CTkFrame):
   
     def __init__(self, parent, event_queue, speaking_queue, *args, **kwargs):
@@ -235,3 +270,4 @@ class ConfigurationTab(ctk.CTkFrame):
             self,
         ).pack(side="top", fill="x")
         ChannelToEngineMap(self).pack(side="top", fill="x")
+        SpeakingToggles(self).pack(side="top", fill="x")

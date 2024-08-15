@@ -60,7 +60,7 @@ def create(character, message, session):
         rank = 'secondary'
 
     # have we seen this particular phrase before?
-    if character.category != PLAYER_CATEGORY or settings.PERSIST_PLAYER_CHAT:
+    if character.category != PLAYER_CATEGORY or settings.get_toggle(settings.taggify("Persist player chat")):
         # phrase_id = models.get_or_create_phrase_id(
         #     name=character.name,
         #     category=character.category,

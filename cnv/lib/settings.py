@@ -36,10 +36,6 @@ LANGUAGES = {
     "Spanish": ("es", ("es", ))
 }
 
-# by default, don't save things players say.  It's not likely
-# to cache hit anyway.
-PERSIST_PLAYER_CHAT = True
-
 REPLAY = False
 XP_IN_REPLAY = False
 SPEECH_IN_REPLAY = False
@@ -95,6 +91,23 @@ def save_config(config, cf="config.json"):
 def get_config_key(key, default=None, cf="config.json"):
     config = get_config(cf=cf)
     return config.get(key, default)
+
+
+def taggify(instr):
+    tag = instr.replace(' ', '')
+    return tag[:10] + "_" + hashlib.sha256(tag.encode('utf8')).hexdigest()[:4]
+
+
+def set_toggle(key, value):
+    set_config_key(
+        key=f'toggle_{key}',
+        value=value
+    )
+
+def get_toggle(key):
+    return get_config_key(
+        key=f'toggle_{key}'
+    ) == "on"
 
 
 def get_alias(group):
