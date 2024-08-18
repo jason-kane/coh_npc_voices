@@ -1,3 +1,7 @@
+# Recent demo:
+[![Recent youtube demo](https://img.youtube.com/vi/1RjyqB8YMnY/0.jpg)](https://www.youtube.com/watch?v=1RjyqB8YMnY)
+
+
 # What is this?
 
 This program started as a fairly simplistic python program that watches the City of Heroes chat log file.  When it sees a message from an NPC, it uses the windows text-to-speech capability to read out the message.  It also notices when you receive a badge and tells you which badge you got.
@@ -189,5 +193,17 @@ https://github.com/DeepHorizons/tts
 https://github.com/spotify/pedalboard
 
 Big thanks and shoutout for the creators of these packages.
+
+
+And these Text To Speech providers:
+
+    Amazon Polly
+    MS Azure TTS
+    ElevenLabs
+    Google Cloud TTS
+    OpenAI TTS
+    MS Windows TTS
+
+Without cheap, high quality text to speech services this would sound like berzerk.
 
 Raw entity data from https://cod.uberguy.net/html/index.html
