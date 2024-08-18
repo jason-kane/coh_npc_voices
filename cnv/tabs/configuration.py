@@ -233,7 +233,9 @@ class SpeakingToggles(ctk.CTkFrame):
         index = 0
         for toggle in [
             "Acknowledge each win", 
-            "Persist player chat"
+            "Persist player chat",
+            "Speak Buffs",
+            "Speak Debuffs",
         ]:
             tag = settings.taggify(toggle)
             self.toggles[tag] = tk.StringVar(

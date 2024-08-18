@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 
 log = logging.getLogger(__name__)
 
-# when youare level X, how many xp do you need to reach the next level?
+# when you are level X, how many xp do you need to reach the next level?
 xp_table = {
    1: 106,
    2: 337,
@@ -620,7 +620,7 @@ class CharacterTab(ctk.CTkFrame):
         # experience = self.character_subtabs.add('Experience')
         # influence = self.character_subtabs.add('Influence')
 
-        self.character_subtabs.grid(column=0, row=0, sticky="new")
+        self.character_subtabs.grid(column=0, row=0, sticky="nsew")
         buffer.grid(column=0, row=1, sticky="nsew")
 
         self.start_time = datetime.now()
@@ -630,6 +630,8 @@ class CharacterTab(ctk.CTkFrame):
         if selected_tab == "Damage":
             self.damageframe.refresh_damage_panel()
             self.damageframe.pack(fill="both", expand=True)
+        elif selected_tab == "Graph":
+            pass
         else:
             log.warning(f'Unknown tab: {selected_tab}')
 

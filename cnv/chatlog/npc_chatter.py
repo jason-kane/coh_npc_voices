@@ -564,22 +564,51 @@ class LogStream:
                             dialog = plainstring(" ".join(lstring))
                             if talking:
                                 self.speaking_queue.put((None, dialog, "system"))
-                        
+
                         elif lstring[1] == "have":
+                            enabled = False
                             # have is tricky.  lots of things use have.
                             dialog = plainstring(" ".join(lstring))
                             if lstring[2] == "defeated":
                                 enabled = settings.get_toggle(settings.taggify("Acknowledge each win"))
+
                                 if talking and enabled:
                                     self.speaking_queue.put((None, dialog, "system"))
-                                else:
-                                    if not talking:
-                                        log.info(f'{talking=}')
-                                    else:
-                                        log.info(f'{enabled=}')
+
+                            elif lstring[2] in ["Insight", "Uncanny"]:
+                                # You have Insight into your enemy's weaknesses and slightly increase your chance To Hit and your Perception.
+                                pass
+
+                            elif lstring[2] == "been":
+                                enabled =False
+                                # buffs and debuffs
+                                if lstring[3] in [
+                                    "put", "immobilized!", "exemplared", 
+                                    "interrupted.", "held", "temporarily",
+                                    "blinded"
+                                ]:
+                                    enabled = settings.get_toggle(settings.taggify('Speak Debuffs'))
+                                elif lstring[3] in ["granted", ]:
+                                    enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
+
+                                if talking and enabled:
+                                    self.speaking_queue.put((None, dialog, "system"))
 
                             elif talking:
                                 self.speaking_queue.put((None, dialog, "system"))
+
+                        elif lstring[1] == "are":
+                            enabled = False
+                            if lstring[2] in ['held!', 'unable']:
+                                # 2024-04-01 20:04:17 You are held!
+                                enabled = settings.get_toggle(settings.taggify('Speak Debuffs'))
+                            elif lstring[2] in ['healed', 'filled', 'now', 'Robust', 'Enraged', 'hidden', 'Sturdy']:
+                                enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
+
+                            if talking and enabled:
+                                dialog = plainstring(" ".join(lstring))
+                                self.speaking_queue.put((None, dialog, "system"))
+
 
                         elif self.hero and lstring[1] == "gain":
                             # You gain 104 experience and 36 influence.
