@@ -577,7 +577,10 @@ class LogStream:
 
                             elif lstring[2] in ["Insight", "Uncanny"]:
                                 # You have Insight into your enemy's weaknesses and slightly increase your chance To Hit and your Perception.
-                                pass
+                                enabled = settings.get_toggle(settings.taggify("Speak Inspiration Effects"))
+
+                                if talking and enabled:
+                                    self.speaking_queue.put((None, dialog, "system"))
 
                             elif lstring[2] == "been":
                                 enabled =False
@@ -602,13 +605,38 @@ class LogStream:
                             if lstring[2] in ['held!', 'unable']:
                                 # 2024-04-01 20:04:17 You are held!
                                 enabled = settings.get_toggle(settings.taggify('Speak Debuffs'))
-                            elif lstring[2] in ['healed', 'filled', 'now', 'Robust', 'Enraged', 'hidden', 'Sturdy']:
+                            elif lstring[2] in ['healed', ]:
+                                if lstring[5] in ['Respite', 'Revitalize', 'Dramatic Improvement', ]:
+                                    # healed by an insp?
+                                    # 2024-08-24 08:50:32 You are healed by your Revitalize for 281.11 health points.
+                                    enabled = settings.get_toggle(settings.taggify("Speak Inspiration Effects"))
+                                else:
+                                    # healed by some other power?
+                                    # 2024-08-24 08:45:20 You are healed by your Healing Flames for 734.34 health points.
+                                    enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
+
+                            elif lstring[2] in ['filled', 'now', 'Robust', 'Enraged', 'hidden', 'Sturdy']:
                                 enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
 
                             if talking and enabled:
                                 dialog = plainstring(" ".join(lstring))
                                 self.speaking_queue.put((None, dialog, "system"))
 
+                        elif lstring[1] == "use":
+                            enabled = False
+                            if lstring[4] == "Inspiration," or lstring[5] == "Inspiration,":
+                                # 2024-08-24 08:47:31 You use your Shielded Inspiration, and gain a small bonus to your defense and resistance as well as gaining resistance to teleportation for a short time.
+                                # 2024-08-24 08:48:22 You use your Tactical Inspiration and boost your damage, chance to hit and perception moderately for a short time.
+                                # 2024-08-24 08:49:51 You use your Guarded Inspiration, and gain a moderate bonus to your defense and resistance as well as gaining resistance to teleportation for a short time.
+                                # 2024-08-24 08:50:32 You use your Revitalize Inspiration, and gain some Endurance and Health.
+                                # 2024-08-24 08:51:27 You use your Keen Inspiration and boost your damage, chance to hit and perception slightly for a short time.
+                                # 2024-08-24 08:52:26 You use your Rejuvenating Imbuement Inspiration, and your team regains some Endurance and Health.
+                                # 2024-08-24 08:53:04 You use your Insight Imbuement Inspiration to boost the To Hit chance and Perception of your team slightly.
+                                enabled = settings.get_toggle(settings.taggify("Speak Inspiration Effects")) 
+
+                            if talking and enabled:
+                                dialog = plainstring(" ".join(lstring))
+                                self.speaking_queue.put((None, dialog, "system"))
 
                         elif self.hero and lstring[1] == "gain":
                             # You gain 104 experience and 36 influence.

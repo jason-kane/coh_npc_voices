@@ -236,6 +236,7 @@ class SpeakingToggles(ctk.CTkFrame):
             "Persist player chat",
             "Speak Buffs",
             "Speak Debuffs",
+            "Speak Inspiration Effects",
         ]:
             tag = settings.taggify(toggle)
             self.toggles[tag] = tk.StringVar(
