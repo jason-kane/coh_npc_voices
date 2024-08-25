@@ -3,7 +3,7 @@
 
 #define SourcePath "\\?\Volume{cc498e86-0000-0000-0000-602200000000}\Users\jason\Desktop\coh_npc_voices"
 #define MyAppName "Sidekick"
-#define MyAppVersion "3.1"
+#define MyAppVersion "3.2"
 #define MyAppPublisher "Jason Kane"
 #define MyAppURL "https://github.com/jason-kane/coh_npc_voices"
 #define MyAppExeName "Sidekick.bat"
@@ -53,7 +53,7 @@ Source: "{#SourcePath}\cnv\database\__init__.py"; DestDir: "{app}\cnv\database\"
 Source: "{#SourcePath}\cnv\database\db.py"; DestDir: "{app}\cnv\database\"; Flags: ignoreversion 
 Source: "{#SourcePath}\cnv\database\models.py"; DestDir: "{app}\cnv\database\"; Flags: ignoreversion 
 Source: "{#SourcePath}\cnv\effects\__init__.py"; DestDir: "{app}\cnv\effects\"; Flags: ignoreversion 
-Source: "{#SourcePath}\cnv\effects\effects.py"; DestDir: "{app}\cnv\effects\"; Flags: ignoreversion 
+Source: "{#SourcePath}\cnv\effects\*.py"; DestDir: "{app}\cnv\effects\"; Flags: ignoreversion 
 Source: "{#SourcePath}\cnv\engines\__init__.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
 Source: "{#SourcePath}\cnv\engines\amazonpolly.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
 Source: "{#SourcePath}\cnv\engines\azure.py"; DestDir: "{app}\cnv\engines\"; Flags: ignoreversion 
