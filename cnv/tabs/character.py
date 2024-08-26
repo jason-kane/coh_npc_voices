@@ -406,6 +406,10 @@ class DamageFrame(ctk.CTkScrollableFrame):
                 # one more for "all"
                 height += 1
             
+            if ':' in powername:
+                # proc from an enhance
+                powername = powername.split(':')[0] + " (proc)"
+
             # Power Name
             ctk.CTkLabel(
                 self,
