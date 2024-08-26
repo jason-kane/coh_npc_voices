@@ -10,7 +10,7 @@ from cnv.engines import engines
 log = logging.getLogger(__name__)
 
 
-class MasterVolume(ttk.Frame):
+class MasterVolume(ctk.CTkFrame):
     """
     Frame to provide widgets and persistence logic for a global volume control.  
     This is for playback volume.
@@ -90,7 +90,7 @@ class ChannelToEngineMap(ctk.CTkFrame):
             self.engine_priorities_frame(channel).pack(side="top", fill="x")
               
     def engine_priorities_header(self):
-        frame = ttk.Frame(self)
+        frame = ctk.CTkFrame(self)
         frame.columnconfigure(0, minsize=125, uniform="enginemap")
         frame.columnconfigure(1, weight=2, uniform="enginemap")
         frame.columnconfigure(2, weight=2, uniform="enginemap")
@@ -102,7 +102,7 @@ class ChannelToEngineMap(ctk.CTkFrame):
             'Secondary Engine',
             'Normalize Voices',
         ]):
-            ttk.Label(
+            ctk.CTkLabel(
                 frame,
                 text=label,
                 anchor="n",
@@ -115,14 +115,14 @@ class ChannelToEngineMap(ctk.CTkFrame):
         the whole config frame for a particular category of entity within the game.
         npc/player/system
         """
-        frame = ttk.Frame(self)
+        frame = ctk.CTkFrame(self)
 
         frame.columnconfigure(0, minsize=125, uniform="enginemap")
         frame.columnconfigure(1, weight=2, uniform="enginemap")
         frame.columnconfigure(2, weight=2, uniform="enginemap")
         frame.columnconfigure(3, weight=2, uniform="enginemap")
 
-        ttk.Label(
+        ctk.CTkLabel(
             frame,
             text=f"{category}",
             anchor="e",
@@ -140,7 +140,6 @@ class ChannelToEngineMap(ctk.CTkFrame):
         )
         secondary_engine.grid(column=2, row=0, sticky='n')
 
-        # tkvar = self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
         self.normalize_prompt_frame(
             frame, category
         ).grid(column=3, row=0, sticky='n')
@@ -177,11 +176,14 @@ class ChannelToEngineMap(ctk.CTkFrame):
         return tkvar
         
     def choose_engine(self, parent, engine_var):
-        frame = ttk.Frame(parent)
+        frame = ctk.CTkFrame(parent)
 
-        default_engine_combo = ttk.Combobox(frame, textvariable=engine_var)
-        default_engine_combo["values"] = [e.cosmetic for e in engines.ENGINE_LIST]
-        default_engine_combo["state"] = "readonly"
+        default_engine_combo = ctk.CTkComboBox(
+            frame, 
+            variable=engine_var,
+            state='readonly',
+            values=[e.cosmetic for e in engines.ENGINE_LIST]
+        )
         default_engine_combo.grid(column=1, row=0)
 
         return frame
@@ -214,10 +216,11 @@ class ChannelToEngineMap(ctk.CTkFrame):
         """
         frame with ui for the normalize checkbox
         """
-        frame = ttk.Frame(parent)
+        frame = ctk.CTkFrame(parent)
 
-        tk.Checkbutton(
+        ctk.CTkCheckBox(
             frame,
+            text='',
             variable=self.get_tkvar(tk.BooleanVar, category, 'engine', 'normalize')
         ).grid(column=0, row=0, sticky='n')
         return frame
@@ -261,12 +264,12 @@ class SpeakingToggles(ctk.CTkFrame):
         return
 
 
-class ConfigurationTab(ctk.CTkFrame):
+class ConfigurationTab(tk.Frame):
   
     def __init__(self, parent, event_queue, speaking_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
-        MasterVolume(self).pack(side="top", fill="x")
+        # MasterVolume(self).pack(side="top", fill="x")
         SpokenLanguageSelection(self).pack(side="top", fill="x")
         EngineAuthentication(
             self,
