@@ -324,6 +324,141 @@ class ChartFrame(ctk.CTkFrame):
             log.debug('graph constructed')      
 
 
+class TypedDamage:
+    def __init__(self, damage_type, special='', count=0, total=0):
+        self.damage_type = damage_type
+        self.special = special
+        self.count = count
+        self.total = total
+
+
+class PowerStat:
+    def __init__(self, name):
+        self.hit = 0
+        self.miss = 0
+        self.typed = {}
+        self.height = None
+
+        if ':' in name:
+            self.name = name.split(':')[0] + " (proc)"
+        else:
+            self.name = name
+    
+    def record_damage(self, damage_type:str, special:str, damage:float):
+        self.hit += 1
+
+        key = (damage_type, special)
+        if key not in self.typed:
+            self.typed[key] = TypedDamage(damage_type, special)
+
+        self.typed[key].count += 1
+        self.typed[key].total += damage
+
+    def row_height(self):
+        if self.height:
+            return self.height 
+        
+        self.height = 0
+        for damage_type, special in self.typed:
+            if damage_type != "":
+                self.height += 1
+
+        if self.height > 1:
+            # one more for "all"
+            self.height += 1
+        return self.height
+
+    def calculate_grid(self):
+        self.hits = 0
+        self.total_damage = 0
+        self.tries = 0        
+        
+        for damage_type, special in self.typed:
+            key = (damage_type, special)
+            # misses don't have a damage type
+            if damage_type:
+                self.hits += self.typed[key].count
+            self.tries += self.typed[key].count
+            self.total_damage += self.typed[key].total
+            
+        # Hit Rate
+        self.perc = 100 * float(self.hits) / float(self.tries)
+
+    def draw_grid_row(self, parent, row_index):
+        self.height = self.row_height()
+        # Power Name
+        ctk.CTkLabel(
+            parent,
+            text=self.name
+        ).grid(
+            column=0, 
+            row=row_index,
+            rowspan=self.height,
+            sticky="ew", 
+            padx=5
+        )        
+
+        # Hit Rate
+        ctk.CTkLabel(
+            parent, 
+            text=f"{self.hits} of {self.tries}: {self.perc:0.2f}%"
+        ).grid(
+            column=1, 
+            row=row_index,
+            rowspan=self.height
+        )
+
+        # for the the per-damage type, grid-within-grid
+        def draw_damage_type_grid(typed_damage, row_index):
+            
+            # Type
+            ctk.CTkLabel(
+                parent, text=typed_damage.damage_type, corner_radius=0, padx=0
+            ).grid(column=2, row=row_index)
+
+            # Special
+            ctk.CTkLabel(
+                parent, text=typed_damage.special, corner_radius=0, padx=0
+            ).grid(column=3, row=row_index)
+
+            # Average
+            ctk.CTkLabel(
+                parent, 
+                text=f"{typed_damage.total / typed_damage.count:,.2f}",
+                corner_radius=0, padx=0
+            ).grid(column=4, row=row_index)
+
+            # Total
+            ctk.CTkLabel(
+                parent, text=f"{typed_damage.total:,}",
+                corner_radius=0, padx=0
+            ).grid(column=5, row=row_index)
+
+        count = 0
+        for damage_type, special in self.typed:
+            count += 1
+
+            key = (damage_type, special)
+            if damage_type:
+                typed_damage = self.typed[key]
+                draw_damage_type_grid(typed_damage, row_index)
+                row_index += 1
+        
+        if count > 1:
+            # multiple damage types, we add some cosmetics and a 'Total' row to
+            # show aggregate stats from all types.
+            total_damage = TypedDamage('Total', count=self.hits, total=self.total_damage)
+            
+            hline = tk.Frame(parent, borderwidth=1, relief="solid", height=1)
+            hline.grid(column=2, row=row_index, columnspan=4, sticky="ew")
+            row_index += 1
+
+            draw_damage_type_grid(total_damage, row_index)
+        
+        # the _next_ row available
+        return row_index
+
+
 class DamageFrame(ctk.CTkScrollableFrame):
     """
     Damage is different than XP/Inf.  I'm not interested in rates or projections.
@@ -356,15 +491,17 @@ class DamageFrame(ctk.CTkScrollableFrame):
         ctk.CTkLabel(self, text="Total").grid(column=5, row=0, sticky='ew')
 
         hline = tk.Frame(self, borderwidth=1, relief="solid", height=2)
-        hline.grid(column=0, row=1, columnspan=6, sticky="ew")        
-
+        hline.grid(column=0, row=1, columnspan=6, sticky="ew")
+        
+        # how many grid rows we occupy
+        return 2    
 
     def refresh_damage_panel(self):
         log.debug("refresh_damage_panel")
         # clear any old data
         for widget in self.winfo_children():
             widget.destroy()
-        self.create_grid_header()
+        row_index = self.create_grid_header()
 
         # how much of the math in python vs sqlite?
         with models.db() as session:
@@ -374,113 +511,24 @@ class DamageFrame(ctk.CTkScrollableFrame):
 
         powers = {}
         for row in all_damage:
-            powers.setdefault(row.power, {
-                'hit': 0,
-                'miss': 0,
-                'typed': {}
-            })
-            
-            powers[row.power]['hit'] += 1
-            # we don't track miss yet
-            
-            powers[row.power]['typed'].setdefault(
-                (row.damage_type, row.special),
-                {
-                    'count': 0,
-                    'total': 0
-                }
-            )
-            powers[row.power]['typed'][(row.damage_type, row.special)]['count'] += 1
-            powers[row.power]['typed'][(row.damage_type, row.special)]['total'] += row.damage
-       
-        row_index = 2
+            if row.power not in powers:
+                powers[row.power] = PowerStat(name=row.power)
+
+            power = powers[row.power]     
+            power.record_damage(row.damage_type, row.special, row.damage)
+
         for powername in powers:
-            p = powers[powername]
-            # how many damaged types are there for this power?
-            height = 0
-            for damage_type, special in p['typed']:
-                if damage_type != "":
-                    height += 1
+            power = powers[powername]
+            # calcualte the totals for every power so we have something to sort by
+            power.calculate_grid()
 
-            if height > 1:
-                # one more for "all"
-                height += 1
+        for powername in sorted(powers, key=lambda p: powers[p].total_damage, reverse=True):
+            power = powers[powername]
             
-            if ':' in powername:
-                # proc from an enhance
-                powername = powername.split(':')[0] + " (proc)"
+            # draw the grid to self in grid row `row_index`
+            row_index = power.draw_grid_row(self, row_index)
 
-            # Power Name
-            ctk.CTkLabel(
-                self,
-                text=powername
-            ).grid(
-                column=0, 
-                row=row_index,
-                rowspan=height,
-                sticky="ew", 
-                padx=5
-            )
-
-            hits = 0
-            total_damage = 0
-            tries = 0
-            for damage_type, special in p['typed']:
-                key = (damage_type, special)
-                # how many times has this power hit?
-                # if we do it across all damage types it seem more accurate than
-                # it really is, but unless we know the "base" type?
-                # TODO: this should be better
-                if damage_type != "":
-                    hits += p['typed'][key]['count']
-                tries += p['typed'][key]['count']
-                total_damage += p['typed'][key]['total']
-
-            # Hit Rate
-            perc = 100 * float(hits) / float(tries)
-            ctk.CTkLabel(
-                self, text=f"{hits} of {tries}: {perc:0.2f}%"
-            ).grid(
-                column=1, 
-                row=row_index,
-                rowspan=height
-            )
-            
-            if len(p['typed']) > 1:
-                p['typed'][('Total', '')] = {'total': total_damage, 'count': hits}
-
-            for damage_type, special in p['typed']:
-                if damage_type == "":
-                    continue
-
-                key = (damage_type, special)
-                if damage_type == "Total":
-                    hline = tk.Frame(self, borderwidth=1, relief="solid", height=1)
-                    hline.grid(column=2, row=row_index, columnspan=4, sticky="ew")
-                    row_index += 1
-
-                ctk.CTkLabel(
-                    self, text=damage_type, corner_radius=0, padx=0
-                ).grid(column=2, row=row_index)
-
-                ctk.CTkLabel(
-                    self, text=special, corner_radius=0, padx=0
-                ).grid(column=3, row=row_index)
-
-                # avg
-                ctk.CTkLabel(
-                    self, 
-                    text=f"{p['typed'][key]["total"] / p['typed'][key]["count"]:,.2f}",
-                    corner_radius=0, padx=0
-                ).grid(column=4, row=row_index)
-
-                ctk.CTkLabel(
-                    self, text=f"{p['typed'][key]["total"]:,}",
-                    corner_radius=0, padx=0
-                ).grid(column=5, row=row_index)
-
-                row_index += 1
-
+            # horizontal line between each power
             hline = tk.Frame(self, borderwidth=1, relief="groove", height=2)
             hline.grid(column=0, row=row_index + 1, columnspan=6, sticky="ew")
 
