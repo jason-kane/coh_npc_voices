@@ -363,6 +363,9 @@ class PowerStat:
             if damage_type != "":
                 self.height += 1
 
+        if self.height == 0:
+            self.height = 1
+
         if self.height > 1:
             # one more for "all"
             self.height += 1

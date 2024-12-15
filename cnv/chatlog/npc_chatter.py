@@ -574,6 +574,8 @@ class LogStream:
 
                                 if talking and enabled:
                                     self.speaking_queue.put((None, dialog, "system"))
+                                else:
+                                    log.info(f'Not speaking: {talking=} {enabled=}')
 
                             elif lstring[2] in ["Insight", "Uncanny"]:
                                 # You have Insight into your enemy's weaknesses and slightly increase your chance To Hit and your Perception.
@@ -671,23 +673,26 @@ class LogStream:
                                         session.commit()
                         if lstring[1] == "hit":
                             # You hit Abomination with your Assassin's Psi Blade for 43.22 points of Psionic damage.
+                            # You hit Zealot with your Bitter Ice Blast for 13088 points of Cold damage (SCOURGE)
+                            # You hit Button Man Buckshot with your Dart Burst for 10.61 points of Lethal damage over time.
+                            # You hit Arva with your Freeze Ray for 7.49 points of Cold damage over time (SCOURGE).
                             m = re.fullmatch(
-                                r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>[0-9]*) points of (?P<damage_type>.*) damage(?P<ASTRIKE> over time| \(ASSASSIN STRIKE\)| \(CRITICAL\)| \(IMPACT!\)| \(ARCANE\))?.?",
+                                r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>.*) points of (?P<damage_type>.*) damage( |\.)?(?P<DOT>[^\n\(\.A-Z]*)[^\nA-Z\(]*\(?(?P<special>[A-Z]*).*",
                                 " ".join(lstring)
                             )
                             if m:
-                                target, power, damage, damagetype, special = m.groups()
-                                if special is None:
+                                #target, power, damage, damagetype, special = m.groups()
+                                if m['special'] is None:
                                     special = ""
                                 else:
-                                    special = special.strip("() \t\n\r\x0b\x0c").title()
+                                    special = m['special'].strip("() \t\n\r\x0b\x0c").title()
 
                                 d = models.Damage(
                                     hero_id=self.hero.id,
-                                    target=target,
-                                    power=power,
-                                    damage=int(damage),
-                                    damage_type=damagetype,
+                                    target=m['target'],
+                                    power=m['power'],
+                                    damage=int(m['damage']),
+                                    damage_type=m['damage_type'],
                                     special=special
                                 )
                                 
