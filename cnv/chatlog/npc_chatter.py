@@ -605,12 +605,19 @@ class LogStream:
                                 # 2024-04-01 20:04:17 You are held!
                                 enabled = settings.get_toggle(settings.taggify('Speak Debuffs'))
                             elif lstring[2] in ['healed', 'filled', 'now', 'Robust', 'Enraged', 'hidden', 'Sturdy']:
+                                log.debug(f'You are: {lstring}')
                                 enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
+                                #  You are healed by your Dehydrate for 23.04 health points over time.
+                                if lstring[2] == "healed" and lstring[3:5] == ["by", "your"]:
+                                    # don't speak the exact numbers, it destroyed the voice cache
+                                    lstring = lstring[:6]
+                                    log.debug(f'Trimming lstring to {lstring}')
+                                else:
+                                    log.debug(f'lstring[2]={lstring[2]} and {lstring[3:5]}')
 
                             if talking and enabled:
                                 dialog = plainstring(" ".join(lstring))
                                 self.speaking_queue.put((None, dialog, "system"))
-
 
                         elif self.hero and lstring[1] == "gain":
                             # You gain 104 experience and 36 influence.
@@ -676,6 +683,7 @@ class LogStream:
                             # You hit Zealot with your Bitter Ice Blast for 13088 points of Cold damage (SCOURGE)
                             # You hit Button Man Buckshot with your Dart Burst for 10.61 points of Lethal damage over time.
                             # You hit Arva with your Freeze Ray for 7.49 points of Cold damage over time (SCOURGE).
+                            
                             m = re.fullmatch(
                                 r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>.*) points of (?P<damage_type>.*) damage( |\.)?(?P<DOT>[^\n\(\.A-Z]*)[^\nA-Z\(]*\(?(?P<special>[A-Z]*).*",
                                 " ".join(lstring)
@@ -700,8 +708,17 @@ class LogStream:
                                     session.add(d)
                                     session.commit()
                             else:
-                                dialog = plainstring(" ".join(lstring))
-                                log.warning(f'hit failed regex: {dialog}')
+                                # You hit Gravedigger Slammer with your Twilight Grasp reducing their damage and chance to hit and healing you and your allies!
+                                m = re.fullmatch(
+                                    r"You hit (?P<target>.*) with your (?P<power>.*) reducing .*",
+                                    " ".join(lstring)
+                                )
+                                if m:
+                                    # nothing to record
+                                    pass
+                                else:
+                                    dialog = plainstring(" ".join(lstring))
+                                    log.warning(f'hit failed regex: {dialog}')
 
                         elif lstring[1] in ["carefully", "look", "find"]:
                             dialog = plainstring(" ".join(lstring))
