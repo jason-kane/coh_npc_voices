@@ -10,7 +10,15 @@ import cnv.lib.settings as settings
 import cnv.lib.audio as audio
 import pyfiglet
 from sqlalchemy import select
-from voicebox.sinks import Distributor, SoundDevice, WaveFile
+from voicebox.audio import Audio
+from voicebox.sinks import Distributor, WaveFile
+from voicebox.sinks.wavefile import write_audio_to_wav
+from voicebox.sinks.sink import Sink
+from voicebox.tts.utils import sample_width_to_dtype
+import simpleaudio
+from dataclasses import dataclass
+import numpy as np
+import tempfile
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +29,32 @@ PLAYER_CATEGORY = models.category_str2int("player")
 # ENGINE_OVERRIDE has been triggered and we keep smacking elevenlabs even though we've run out of credits.
 
 ENGINE_OVERRIDE = {}
+
+@dataclass
+class SimpleAudioDevice(Sink):
+    def play(self, audio: Audio) -> None:
+        with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
+            fp.close()
+            log.info(f'Using temp file {fp.name}')
+            
+            write_audio_to_wav(
+                audio=audio,
+                file_or_path=fp.name,
+                append=False,
+                sample_width=2
+            )
+
+            audio_obj = simpleaudio.WaveObject.from_wave_file(str(fp.name))
+            audio_obj.play()
+
+
+        # simpleaudio sd.play(
+        #     audio.signal,
+        #     audio.sample_rate,
+        #     blocking=self.blocking,
+        #     device=self.device,
+        #     latency=self.latency,
+        # )    
 
 def create(character, message, session):
     """
@@ -85,7 +119,7 @@ def create(character, message, session):
         save = True
     else:
         sink = Distributor([
-            SoundDevice()
+            SimpleAudioDevice()
         ])
         save = False 
     
@@ -102,12 +136,12 @@ def create(character, message, session):
         
         if save:
             sink = Distributor([
-                SoundDevice(),
+                SimpleAudioDevice(),
                 WaveFile(cachefile + '.wav')
             ])
         else:
             sink = Distributor([
-                SoundDevice()
+                SimpleAudioDevice()
             ])
 
         log.debug(f'Using engine: {character.engine}')
@@ -134,12 +168,12 @@ def create(character, message, session):
         # new cachefile, new sink.
         if save:
             sink = Distributor([
-                SoundDevice(),
+                SimpleAudioDevice(),
                 WaveFile(cachefile + '.wav')
             ])
         else:
             sink = Distributor([
-                SoundDevice()
+                SimpleAudioDevice()
             ])
 
         if character.engine_secondary:

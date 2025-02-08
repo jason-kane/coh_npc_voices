@@ -5,6 +5,7 @@ import logging
 import os
 import queue
 import re
+import voicebox
 import threading
 import time
 from datetime import datetime
@@ -13,8 +14,9 @@ import cnv.database.models as models
 import cnv.logger
 import cnv.voices.voice_builder as voice_builder
 import lib.settings as settings
+import simpleaudio
 import pythoncom
-import voicebox
+# import voicebox
 from cnv.lib.proc import send_log_lock
 from pedalboard.io import AudioFile
 from voicebox.tts.utils import get_audio_from_wav_file
@@ -146,11 +148,34 @@ class TightTTS(threading.Thread):
         self.start()
 
     def run(self):
+        talking_npc = {}
         pythoncom.CoInitialize()
+        raw_message = None
         while True:
-            # Pull a message off the speaking_queue
-            raw_message = self.speaking_queue.get()
-            # parse it.  
+
+            while raw_message is None:
+                try:
+                    raw_message = self.speaking_queue.get(block=False)
+                except queue.Empty:
+                    # no new items?  No problem, do our NPC queue bookkeeping.
+                    raw_message = None
+
+                    for name in talking_npc:
+                        if talking_npc[name]:
+                            if hasattr(talking_npc[name][0], "is_playing"):
+                                if talking_npc[name][0].is_playing():
+                                    # it is still playing, leave it alone.
+                                    continue
+                                else:
+                                    # it is done playing.  Remove it.
+                                    talking_npc[name].pop(0)
+                        
+                        # do we have something else queued up?
+                        if talking_npc[name]:
+                            talking_npc[name][0] = talking_npc[name][0].play()
+                    
+                    # so we don't slam the audio subsystem with "is_playing" requests
+                    time.sleep(0.2)
 
             # TODO:  what exactly are the limits on what can safely pass through
             # a queue to a thread?
@@ -159,6 +184,7 @@ class TightTTS(threading.Thread):
             except ValueError:
                 log.warning("Unexpected queue message: %s", raw_message)
                 continue
+            raw_message = None
 
             if category not in ["npc", "player", "system"]:
                 log.error("invalid category: %s", category)
@@ -188,10 +214,30 @@ class TightTTS(threading.Thread):
                             while input.tell() < input.frames:
                                 output.write(input.read(1024))
 
-                    audio = get_audio_from_wav_file(cachefile + ".wav")
-                    os.unlink(cachefile + ".wav")
+                    #
+                    #os.unlink(cachefile + ".wav")
 
-                    voicebox.sinks.SoundDevice().play(audio)
+                    log.info(f'[{category}] Playing wav file {cachefile}.wav')
+                    # if category in ["system",]:
+                    #     # sync
+                    #     audio = get_audio_from_wav_file(cachefile + ".wav")
+                    #     voicebox.sinks.SoundDevice(blocking=False).play(audio)
+                    # else:
+                    #     # async
+                    audio_obj = simpleaudio.WaveObject.from_wave_file(str(cachefile + ".wav"))
+                    
+                    if category in ["npc", ]:
+                        # okay.. with apologies for the level of fancy here. we
+                        # don't want characters to be able to talk over
+                        # themselves, because that is stupid.
+                        talking_npc.setdefault(name, [])
+                        talking_npc[name].append(audio_obj)
+                    else:
+                        play_obj = audio_obj.play()
+                        
+                        if category in ["system", ]:
+                            # sync
+                            play_obj.wait_done()                 
 
             # neither primary nor secondary exist.
             if not found:
@@ -490,7 +536,7 @@ class LogStream:
             # non-dialog messages.
             if dialog and dialog.strip():
                 if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
-                    log.debug(f"Adding {speaker}/{dialog} to reading queue")
+                    log.info(f"[{channel}] Adding {speaker}/{dialog} to speaking queue")
                     self.speaking_queue.put((speaker, dialog, guide['name']))
 
         elif guide is None:
@@ -609,8 +655,12 @@ class LogStream:
                                 enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
                                 #  You are healed by your Dehydrate for 23.04 health points over time.
                                 if lstring[2] == "healed" and lstring[3:5] == ["by", "your"]:
+                                    if lstring[5:7] == ['Defensive', 'Adaptation']:
+                                        # Way, way too verbose.
+                                        enabled = False
+                                        
                                     # don't speak the exact numbers, it destroyed the voice cache
-                                    lstring = lstring[:6]
+                                    lstring = lstring[:lstring.index('for')]
                                     log.debug(f'Trimming lstring to {lstring}')
                                 else:
                                     log.debug(f'lstring[2]={lstring[2]} and {lstring[3:5]}')
