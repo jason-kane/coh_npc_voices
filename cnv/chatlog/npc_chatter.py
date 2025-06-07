@@ -171,12 +171,14 @@ class TightTTS(threading.Thread):
         raw_message = None
         while True:
             log.info('[TightTTS] Top of True')
-            while raw_message is None:
-                try:
-                    raw_message = self.speaking_queue.get(block=False)
-                except queue.Empty:
+            while self.speaking_queue.empty():
+                time.sleep(0.25)
+
+            log.info('Retrieving queued message')
+            raw_message = self.speaking_queue.get()
+                #except queue.Empty:
                     # no new items?  No problem, perfect time to do our NPC queue bookkeeping.
-                    raw_message = None
+                #    raw_message = None
 
                     # is there anything waiting to be spoken by anyone?
                     # for name in talking_npc:
@@ -196,7 +198,7 @@ class TightTTS(threading.Thread):
                     
                     # so we don't slam the audio subsystem with "is_playing" requests
                     #log.info('[TightTTS] speaking_queue is empty')
-                    time.sleep(1)
+                #    time.sleep(1)
 
             log.info('[TightTTS] TTS Message received: %s', raw_message)
             # we got a message
@@ -653,17 +655,16 @@ class LogStream:
         #     handle.seek(0, io.SEEK_END)
 
         self.first_tail = True
-        needle: int = 0
+        #needle: int = 0
 
+        activity_count = 0
         with open(self.open_latest_log(), encoding="utf-8") as handle:
             while True:
                 if self.first_tail:
-                    #log.info('Seeking to EOF')
-                    #handle.seek(0, io.SEEK_END)
-                    needle = handle.tell()
+                    log.info('Seeking to EOF')
+                    handle.seek(0, io.SEEK_END)
+                    #needle = handle.tell()
                     self.first_tail = False
-                else:
-                    time.sleep(0.5)
 
                 # else when replay is true this will process the whole file,
                 # essentailly re-playing the session.  This is very handy for
@@ -678,26 +679,40 @@ class LogStream:
                 # last_working < self.READ_TIMEOUT
                 # run immediately and keep running, fail if last_working goes too long without a reset.
 
-                log.info('Entering primary log evaluation loop')
+                if activity_count > 50:
+                    log.info('primary log evaluation loop')
+                    activity_count = 0
+                else:
+                    activity_count += 1
+
                 # for line in tailer.follow(handle):
                 
                 # read from needle to current EOF
-                handle.seek(needle)
-                buffer = handle.read()
-                if not buffer:
-                    # nothing to read, give it a hot half-second
-                    time.sleep(0.5)
-                else:
-                    for line in buffer.split("\n"):
-                        needle += len(line) + 1  # +1 for the \n
-                        log.info("line: '%s'", line)
+                #log.info('Seeking to %s', needle)
+                #handle.seek(needle)
+                
+                #log.info('Reading all available')
+                #buffer = handle.read()
+                #if not buffer:
+                #    log.info('Nothing to read')
+                #else:
+
+                for line in handle:
+                #line = handle.readline()
+                #if not line:
+                #    time.sleep(0.25)
+                #    continue
+                #else:
+                    #for line in buffer.split("\n"):
+                    #    needle += len(line) + 1  # +1 for the \n
+                    log.info("line: '%s'", line)
 
                 #while True:
                 #    log.info('Blocking until a line of text is available')
                 #    line = handle.readline().strip()
 
                     # for line in handle:               
-                    #if True:
+                    if True:
                         log.info('Top of True')               
                         #for line in handle.readlines():
                         # settings.REPLAY or (time.time() - last_working < self.READ_TIMEOUT):
@@ -729,12 +744,14 @@ class LogStream:
                                 log.info('Invoking channel_messager()')
                                 self.channel_messager(lstring, line_string)
                                 log.info('Returned from channel_messager()')
+                                continue
 
                             elif self.announce_badges and lstring[0] == "Congratulations!":
                                 self.ssay(" ".join(lstring[4:]))
 
                             elif lstring[0] == "You":
-                                if lstring[1] in ["found", "stole", "begin", "finished", "open", "didn't"]:
+                                log.info('"You" path')
+                                if lstring[1] in ["found", "stole", "begin", "finished", "open", "didn't", "rescued"]:
                                     # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
                                     # You have cleared the Snakes from the Arachnos base, and learned something interesting.
                                     # You stole the money!
@@ -908,6 +925,10 @@ class LogStream:
                                 elif lstring[1] in ["carefully", "look", "find"]:
                                     dialog = plainstring(" ".join(lstring))
                                     self.speaking_queue.put((None, dialog, "system"))
+                                
+                                elif lstring[1] in ["activated", "Taunt"]:
+                                    # skip "You activated ..."
+                                    continue
 
                             elif lstring[0] == "MISSED":
                                 # MISSED Mamba Blade!! Your Contaminated Strike power had a 95.00% chance to hit, you rolled a 95.29.
@@ -977,7 +998,8 @@ class LogStream:
                                     self.ssay(dialog)
                                 
                             else:
-                                log.warning(f'tag {lstring[0]} not classified.')
+                                log.warning(f'tag "{lstring[0]}" not classified.')
+                                continue
                             #
                             # Team task completed.
                             # A new team task has been chosen.
@@ -992,6 +1014,8 @@ class LogStream:
                         #log.warning(f'Chat Log READ_TIMEOUT ({self.READ_TIMEOUT}) exceeded.')
                         #self.first_tail = False
             
+                # we've exhausted to EOF
+                time.sleep(0.25)
 
 class Hero:
     # keep this update for cheap parlor tricks.

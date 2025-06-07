@@ -6,6 +6,7 @@ import logging
 import multiprocessing
 import queue
 import sys
+import time
 import random
 from datetime import datetime, timedelta
 
@@ -63,8 +64,8 @@ def main():
     colorama.init()
     root = ctk.CTk()
 
-    event_queue = multiprocessing.Queue()
-    speaking_queue = multiprocessing.Queue()
+    event_queue = multiprocessing.SimpleQueue()
+    speaking_queue = multiprocessing.SimpleQueue()
 
     for msg in random.choices([
         "Welcome Back",
@@ -119,11 +120,11 @@ def main():
         try:
             # the event queue is how messages are sent up
             # from children.
-            try:
-                event_action = event_queue.get(block=False)
-            except queue.Empty:
-                event_action = None, None
-
+            event_action = None, None
+            
+            if not event_queue.empty():
+               event_action = event_queue.get()
+               
             # we got an action (no exception)
             # log.info('Event Received: %s', event_action)
             key, value = event_action
