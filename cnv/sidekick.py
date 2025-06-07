@@ -6,6 +6,7 @@ import logging
 import multiprocessing
 import queue
 import sys
+import random
 from datetime import datetime, timedelta
 
 import cnv.lib.settings as settings
@@ -65,6 +66,14 @@ def main():
     event_queue = multiprocessing.Queue()
     speaking_queue = multiprocessing.Queue()
 
+    for msg in random.choices([
+        "Welcome Back",
+        "Go get em' Tiger"
+    ], weights=(90, 10)):
+        speaking_queue.put(
+            ('narrator', msg, "system")
+        )
+
     def on_closing():
         global EXIT
         EXIT = True
@@ -106,7 +115,7 @@ def main():
     update_frequency = timedelta(minutes=1)
 
     while not EXIT:
-        # our primary event loop
+        # our primary event loop, these are queue messages that are instructing the UI process to do things.
         try:
             # the event queue is how messages are sent up
             # from children.
@@ -120,11 +129,9 @@ def main():
             key, value = event_action
             
             if key == "SET_CHARACTER":
-                # if this chatter hasn't been started this 
-                # will fail.
-                # speaking_queue.put(
-                #     (None, f"Welcome back {value}", "system")
-                # )
+                speaking_queue.put(
+                    ('narrator', f"Welcome back {value}", "system")
+                )
                 models.set_hero(name=value)
                 mtv.tabdict['Character'].set_progress_chart()
 

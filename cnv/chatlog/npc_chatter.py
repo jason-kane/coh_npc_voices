@@ -3,10 +3,13 @@ import glob
 import io
 import logging
 import os
+import hashlib
 import queue
 import re
-import voicebox
+#import voicebox
+from pygame import mixer
 import threading
+#import tailer
 import time
 from datetime import datetime
 
@@ -19,7 +22,7 @@ import pythoncom
 # import voicebox
 from cnv.lib.proc import send_log_lock
 from pedalboard.io import AudioFile
-from voicebox.tts.utils import get_audio_from_wav_file
+#from voicebox.tts.utils import get_audio_from_wav_file
 
 cnv.logger.init()
 log = logging.getLogger(__name__)
@@ -144,57 +147,75 @@ class TightTTS(threading.Thread):
                 except OSError:
                     # the directory already exists.  This is not a problem.
                     pass
-
         self.start()
 
     def run(self):
+        log.info('[TightTTS] !! TightTTS is RUNNING !!')
+        
+        mixer.init()
+        mixer.set_num_channels(8)
+
+        self.channels = [
+            mixer.Channel(0),
+            mixer.Channel(1),
+            mixer.Channel(2),
+            mixer.Channel(3),
+            mixer.Channel(4),
+            mixer.Channel(5),
+            mixer.Channel(6),
+            mixer.Channel(7),
+        ]
+
         talking_npc = {}
         pythoncom.CoInitialize()
         raw_message = None
         while True:
-
+            log.info('[TightTTS] Top of True')
             while raw_message is None:
                 try:
                     raw_message = self.speaking_queue.get(block=False)
                 except queue.Empty:
-                    # no new items?  No problem, do our NPC queue bookkeeping.
+                    # no new items?  No problem, perfect time to do our NPC queue bookkeeping.
                     raw_message = None
 
-                    for name in talking_npc:
-                        if talking_npc[name]:
-                            if hasattr(talking_npc[name][0], "is_playing"):
-                                if talking_npc[name][0].is_playing():
-                                    # it is still playing, leave it alone.
-                                    continue
-                                else:
-                                    # it is done playing.  Remove it.
-                                    talking_npc[name].pop(0)
+                    # is there anything waiting to be spoken by anyone?
+                    # for name in talking_npc:
+                    #     if talking_npc[name]:
+
+                    #         if hasattr(talking_npc[name][0], "is_playing"):
+                    #             if talking_npc[name][0].is_playing():
+                    #                 # it is still playing, leave it alone.
+                    #                 continue
+                    #             else:
+                    #                 # it is done playing.  Remove it.
+                    #                 talking_npc[name].pop(0)
                         
-                        # do we have something else queued up?
-                        if talking_npc[name]:
-                            talking_npc[name][0] = talking_npc[name][0].play()
+                    #     # do we have something else queued up?
+                    #     if talking_npc[name]:
+                    #         talking_npc[name][0] = talking_npc[name][0].play()
                     
                     # so we don't slam the audio subsystem with "is_playing" requests
-                    time.sleep(0.2)
+                    #log.info('[TightTTS] speaking_queue is empty')
+                    time.sleep(1)
 
-            # TODO:  what exactly are the limits on what can safely pass through
-            # a queue to a thread?
+            log.info('[TightTTS] TTS Message received: %s', raw_message)
+            # we got a message
             try:
                 name, message, category = raw_message
             except ValueError:
-                log.warning("Unexpected queue message: %s", raw_message)
+                log.warning("[TightTTS] Unexpected queue message: %s", raw_message)
                 continue
             raw_message = None
 
             if category not in ["npc", "player", "system"]:
-                log.error("invalid category: %s", category)
+                log.error("[TightTTS] invalid category: %s", category)
                 self.speaking_queue.task_done()
                 continue
 
             phrase_id = models.get_or_create_phrase_id(name, category, message)
             message, is_translated = models.get_translated(phrase_id)
 
-            log.debug(f"Speaking thread received {category} {name}:{message}")
+            log.debug(f"[TightTTS] Speaking thread received {category} {name}:{message}")
 
             found = False
             for rank in ['primary', 'secondary']:
@@ -203,7 +224,7 @@ class TightTTS(threading.Thread):
                 # if primary exists, play that.  else secondary.
                 if not found and os.path.exists(cachefile):
                     found = True
-                    log.debug(f"(tighttts) Cache HIT: {cachefile}")
+                    log.debug(f"[TightTTS] (tighttts) Cache HIT: {cachefile}")
                     # requires pydub?
                     with AudioFile(cachefile) as input:
                         with AudioFile(
@@ -217,27 +238,62 @@ class TightTTS(threading.Thread):
                     #
                     #os.unlink(cachefile + ".wav")
 
-                    log.info(f'[{category}] Playing wav file {cachefile}.wav')
+                    log.info(f'[TightTTS] [{category}] Playing wav file {cachefile}.wav')
                     # if category in ["system",]:
                     #     # sync
                     #     audio = get_audio_from_wav_file(cachefile + ".wav")
                     #     voicebox.sinks.SoundDevice(blocking=False).play(audio)
                     # else:
                     #     # async
-                    audio_obj = simpleaudio.WaveObject.from_wave_file(str(cachefile + ".wav"))
+                    log.info('[TightTTS] Reading wav file into audio_obj')
+                    fn = str(cachefile + ".wav")
+                    #audio_obj = simpleaudio.WaveObject.from_wave_file(fn)
                     
+                    log.info('[TightTTS] %s path', category)
+
                     if category in ["npc", ]:
                         # okay.. with apologies for the level of fancy here. we
                         # don't want characters to be able to talk over
                         # themselves, because that is stupid.
-                        talking_npc.setdefault(name, [])
-                        talking_npc[name].append(audio_obj)
+                        
+                        # ok, so we've got 8 channels.
+                        # each channel can queue, so.. lets try the cheap way.
+
+                        # lets consistent hash our npc names into channels
+                        channel_index = int(hashlib.sha256(name.encode()).hexdigest()[:3], 16) % len(self.channels)
+
+                        channel = self.channels[channel_index]
+                        if channel.get_queue():
+                            # there is already a sound playing and a sound queued,
+                            # for now we will just log an error
+                            log.error('Channel queue exhausted: skipping %s', fn)
+                        else:
+                            channel.queue(
+                                mixer.Sound(file=fn)
+                            )
                     else:
-                        play_obj = audio_obj.play()
+                        # play_obj = audio_obj.play()
                         
                         if category in ["system", ]:
-                            # sync
-                            play_obj.wait_done()                 
+                            # when the system is talking, no one interrupts.
+                            log.info('[TightTTS] Waiting for audio to complete')
+                            # we should wait for a channel.
+                            channel = mixer.find_channel(force=True)
+
+                            channel.play(
+                                Sound=mixer.Sound(file=fn)
+                            )
+                            while channel.get_busy():
+                                time.sleep(0.2)
+                            # mixer.music.load(fn)
+                            # winsound.PlaySound(fn, winsound.SND_FILENAME | winsound.SND_NOSTOP)
+                            log.info('[TightTTS] audio completed')
+                        else:
+                            # async play a wav file
+                            mixer.find_channel().play(
+                                Sound=mixer.Sound(file=fn)
+                            )
+                            #winsound.PlaySound(fn, winsound.SND_FILENAME | winsound.SND_ASYNC)
 
             # neither primary nor secondary exist.
             if not found:
@@ -309,8 +365,8 @@ class LogStream:
     def __init__(
         self,
         logdir: str,
-        speaking_queue: queue,
-        event_queue: queue,
+        speaking_queue: queue.Queue,
+        event_queue: queue.Queue,
         badges: bool,
         npc: bool,
         team: bool,
@@ -341,30 +397,30 @@ class LogStream:
         self.logfile = None
         self.first_tail = True
         log.debug(f'(init) Setting {self.logfile=}')
-        
-        self.find_character_login()
 
     def open_latest_log(self):
         all_files = glob.glob(os.path.join(self.logdir, "*.txt"))
         filename = max(all_files, key=os.path.getctime)
         
-        log.debug(f'(oll) Setting {self.logfile=}')
+        log.info(f'(oll) Setting {self.logfile=} = {filename}')
         self.logfile = filename
-        return open(
-            os.path.join(self.logdir, filename),
-            encoding="utf-8"
-        )
+        return os.path.join(self.logdir, filename)
 
     def find_character_login(self):
-        """
+        """0
         Skim through and see if can find the beginning of the current characters
         login.
         """
         hero_name = None
-
+        log.info('find_character_login()')
         # we want the most recent entries of specific strings. This might be
         # better done backwards
-        with self.open_latest_log() as handle:
+        # ,
+        #    "r",
+        #    encoding="utf-8",
+        #)
+        with open(self.open_latest_log(), 'r', encoding="utf-8") as handle:
+            log.info('Searching for welcome message')
             for line in handle:
                 try:
                     datestr, timestr, line_string = line.split(None, 2)
@@ -372,6 +428,7 @@ class LogStream:
                     continue
 
                 lstring = line_string.split()
+                
                 if lstring[0] == "Welcome":
                     # Welcome to City of Heroes, <HERO NAME>
                     self.is_hero = True
@@ -381,21 +438,29 @@ class LogStream:
                     # 2024-04-17 17:10:27 Now entering the Rogue Isles, Kim Chee!
                     self.is_hero = False
                     hero_name = " ".join(lstring[5:]).strip("!")
+                
+                if hero_name:
+                    break
+                else:
+                    log.info(lstring)
 
+        log.info("hero_name: %s", hero_name)
         if hero_name:
             self.hero = Hero(hero_name)
             
             if self.event_queue:
                 self.event_queue.put(("SET_CHARACTER", self.hero.name))
 
-            self.speaking_queue.put((None, f"Welcome back {self.hero.name}", "system"))
+            log.info('Adding Welcome message to speaking_queue')
+
+            self.ssay(f"Welcome back {self.hero.name}")
             if not settings.REPLAY:
-                send_log_lock()
+                #send_log_lock()
+                log.info('log_lock attached')
 
         else:
-            self.speaking_queue.put((None, "User name not detected", "system"))
-            log.warning("Could NOT find hero name.. good luck.")      
-
+            self.ssay("User name not detected")
+            log.warning("Could NOT find hero name.. good luck.")
 
     def channel_chat_parser(self, lstring):
         speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
@@ -420,10 +485,14 @@ class LogStream:
             )
 
             if dialog.split()[0] == "[SIDEKICK]":
+                log.info('Parsing SIDEKICK')
                 # player attribute self-reporting
-                for keyvalue in dialog.split(';'):
+                # key=value;key2=value2
+                _, all_keyvals = dialog.split(None, maxsplit=1)
+
+                for keyvalue in all_keyvals.split(';'):
                     try:
-                        key, value = keyvalue.split('=')
+                        key, value = keyvalue.strip().split('=')
                     except ValueError:
                         log.warning(f'Invalid SIDEKICK: {dialog}')
                         return "__self__", None    
@@ -519,15 +588,20 @@ class LogStream:
         
         return self.caption_speaker, dialog
 
-    def channel_messager(self, lstring):
+    def channel_messager(self, lstring, line_string: str):
         # channel message
-        dialog = " ".join(lstring)
-        channel = dialog[1: dialog.find(']')]
+        dialog = line_string.strip()
+        if ']' in dialog:
+            channel = dialog[1: dialog.find(']')]
+        else:
+            log.error('Malformed channel message: %s', line_string)
+            return
 
-        log.info(dialog)
+        log.info("dialog: %s", dialog)
         
         guide = self.channel_guide.get(channel, None)
         if guide and guide['enabled']:
+            log.info('Applying channel guide %s', guide)
             # channel messages are from someone
             parser = getattr(self, guide['parser'])
             speaker, dialog = parser(lstring)
@@ -544,6 +618,11 @@ class LogStream:
         else:
             log.debug(f'{guide=}')
 
+    def ssay(self, msg):
+         # as in system-say
+         log.info('SPEAKING: %s', msg)
+         self.speaking_queue.put((None, msg, "system"))
+
     def tail(self):
         """
         read any new lines that have arrives since we last read the file and
@@ -552,313 +631,367 @@ class LogStream:
         We're in a multiprocessing.Process() while True, so the expectation is
         that we aren't going anywhere.
 
-        self.handle needs to be an open, read-able file handle.
+        self.open_latest_log needs to return an open, read-able file handle.
         """
+        log.info('tail() invoked')
         lstring = ""
 
-        with self.open_latest_log() as handle:
-            if self.first_tail:
-                # New character selected
-                log.debug(f'Found new logfile {self.logfile}')
-                self.find_character_login()
-                models.clear_damage()
-            
-            if settings.REPLAY:
-                # start at the beginning of the log
-                log.debug('Seeing to beginning of log file')
-                handle.seek(0, 0)
-            else:
-                # seek to the end of the file in the typical case
-                log.debug('Seeing to end of log file')
-                handle.seek(0, io.SEEK_END)
-            
-            # else when replay is true this will process the whole file,
-            # essentailly re-playing the session.  This is very handy for
-            # diagnostics since it makes your most recent chat log a canned
-            # example you can send through the engine over and over.  Super
-            # helpful.
+        # New character selected
+        self.ssay('Log file found')
+        self.find_character_login()
+        
+        log.info('Clearing damage data')
+        models.clear_damage()
 
-            # typical loop
-            last_working = time.time()
-            log.debug('Entering primary log evaluation loop')
-            while settings.REPLAY or (time.time() - last_working < self.READ_TIMEOUT):
-                talking = (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY
+        # if settings.REPLAY:
+        #     # start at the beginning of the log
+        #     log.info('Seeing to beginning of log file')
+        #     handle.seek(0, 0)
+        # else:
+        #     # seek to the end of the file in the typical case
+        #     log.info('Seeing to end of log file')
+        #     handle.seek(0, io.SEEK_END)
 
-                # read the next line, or return "" if we're at EOF
-                line = handle.readline().strip()
+        self.first_tail = True
+        needle: int = 0
 
-                if line:
-                    last_working = time.time()
-                    try:
-                        datestr, timestr, line_string = line.split(None, 2)
-                    except ValueError:
-                        continue
+        with open(self.open_latest_log(), encoding="utf-8") as handle:
+            while True:
+                if self.first_tail:
+                    #log.info('Seeking to EOF')
+                    #handle.seek(0, io.SEEK_END)
+                    needle = handle.tell()
+                    self.first_tail = False
+                else:
+                    time.sleep(0.5)
 
-                    lstring = line_string.replace(".", "").strip().split()
-                    # "['Hasten', 'is', 'recharged']"
-                    if lstring[0][0] == "[":
-                        self.channel_messager(lstring)
+                # else when replay is true this will process the whole file,
+                # essentailly re-playing the session.  This is very handy for
+                # diagnostics since it makes your most recent chat log a canned
+                # example you can send through the engine over and over.  Super
+                # helpful.
 
-                    elif self.announce_badges and lstring[0] == "Congratulations!":
-                        self.speaking_queue.put((None, (" ".join(lstring[4:])), "system"))
+                # typical loop
+                #last_working = time.time()
+                #
 
-                    elif lstring[0] == "You":
-                        if lstring[1] in ["found", "stole", "begin", "finished"]:
-                            # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
-                            # You have cleared the Snakes from the Arachnos base, and learned something interesting.
-                            # You stole the money!
-                            dialog = plainstring(" ".join(lstring))
-                            if talking:
-                                self.speaking_queue.put((None, dialog, "system"))
+                # last_working < self.READ_TIMEOUT
+                # run immediately and keep running, fail if last_working goes too long without a reset.
 
-                        elif lstring[1] == "have":
-                            enabled = False
-                            # have is tricky.  lots of things use have.
-                            dialog = plainstring(" ".join(lstring))
-                            if lstring[2] == "defeated":
-                                enabled = settings.get_toggle(settings.taggify("Acknowledge each win"))
+                log.info('Entering primary log evaluation loop')
+                # for line in tailer.follow(handle):
+                
+                # read from needle to current EOF
+                handle.seek(needle)
+                buffer = handle.read()
+                if not buffer:
+                    # nothing to read, give it a hot half-second
+                    time.sleep(0.5)
+                else:
+                    for line in buffer.split("\n"):
+                        needle += len(line) + 1  # +1 for the \n
+                        log.info("line: '%s'", line)
 
-                                if talking and enabled:
-                                    self.speaking_queue.put((None, dialog, "system"))
-                                else:
-                                    log.info(f'Not speaking: {talking=} {enabled=}')
+                #while True:
+                #    log.info('Blocking until a line of text is available')
+                #    line = handle.readline().strip()
 
-                            elif lstring[2] in ["Insight", "Uncanny"]:
-                                # You have Insight into your enemy's weaknesses and slightly increase your chance To Hit and your Perception.
-                                pass
+                    # for line in handle:               
+                    #if True:
+                        log.info('Top of True')               
+                        #for line in handle.readlines():
+                        # settings.REPLAY or (time.time() - last_working < self.READ_TIMEOUT):
+                        #talking = (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY
+                        talking = True
+                        
+                        # read the next line, or return "" if we're at EOF
+                        # log.info('Reading from %s', handle)
+                        # line = handle.readline()
 
-                            elif lstring[2] == "been":
-                                enabled =False
-                                # buffs and debuffs
-                                if lstring[3] in [
-                                    "put", "immobilized!", "exemplared", 
-                                    "interrupted.", "held", "temporarily",
-                                    "blinded"
-                                ]:
-                                    enabled = settings.get_toggle(settings.taggify('Speak Debuffs'))
-                                elif lstring[3] in ["granted", ]:
-                                    enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
-
-                                if talking and enabled:
-                                    self.speaking_queue.put((None, dialog, "system"))
-
-                            elif talking:
-                                self.speaking_queue.put((None, dialog, "system"))
-
-                        elif lstring[1] == "are":
-                            enabled = False
-                            if lstring[2] in ['held!', 'unable']:
-                                # 2024-04-01 20:04:17 You are held!
-                                enabled = settings.get_toggle(settings.taggify('Speak Debuffs'))
-                            elif lstring[2] in ['healed', 'filled', 'now', 'Robust', 'Enraged', 'hidden', 'Sturdy']:
-                                log.debug(f'You are: {lstring}')
-                                enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
-                                #  You are healed by your Dehydrate for 23.04 health points over time.
-                                if lstring[2] == "healed" and lstring[3:5] == ["by", "your"]:
-                                    if lstring[5:7] == ['Defensive', 'Adaptation']:
-                                        # Way, way too verbose.
-                                        enabled = False
-                                        
-                                    # don't speak the exact numbers, it destroyed the voice cache
-                                    lstring = lstring[:lstring.index('for')]
-                                    log.debug(f'Trimming lstring to {lstring}')
-                                else:
-                                    log.debug(f'lstring[2]={lstring[2]} and {lstring[3:5]}')
-
-                            if talking and enabled:
-                                dialog = plainstring(" ".join(lstring))
-                                self.speaking_queue.put((None, dialog, "system"))
-
-                        elif self.hero and lstring[1] == "gain":
-                            # You gain 104 experience and 36 influence.
-                            # You gain 15 experience, work off 15 debt, and gain 14 influence.
-                            # You gain 26 experience and work off 2,676 debt.
-                            # You gain 70 experience.
-                            # You gain 2 stacks of Blood Frenzy!
-                            # I'm just going to make the database carry the burden, so much easier.
-                            # is this string stable enough to get away with this?  It's friggin'
-                            # cheating.
-                            log.debug(lstring)
-                            # You gain 250 influence.
-
-                            inf_gain = None
-                            xp_gain = None
-
-                            for inftype in ["influence", "information"]:
-                                try:
-                                    influence_index = lstring.index(inftype) - 1
-                                    inf_gain = int(
-                                        lstring[influence_index].replace(",", "")
-                                    )
-                                except ValueError:
-                                    pass
-
+                        if line.strip():
+                            # last_working = time.time()
                             try:
-                                if 'experience' in lstring:
-                                    xp_gain = lstring[lstring.index('experience') - 1]
-                                elif 'experience,' in lstring:
-                                    xp_gain = lstring[lstring.index('experience,') - 1]
-
-                                if xp_gain:
-                                    xp_gain = int(xp_gain.replace(",", ""))
+                                datestr, timestr, line_string = line.split(None, 2)
                             except ValueError:
-                                pass                            
+                                log.error('Invalid line.split(%s)', line)
+                                continue
 
-                            # try:
-                            #     did_i_defeat_it = previous.index("defeated")
-                            #     foe = " ".join(previous[did_i_defeat_it:])
-                            # except ValueError:
-                            #     # no, someone else did.  you just got some
-                            #     # points for it.  Lazybones.
-                            #     foe = None
-                            
-                            # we _could_ visualize the percentage of kills
-                            # by each player in the party.
-                            if inf_gain or xp_gain:
-                                if not settings.REPLAY or settings.XP_IN_REPLAY:
-                                    log.debug(f"Awarding xp: {xp_gain} and inf: {inf_gain}")
-                                    with models.db() as session:
-                                        new_event = models.HeroStatEvent(
+                            log.info('line_string: %s', line_string)
+                            try:
+                                lstring = line_string.replace(".", "").strip().split()
+                                # "['Hasten', 'is', 'recharged']" 
+                                log.info("lstring: %s", lstring)
+                            except Exception as err:
+                                log.error(err)
+                                raise
+
+                            if lstring[0][0] == "[":
+                                log.info('Invoking channel_messager()')
+                                self.channel_messager(lstring, line_string)
+                                log.info('Returned from channel_messager()')
+
+                            elif self.announce_badges and lstring[0] == "Congratulations!":
+                                self.ssay(" ".join(lstring[4:]))
+
+                            elif lstring[0] == "You":
+                                if lstring[1] in ["found", "stole", "begin", "finished", "open", "didn't"]:
+                                    # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
+                                    # You have cleared the Snakes from the Arachnos base, and learned something interesting.
+                                    # You stole the money!
+                                    # You finished searching through the records
+                                    # You didn't find Percy's Record
+                                    # You open the records and find it filled with wooden tubes studded with holes. As you pick one up it emits a verbal record of the individual it is about.
+
+                                    dialog = plainstring(" ".join(lstring))
+                                    if talking:
+                                        self.ssay(dialog)
+
+                                elif lstring[1] == "have":
+                                    enabled = False
+                                    # have is tricky.  lots of things use have.
+                                    dialog = plainstring(" ".join(lstring))
+                                    if lstring[2] == "defeated":
+                                        enabled = settings.get_toggle(settings.taggify("Acknowledge each win"))
+
+                                        if talking and enabled:
+                                            self.ssay(dialog)
+                                        else:
+                                            log.info(f'Not speaking: {talking=} {enabled=}')
+
+                                    elif lstring[2] in ["Insight", "Uncanny"]:
+                                        # You have Insight into your enemy's weaknesses and slightly increase your chance To Hit and your Perception.
+                                        pass
+
+                                    elif lstring[2] == "been":
+                                        enabled =False
+                                        # buffs and debuffs
+                                        if lstring[3] in [
+                                            "put", "immobilized!", "exemplared", 
+                                            "interrupted.", "held", "temporarily",
+                                            "blinded"
+                                        ]:
+                                            enabled = settings.get_toggle(settings.taggify('Speak Debuffs'))
+                                        elif lstring[3] in ["granted", ]:
+                                            enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
+
+                                        if talking and enabled:
+                                            self.ssay(dialog)
+
+                                    elif talking:
+                                        self.ssay(dialog)
+
+                                elif lstring[1] == "are":
+                                    enabled = False
+                                    if lstring[2] in ['held!', 'unable']:
+                                        # 2024-04-01 20:04:17 You are held!
+                                        enabled = settings.get_toggle(settings.taggify('Speak Debuffs'))
+                                    elif lstring[2] in ['healed', 'filled', 'now', 'Robust', 'Enraged', 'hidden', 'Sturdy']:
+                                        log.debug(f'You are: {lstring}')
+                                        enabled = settings.get_toggle(settings.taggify('Speak Buffs'))
+                                        #  You are healed by your Dehydrate for 23.04 health points over time.
+                                        if lstring[2] == "healed" and lstring[3:5] == ["by", "your"]:
+                                            if lstring[5:7] == ['Defensive', 'Adaptation']:
+                                                # Way, way too verbose.
+                                                enabled = False
+                                                
+                                            # don't speak the exact numbers, it destroyed the voice cache
+                                            lstring = lstring[:lstring.index('for')]
+                                            log.debug(f'Trimming lstring to {lstring}')
+                                        else:
+                                            log.debug(f'lstring[2]={lstring[2]} and {lstring[3:5]}')
+
+                                    if talking and enabled:
+                                        dialog = plainstring(" ".join(lstring))
+                                        self.ssay(dialog)
+
+                                elif self.hero and lstring[1] == "gain":
+                                    # You gain 104 experience and 36 influence.
+                                    # You gain 15 experience, work off 15 debt, and gain 14 influence.
+                                    # You gain 26 experience and work off 2,676 debt.
+                                    # You gain 70 experience.
+                                    # You gain 2 stacks of Blood Frenzy!
+                                    # I'm just going to make the database carry the burden, so much easier.
+                                    # is this string stable enough to get away with this?  It's friggin'
+                                    # cheating.
+                                    log.debug(lstring)
+                                    # You gain 250 influence.
+
+                                    inf_gain = None
+                                    xp_gain = None
+
+                                    for inftype in ["influence", "information"]:
+                                        try:
+                                            influence_index = lstring.index(inftype) - 1
+                                            inf_gain = int(
+                                                lstring[influence_index].replace(",", "")
+                                            )
+                                        except ValueError:
+                                            pass
+
+                                    try:
+                                        if 'experience' in lstring:
+                                            xp_gain = lstring[lstring.index('experience') - 1]
+                                        elif 'experience,' in lstring:
+                                            xp_gain = lstring[lstring.index('experience,') - 1]
+
+                                        if xp_gain:
+                                            xp_gain = int(xp_gain.replace(",", ""))
+                                    except ValueError:
+                                        pass                            
+
+                                    # try:
+                                    #     did_i_defeat_it = previous.index("defeated")
+                                    #     foe = " ".join(previous[did_i_defeat_it:])
+                                    # except ValueError:
+                                    #     # no, someone else did.  you just got some
+                                    #     # points for it.  Lazybones.
+                                    #     foe = None
+                                    
+                                    # we _could_ visualize the percentage of kills
+                                    # by each player in the party.
+                                    if inf_gain or xp_gain:
+                                        if not settings.REPLAY or settings.XP_IN_REPLAY:
+                                            log.debug(f"Awarding xp: {xp_gain} and inf: {inf_gain}")
+                                            with models.db() as session:
+                                                new_event = models.HeroStatEvent(
+                                                    hero_id=self.hero.id,
+                                                    event_time=datetime.strptime(
+                                                        f"{datestr} {timestr}", "%Y-%m-%d %H:%M:%S"
+                                                    ),
+                                                    xp_gain=xp_gain,
+                                                    inf_gain=inf_gain,
+                                                )
+                                                session.add(new_event)
+                                                session.commit()
+                                if lstring[1] == "hit":
+                                    # You hit Abomination with your Assassin's Psi Blade for 43.22 points of Psionic damage.
+                                    # You hit Zealot with your Bitter Ice Blast for 13088 points of Cold damage (SCOURGE)
+                                    # You hit Button Man Buckshot with your Dart Burst for 10.61 points of Lethal damage over time.
+                                    # You hit Arva with your Freeze Ray for 7.49 points of Cold damage over time (SCOURGE).
+                                    
+                                    m = re.fullmatch(
+                                        r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>.*) points of (?P<damage_type>.*) damage( |\.)?(?P<DOT>[^\n\(\.A-Z]*)[^\nA-Z\(]*\(?(?P<special>[A-Z]*).*",
+                                        " ".join(lstring)
+                                    )
+                                    if m:
+                                        #target, power, damage, damagetype, special = m.groups()
+                                        if m['special'] is None:
+                                            special = ""
+                                        else:
+                                            special = m['special'].strip("() \t\n\r\x0b\x0c").title()
+
+                                        d = models.Damage(
                                             hero_id=self.hero.id,
-                                            event_time=datetime.strptime(
-                                                f"{datestr} {timestr}", "%Y-%m-%d %H:%M:%S"
-                                            ),
-                                            xp_gain=xp_gain,
-                                            inf_gain=inf_gain,
+                                            target=m['target'],
+                                            power=m['power'],
+                                            damage=int(m['damage']),
+                                            damage_type=m['damage_type'],
+                                            special=special
                                         )
-                                        session.add(new_event)
-                                        session.commit()
-                        if lstring[1] == "hit":
-                            # You hit Abomination with your Assassin's Psi Blade for 43.22 points of Psionic damage.
-                            # You hit Zealot with your Bitter Ice Blast for 13088 points of Cold damage (SCOURGE)
-                            # You hit Button Man Buckshot with your Dart Burst for 10.61 points of Lethal damage over time.
-                            # You hit Arva with your Freeze Ray for 7.49 points of Cold damage over time (SCOURGE).
-                            
-                            m = re.fullmatch(
-                                r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>.*) points of (?P<damage_type>.*) damage( |\.)?(?P<DOT>[^\n\(\.A-Z]*)[^\nA-Z\(]*\(?(?P<special>[A-Z]*).*",
-                                " ".join(lstring)
-                            )
-                            if m:
-                                #target, power, damage, damagetype, special = m.groups()
-                                if m['special'] is None:
-                                    special = ""
-                                else:
-                                    special = m['special'].strip("() \t\n\r\x0b\x0c").title()
+                                        
+                                        with models.db() as session:
+                                            session.add(d)
+                                            session.commit()
+                                    else:
+                                        # You hit Gravedigger Slammer with your Twilight Grasp reducing their damage and chance to hit and healing you and your allies!
+                                        m = re.fullmatch(
+                                            r"You hit (?P<target>.*) with your (?P<power>.*) reducing .*",
+                                            " ".join(lstring)
+                                        )
+                                        if m:
+                                            # nothing to record
+                                            pass
+                                        else:
+                                            dialog = plainstring(" ".join(lstring))
+                                            log.warning(f'hit failed regex: {dialog}')
 
-                                d = models.Damage(
-                                    hero_id=self.hero.id,
-                                    target=m['target'],
-                                    power=m['power'],
-                                    damage=int(m['damage']),
-                                    damage_type=m['damage_type'],
-                                    special=special
-                                )
-                                
-                                with models.db() as session:
-                                    session.add(d)
-                                    session.commit()
-                            else:
-                                # You hit Gravedigger Slammer with your Twilight Grasp reducing their damage and chance to hit and healing you and your allies!
+                                elif lstring[1] in ["carefully", "look", "find"]:
+                                    dialog = plainstring(" ".join(lstring))
+                                    self.speaking_queue.put((None, dialog, "system"))
+
+                            elif lstring[0] == "MISSED":
+                                # MISSED Mamba Blade!! Your Contaminated Strike power had a 95.00% chance to hit, you rolled a 95.29.
                                 m = re.fullmatch(
-                                    r"You hit (?P<target>.*) with your (?P<power>.*) reducing .*",
+                                    r"MISSED (?P<target>.*)!! Your (?P<power>.*) power had a (?P<chance_to_hit>[0-9\.]*)% chance to hit, you rolled a (?P<roll>[0-9\.]*).",
                                     " ".join(lstring)
                                 )
                                 if m:
-                                    # nothing to record
-                                    pass
+                                    target, power, change_to_hit, roll = m.groups()
+                                    
+                                    # Okay to tuck a "miss" in here?
+                                    d = models.Damage(
+                                        hero_id=self.hero.id,
+                                        target=target,
+                                        power=power,
+                                        damage=0,
+                                        damage_type="",
+                                        special=""
+                                    )
+                                    
+                                    with models.db() as session:
+                                        session.add(d)
+                                        session.commit()
                                 else:
-                                    dialog = plainstring(" ".join(lstring))
-                                    log.warning(f'hit failed regex: {dialog}')
+                                    log.warning('String failed regex:\n%s' % " ".join(lstring))
 
-                        elif lstring[1] in ["carefully", "look", "find"]:
-                            dialog = plainstring(" ".join(lstring))
-                            self.speaking_queue.put((None, dialog, "system"))
+                            elif lstring[0] == "Welcome":
+                                # Welcome to City of Heroes, <HERO NAME>
+                                self.hero = Hero(" ".join(lstring[5:]).strip("!"))
 
-                    elif lstring[0] == "MISSED":
-                        # MISSED Mamba Blade!! Your Contaminated Strike power had a 95.00% chance to hit, you rolled a 95.29.
-                        m = re.fullmatch(
-                            r"MISSED (?P<target>.*)!! Your (?P<power>.*) power had a (?P<chance_to_hit>[0-9\.]*)% chance to hit, you rolled a (?P<roll>[0-9\.]*).",
-                            " ".join(lstring)
-                        )
-                        if m:
-                            target, power, change_to_hit, roll = m.groups()
-                            
-                            # Okay to tuck a "miss" in here?
-                            d = models.Damage(
-                                hero_id=self.hero.id,
-                                target=target,
-                                power=power,
-                                damage=0,
-                                damage_type="",
-                                special=""
-                            )
-                            
-                            with models.db() as session:
-                                session.add(d)
-                                session.commit()
+                                # we want to notify upstream UI about this.
+                                self.event_queue.put(("SET_CHARACTER", self.hero.name))
+
+                            elif lstring[-2:] == ["is", "recharged"]:
+                                log.debug('Adding RECHARGED event to event_queue...')
+                                self.event_queue.put(
+                                    ("RECHARGED", " ".join(lstring[0:lstring.index("is")]))
+                                )
+
+                            elif lstring[-2:] == ["the", "team"]:
+                                name = " ".join(lstring[0:-4])
+                                action = lstring[-3]  # joined or quit
+                                self.ssay(f"Player {name} has {action} the team")
+
+                            elif lstring[:2] in ["The", "name", "The", "whiteboard"]:
+                                # The name <color red>Toothbreaker Jones</color> keeps popping up, and these Skulls were nice enough to tell you where to find him. Time to pay him a visit.
+                                dialog = plainstring(" ".join(lstring))
+                                self.ssay(dialog)
+
+                            elif lstring[0:2] == ["Your", "combat"]:
+                                # 2024-07-26 19:01:05 Your combat improves to level 23! Seek a trainer to further your abilities.
+                                level = int(lstring[5].strip('!'))
+                                self.ssay(f"Congratulations.  You have reached Level {level}")
+                                
+                                # this will update the character tab
+                                settings.set_config_key(
+                                'level', level, cf='state.json'
+                                )
+
+                            # single word things to speak, mostly clicky descriptions
+                            elif lstring[0] in ["Something's", "In", "Jones", "This", "You've", "Where"]:
+                                # Something's not right with this spot on the floor...
+                                # This blotch of petroleum on the ground seems fresh, perhaps leaked by a 'zoombie' and a sign that they're near. You take a photo and send it to Watkins.
+                                # You've found a photocopy of a highly detailed page from a medical notebook, with wildly complex notes about cybernetics. 
+                                dialog = plainstring(" ".join(lstring))
+                                if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
+                                    self.ssay(dialog)
+                                
+                            else:
+                                log.warning(f'tag {lstring[0]} not classified.')
+                            #
+                            # Team task completed.
+                            # A new team task has been chosen.
                         else:
-                            log.warning('String failed regex:\n%s' % " ".join(lstring))
+                            print('empty')
 
-                    elif lstring[0] == "Welcome":
-                        # Welcome to City of Heroes, <HERO NAME>
-                        self.hero = Hero(" ".join(lstring[5:]).strip("!"))
+                        #except Exception as err:
+                        #    log.error(err)
+                            
 
-                        # we want to notify upstream UI about this.
-                        self.event_queue.put(("SET_CHARACTER", self.hero.name))
-
-                    elif lstring[-2:] == ["is", "recharged"]:
-                        log.debug('Adding RECHARGED event to event_queue...')
-                        self.event_queue.put(
-                            ("RECHARGED", " ".join(lstring[0:lstring.index("is")]))
-                        )
-
-                    elif lstring[-2:] == ["the", "team"]:
-                        name = " ".join(lstring[0:-4])
-                        action = lstring[-3]  # joined or quit
-                        self.speaking_queue.put((None, f"Player {name} has {action} the team", "system"))
-
-                    elif lstring[:2] in ["The", "name", "The", "whiteboard"]:
-                        # The name <color red>Toothbreaker Jones</color> keeps popping up, and these Skulls were nice enough to tell you where to find him. Time to pay him a visit.
-                        dialog = plainstring(" ".join(lstring))
-                        self.speaking_queue.put((None, dialog, "system"))
-
-                    elif lstring[0:2] == ["Your", "combat"]:
-                        # 2024-07-26 19:01:05 Your combat improves to level 23! Seek a trainer to further your abilities.
-                        level = int(lstring[5].strip('!'))
-                        self.speaking_queue.put(
-                            (
-                                None,
-                                f"Congratulations.  You have reached Level {level}",
-                                "system",
-                            )
-                        )
-
-                        # this will update the character tab
-                        settings.set_config_key(
-                           'level', level, cf='state.json'
-                        )
-
-                    # single word things to speak, mostly clicky descriptions
-                    elif lstring[0] in ["Something's", "In", "Jones", "This", "You've", "Where"]:
-                        # Something's not right with this spot on the floor...
-                        # This blotch of petroleum on the ground seems fresh, perhaps leaked by a 'zoombie' and a sign that they're near. You take a photo and send it to Watkins.
-                        # You've found a photocopy of a highly detailed page from a medical notebook, with wildly complex notes about cybernetics. 
-                        dialog = plainstring(" ".join(lstring))
-                        if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
-                            self.speaking_queue.put((None, dialog, "system"))
-                        
-                    # else:
-                    #    log.warning(f'tag {lstring[0]} not classified.')
-                    #
-                    # Team task completed.
-                    # A new team task has been chosen.
-                else:
-                    # no need to heat up the house
-                    time.sleep(0.125)
-
-            # not exactly a _problem_ but this should be rare.
-            log.warning(f'Chat Log READ_TIMEOUT ({self.READ_TIMEOUT}) exceeded.')
-            self.first_tail = False
+                        # not exactly a _problem_ but this should be rare.
+                        #log.warning(f'Chat Log READ_TIMEOUT ({self.READ_TIMEOUT}) exceeded.')
+                        #self.first_tail = False
+            
 
 class Hero:
     # keep this update for cheap parlor tricks.
@@ -868,6 +1001,7 @@ class Hero:
     )
 
     def __init__(self, hero_name):
+        self.name = hero_name
         self.load_hero(hero_name)
 
     def load_hero(self, hero_name):

@@ -51,7 +51,8 @@ class AmazonPollyAuthUI(ttk.Frame):
             That is a lot.  After the free year expires, or if you run out it
             (currently) costs $4 per million characters.""".replace("\n", " ")
         ) 
-        mdlabel.on_link_click(self.link_click) 
+        # mdlabel.on_link_click(self.link_click) 
+        
         mdlabel.pack(side="top", fill="x", expand=False)
 
         #s = ttk.Style()

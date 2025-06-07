@@ -1,12 +1,13 @@
 """Voice Editor component"""
 import logging
 import os
+from pygame import mixer
 import tkinter as tk
 from tkinter import ttk
 
 import customtkinter as ctk
 # import voicebox
-import simpleaudio
+#import simpleaudio
 from cnv.database import db, models
 from cnv.effects import registry
 from cnv.engines import engines
@@ -82,6 +83,8 @@ class WavfileMajorFrame(ctk.CTkFrame):
 
         # Wavfile visualizations
         self.visualize_wav = ctk.CTkFrame(self)
+
+        mixer.init()
 
         # must be called after self.play_btn exists
         self.populate_phrases()
@@ -305,16 +308,11 @@ class WavfileMajorFrame(ctk.CTkFrame):
             # play the Audio()
             #voicebox.sinks.SoundDevice(blocking=False).play(audio_obj)
             log.info(f'Playing {wavfilename}')
-            audio_obj = simpleaudio.WaveObject.from_wave_file(
-                str(wavfilename)
-            )
-            audio_obj.play()
-            # simpleaudio.play_buffer(
-            #     audio_data=audio_obj.signal, 
-            #     num_channels=1,
-            #     bytes_per_sample=2,
-            #     sample_rate=audio_obj.sample_rate
+            mixer.Sound(file=wavfilename).play()
+            # audio_obj = simpleaudio.WaveObject.from_wave_file(
+            #     str(wavfilename)
             # )
+            # audio_obj.play()
             
     def say_it(self, use_secondary=False):
         """

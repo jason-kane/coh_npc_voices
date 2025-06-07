@@ -545,7 +545,9 @@ class ChatterService:
         npc_chatter.TightTTS(speaking_queue, event_queue)
         speaking_queue.put((None, "Attaching to most recent log...", 'system'))
 
+        # TODO: WFT buddy, fix this shit
         logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
+
         badges = True
         team = True
         npc = True
@@ -553,8 +555,16 @@ class ChatterService:
         ls = npc_chatter.LogStream(
             logdir, speaking_queue, event_queue, badges, npc, team
         )
-        while True:
+        
+        # while True:
+        log.info('invoking LogStream.tail()')
+        try:
             ls.tail()
+        except Exception as err:
+            log.error(err)
+            raise
+
+        log.error('tail() exited')
 
 
 class Chatter(ctk.CTkFrame):
@@ -596,7 +606,7 @@ class Chatter(ctk.CTkFrame):
             command=self.ask_directory
         ).grid(column=2, row=0)
         
-        self.cs = ChatterService()
+        self.chatter_service = ChatterService()
 
     def save_logdir(self, *args):
         logdir = self.logdir.get()
@@ -615,22 +625,24 @@ class Chatter(ctk.CTkFrame):
 
         if self.attached:
             # we are already attached, I guess we want to stop.
+            log.info('Terminating Chatter')
             self.p.terminate()
             self.button_text.set(self.attach_label)
             self.attached = False
             log.debug('Detached')
         else:
             # we are not attached, lets do that.
-            self.attached = True
+            log.info('Constructing chatter_service process')
             self.button_text.set(self.detach_label)
             self.p = multiprocessing.Process(
-                target=self.cs.start, 
+                target=self.chatter_service.start, 
                 args=(
                     self.event_queue,
                     self.speaking_queue,
                 )
             )
             self.p.start()
+            self.attached = True
             log.debug('Attached')
 
 
