@@ -68,9 +68,11 @@ def main():
     speaking_queue = multiprocessing.SimpleQueue()
 
     for msg in random.choices([
-        "Welcome Back",
-        "Go get em' Tiger"
-    ], weights=(90, 10)):
+        "Returning to Paragon City",
+        "Back so soon?",
+        "Go get em' Tiger",
+        "and then she said, it's a duck!"
+    ], weights=(75, 10, 10, 5)):
         speaking_queue.put(
             ('narrator', msg, "system")
         )
@@ -120,38 +122,36 @@ def main():
         try:
             # the event queue is how messages are sent up
             # from children.
-            event_action = None, None
-            
-            if not event_queue.empty():
-               event_action = event_queue.get()
-               
-            # we got an action (no exception)
-            # log.info('Event Received: %s', event_action)
-            key, value = event_action
-            
-            if key == "SET_CHARACTER":
-                speaking_queue.put(
-                    ('narrator', f"Welcome back {value}", "system")
-                )
-                models.set_hero(name=value)
-                mtv.tabdict['Character'].set_progress_chart()
 
-                #log.debug('path set_chraracter')
-                #char.chatter.hero = npc_chatter.Hero(value)
-                #log.debug('Calling set_hero()...')
-                #char.set_hero()
-                last_character_update = datetime.now()
-            elif key == "SPOKE":
-                # name, category = value
-                log.debug('Refreshing character list...')
-                mtv.tabdict['Voices'].listside.refresh_character_list()
-            elif key == "RECHARGED":
-                log.debug(f'Power {value} has recharged.')
-                if value in ["Hasten", "Domination"]:
-                    if settings.get_config_key(f'auto_{value.lower()}'):
-                        send_chatstring(f"/powexec_name \"{value}\"\n")
-                    else:
-                        log.info(f'auto_{value.lower()} is disabled')
+            if not event_queue.empty():
+                # we got an action (no exception)
+                key, value = event_queue.get()
+                
+                log.info(f'{key}({value}) event received')
+
+                if key == "SET_CHARACTER":
+                    speaking_queue.put(
+                        ('narrator', f"Welcome back {value}", "system")
+                    )
+                    models.set_hero(name=value)
+                    mtv.tabdict['Character'].set_progress_chart()
+
+                    #log.debug('path set_chraracter')
+                    #char.chatter.hero = npc_chatter.Hero(value)
+                    #log.debug('Calling set_hero()...')
+                    #char.set_hero()
+                    last_character_update = datetime.now()
+                elif key == "SPOKE":
+                    # name, category = value
+                    log.debug('Refreshing character list...')
+                    mtv.tabdict['Voices'].listside.refresh_character_list()
+                elif key == "RECHARGED":
+                    log.debug(f'Power {value} has recharged.')
+                    if value in ["Hasten", "Domination"]:
+                        if settings.get_config_key(f'auto_{value.lower()}'):
+                            send_chatstring(f"/powexec_name \"{value}\"\n")
+                        else:
+                            log.info(f'auto_{value.lower()} is disabled')
 
         except Exception as err:
             log.error(f"{err=}")
