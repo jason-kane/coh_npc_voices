@@ -1,5 +1,8 @@
 from rich.logging import RichHandler
+from rich.console import Console
 from logging.config import dictConfig
+
+# richHandler = RichHandler(console=Console(width=256))
 
 LOGGING_CONFIG = { 
     'version': 1,
@@ -16,10 +19,11 @@ LOGGING_CONFIG = {
         'default': { 
             'level': 'DEBUG',
             'formatter': 'standard',
-            'class': RichHandler
+            'class': RichHandler,
+            #"console": Console(width=256)
         },
         'error_file': { 
-            'level': 'ERROR',
+            'level': 'INFO',
             'formatter': 'logfile',
             'class': 'logging.FileHandler',
             'filename': 'error.log',

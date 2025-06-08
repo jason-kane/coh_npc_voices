@@ -30,24 +30,24 @@ PLAYER_CATEGORY = models.category_str2int("player")
 
 ENGINE_OVERRIDE = {}
 
-@dataclass
-class SimpleAudioDevice(Sink):
-    def play(self, audio: Audio) -> None:
-        with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
-            fp.close()
-            log.info(f'Using temp file {fp.name}')
+# @dataclass
+# class SimpleAudioDevice(Sink):
+#     def play(self, audio: Audio) -> None:
+#         with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
+#             fp.close()
+#             log.info(f'Using temp file {fp.name}')
             
-            write_audio_to_wav(
-                audio=audio,
-                file_or_path=fp.name,
-                append=False,
-                sample_width=2
-            )
+#             write_audio_to_wav(
+#                 audio=audio,
+#                 file_or_path=fp.name,
+#                 append=False,
+#                 sample_width=2
+#             )
 
-            if pygame.mixer.get_init() is None:
-                pygame.mixer.init()
+            # if pygame.mixer.get_init() is None:
+            #     pygame.mixer.init()
 
-            pygame.mixer.Sound(fp.name)           
+            # pygame.mixer.Sound(fp.name)           
 
 
 def create(character, message, session):
@@ -88,34 +88,30 @@ def create(character, message, session):
         rank = 'secondary'
 
     # have we seen this particular phrase before?
-    if character.category != PLAYER_CATEGORY or settings.get_toggle(settings.taggify("Persist player chat")):
+    #if character.category != PLAYER_CATEGORY or settings.get_toggle(settings.taggify("Persist player chat")):
         # phrase_id = models.get_or_create_phrase_id(
         #     name=character.name,
         #     category=character.category,
         #     message=message
         # )
         
-        # message = models.get_translated(phrase_id)
-        cachefile = settings.get_cachefile(
-            character.name, 
-            message, 
-            character.cat_str(),
-            rank
-        )
+    # message = models.get_translated(phrase_id)
 
-        try:
-            clean_name = re.sub(r'[^\w]', '',character.name)
-            os.mkdir(os.path.join("clip_library", character.cat_str(), clean_name))
-        except OSError:
-            # the directory already exists.  This is not a problem.
-            pass
 
-        save = True
-    else:
-        sink = Distributor([
-            SimpleAudioDevice()
-        ])
-        save = False 
+    try:
+        clean_name = re.sub(r'[^\w]', '',character.name)
+        os.mkdir(os.path.join("clip_library", character.cat_str(), clean_name))
+    except OSError:
+        # the directory already exists.  This is not a problem.
+        pass
+
+    #     save = True
+    # else:
+    #     # play it without saving it.
+    #     # sink = Distributor([
+    #     #     SimpleAudioDevice()
+    #     # ])
+    #     save = False 
     
     name = character.name
     category = character.category
@@ -128,20 +124,38 @@ def create(character, message, session):
         if rank == 'secondary':
             raise USE_SECONDARY
         
-        if save:
-            sink = Distributor([
-                SimpleAudioDevice(),
-                WaveFile(cachefile + '.wav')
-            ])
-        else:
-            sink = Distributor([
-                SimpleAudioDevice()
-            ])
+        cachefile = settings.get_cachefile(
+            character.name, 
+            message, 
+            character.cat_str(),
+            rank
+        )
+
+        #if save:
+        sink = Distributor([
+            #SimpleAudioDevice(),
+            WaveFile(cachefile + '.wav')
+        ])
+        # else:
+        #     sink = Distributor([
+        #         SimpleAudioDevice()
+        #     ])
 
         log.debug(f'Using engine: {character.engine}')
-        get_engine(character.engine)(None, 'primary', name, category).say(
-            message, effect_list, sink=sink
+        
+        # this is a stupid interface.
+        # every character gets a primary engine config, even if it's os TTS.
+        get_engine(character.engine)(
+            None, 
+            'primary', 
+            name, 
+            category
+        ).say(
+            message, 
+            effect_list, 
+            sink=sink
         )
+
     except USE_SECONDARY:
         rank = 'secondary'
         # our chosen engine for this character isn't working.  So we're going to switch
@@ -162,15 +176,15 @@ def create(character, message, session):
         )
 
         # new cachefile, new sink.
-        if save:
-            sink = Distributor([
-                SimpleAudioDevice(),
-                WaveFile(cachefile + '.wav')
-            ])
-        else:
-            sink = Distributor([
-                SimpleAudioDevice()
-            ])
+        #if save:
+        sink = Distributor([
+            #SimpleAudioDevice(),
+            WaveFile(cachefile + '.wav')
+        ])
+        # else:
+        #     sink = Distributor([
+        #         SimpleAudioDevice()
+        #     ])
 
         if character.engine_secondary:
             # use the secondary engine config defined for this character
@@ -182,14 +196,5 @@ def create(character, message, session):
             engine_instance = get_engine(engine_name)
             engine_instance(None, 'secondary', name, category).say(message, effect_list, sink=sink)
      
-    if save:
-        # it is already saved as a wav file, this converts it to an mp3 then
-        # erases the wav file.
-        if settings.get_config_key('save_as_mp3', True):
-            audio.wavfile_to_mp3file(
-                wavfilename=cachefile + ".wav",
-                mp3filename=cachefile
-            )
+        # End result: cachefile + ".wav" exists, for at least one of primary/secondary.
 
-        if not settings.get_config_key('save_as_wav', True):
-            os.unlink(cachefile + ".wav")

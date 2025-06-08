@@ -32,7 +32,8 @@ CAPTION_SPEAKER_INDICATORS = (
     ('Matthew, is it', 'Dana'),  # Cinderburn mission
     ("Dana you're alive?!", 'Matthew'),
     ("This is Penelope Yin!", 'Penelope Yin'),
-    ('This is Robert Alderman', 'Robert Alderman')
+    ('This is Robert Alderman', 'Robert Alderman'),
+    ('this is Watkins.', 'Agent Watkins'),
 )
 
 
@@ -57,6 +58,75 @@ class TightTTS(threading.Thread):
                     pass
         self.start()
 
+
+    def get_channel(self, name: str, category: str) -> pygame.mixer.Channel:
+        if category == "system":
+            channel_index = 0
+        else:
+            # okay.. with apologies for the level of fancy here. we
+            # don't want characters to be able to talk over
+            # themselves, because that is stupid.
+            
+            # But.. we are also limited to a small number of
+            # channels relative to the number of characters.  We
+            # can't give _every_ character a unique channel.  Lets
+            # try spreading them out randomly across the channels
+            # that we have.
+
+            # lets hash our npc names into channels, for the armchair
+            # enthusiasts out there:
+            
+            # we have (lets say) 8 audio channels. 
+            # we have (again), lets say 80 characters.  
+        
+            # We never want a character to talk over themselves, it's
+            # just too blatently stupid.  Having some, even most
+            # characters able to talk over each other is fine.  Having a
+            # few characters that never talk over each other is a little
+            # weird, but not all that weird.  Acceptable weird.
+
+            # This takes the characters unique name string, and converts
+            # it into a reasonably small number (4 hex characters long,
+            # 0-65535 ) this particular name will always give this
+            # particular number there are many other names that just
+            # might also give this number.  It doesn't matter as long as
+            # it's reasonably unlikely.
+            
+            # Because the next thing we do is use a modulus to map any
+            # of the possible 0-65535 possible values for the name
+            # evenly across a list of buckets, one per audio channel.
+
+            # we could cache the name->integer call easily, that trades a cache lookup for a sha encoding.
+
+            # we're reserving channel 0 for the system, hence the -1 here.
+
+            # the modulus left us with buckets (0..max channel - 1), but we want 
+            # channels (1..max_channel), hence 1 + 
+            channel_index = 1 + int(hashlib.sha256(name.encode()).hexdigest()[:3], 16) % (len(self.channels) - 1)
+
+        return self.channels[channel_index]
+
+
+    def play(self, channel, fn):
+        # is there an audio already queued?
+        if channel.get_queue():
+            # we have to wait until a spot is available or we're going to drop audio.
+            
+            # I really don't like polling interfaces like this.  pygame has ways to 
+            # do this in an async or callback style.
+            while channel.get_queue():
+                log.info(f'[TightTTS.play()] Waiting for channel {channel} queue availability...')
+                pygame.time.wait(250)  # milliseconds
+        
+        # play this file on this channel, but if you're already
+        # playing something let it finish.  No need to be rude.
+        log.info('[TightTTS.play()] invoking %s.queue(Sound(%s))', channel, fn)
+        channel.queue(
+            pygame.mixer.Sound(file=fn)
+        )
+        log.info('[TightTTS.play()] Play Complete')
+
+
     def run(self):
         log.info('[TightTTS] !! TightTTS is RUNNING !!')
         
@@ -76,11 +146,13 @@ class TightTTS(threading.Thread):
 
         pythoncom.CoInitialize()
         raw_message = None
+        
         while True:
             log.info('[TightTTS] Top of True')
             while self.speaking_queue.empty():
                 time.sleep(0.25)
 
+            played = False
             log.info('Retrieving queued message')
             raw_message = self.speaking_queue.get()
 
@@ -100,83 +172,51 @@ class TightTTS(threading.Thread):
 
             phrase_id = models.get_or_create_phrase_id(name, category, message)
             message, is_translated = models.get_translated(phrase_id)
+            
+            log.info('Retrieving get_channel(name=%s, category=%s)', name, category)
+            channel = self.get_channel(name=name, category=category)
 
             log.debug(f"[TightTTS] Speaking thread received {category} {name}:{message}")
 
-            found = False
             for rank in ['primary', 'secondary']:
                 cachefile = settings.get_cachefile(name, message, category, rank)
+                fn = str(cachefile + ".wav")
 
                 # if primary exists, play that.  else secondary.
-                if not found and os.path.exists(cachefile):
-                    found = True
-                    log.debug(f"[TightTTS] (tighttts) Cache HIT: {cachefile}")
-                    # requires pydub?
-                    with AudioFile(cachefile) as input:
-                        with AudioFile(
-                            filename=cachefile + ".wav",
-                            samplerate=input.samplerate,
-                            num_channels=input.num_channels,
-                        ) as output:
-                            while input.tell() < input.frames:
-                                output.write(input.read(1024))
 
-                    
-                    fn = str(cachefile + ".wav")
+                # we really want fn to exist, if we can.  Makes this all easier when it exists.
+                if os.path.exists(fn):
+                    log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {fn}')
+                    self.play(channel=channel, fn=fn)
+                    played = True
+                    break
+                else:
+                    # uh oh, maybe the mp3 version of this file exists?
+                    if os.path.exists(cachefile):
+                        log.debug(f"[TightTTS] (tighttts) Cache HIT: {cachefile}")
+                        # requires pydub?
+                        # what the hell are we doing? it sure as fuck looks like we're
+                        # copying "cachefile" to "cachefile.wav".. fuck that noise, it's a damn mp3.
+                        # we're converting an mp3 into a wav file.  that is what this noise is.
 
-                    if category in ["npc", "player"]:
-                        # okay.. with apologies for the level of fancy here. we
-                        # don't want characters to be able to talk over
-                        # themselves, because that is stupid.
+                        with AudioFile(cachefile) as input:
+                            with AudioFile(
+                                filename=fn,
+                                samplerate=input.samplerate,
+                                num_channels=input.num_channels,
+                            ) as output:
+                                while input.tell() < input.frames:
+                                    output.write(input.read(1024))                       
                         
-                        # But.. we've got 8 channels.  We can't give _every_
-                        # character a channel. each channel can queue, so.. lets
-                        # try the cheap way.  I misunderstood the depth of the
-                        # queue (only one item)
+                        log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {fn}')
+                        self.play(channel=channel, fn=fn)
+                        played = True
+                        break
 
-                        # lets consistent hash our npc names into channels
-                        channel_index = int(hashlib.sha256(name.encode()).hexdigest()[:3], 16) % (len(self.channels) - 1)
-
-                        channel = self.channels[1 + channel_index]
-                        
-                        log.info(f'[TightTTS] [{category}][{1 + channel_index}] Playing wav file {fn}')
-                        if channel.get_queue():
-                            # drain the queue until a spot is available
-                            while channel.get_queue():
-                                log.info(f'Waiting for channel {1+channel_index} queue availability...')
-                                pygame.time.wait(250)  # milliseconds
-                        
-                        channel.queue(
-                            pygame.mixer.Sound(file=fn)
-                        )
-
-                    else:                        
-                        if category in ["system", ]:
-                            # when the system is talking, no one interrupts.
-                           
-                            # the zero channel is for system messages
-                            channel = self.channels[0]
-
-                            log.info(f'[TightTTS] [{category}][0] Playing wav file {fn}')
-                            # wait for the queue spot to be available
-                            
-                            while channel.get_queue():
-                                log.info('Waiting for system channel queue availability...')
-                                pygame.time.wait(250)  # milliseconds
-                            
-                            channel.queue(
-                                pygame.mixer.Sound(file=fn)
-                            )
-
-                            log.info('[TightTTS] audio completed')
-                        else:
-                            log.error('Unknown category: %s', category)
-
-            # neither primary nor secondary exist.
-            if not found:
-                # building session out here instead of inside get_character
-                # keeps character alive and properly tied to the database as we
-                # pass it into update_character_last_spoke and voice_builder.
+            # building session out here instead of inside get_character
+            # keeps character alive and properly tied to the database as we
+            # pass it into update_character_last_spoke and voice_builder.
+            if not played:
                 with models.db() as session:
                     character = models.Character.get(name, category, session)
 
@@ -186,6 +226,16 @@ class TightTTS(threading.Thread):
                     # character and cache a copy into cachefile.
                     try:
                         voice_builder.create(character, message, session)
+                    
+                        for rank in ['primary', 'secondary']:
+                            cachefile = settings.get_cachefile(name, message, category, "primary")
+                            fn = str(cachefile + ".wav")
+
+                            if os.path.exists(fn):
+                                self.play(channel=channel, fn=fn)
+                                played = True
+                                break
+
                     except Exception as err:
                         log.exception(err)
 
@@ -543,8 +593,9 @@ class LogStream:
                         
                         try:
                             datestr, timestr, line_string = line.split(None, 2)
+                            line_string = line_string.strip()
                         except ValueError:
-                            log.error('Invalid line.split(%s)', line)
+                            # log.error('Invalid line.split(%s)', line)
                             continue
 
                         log.info('line_string: %s', line_string)
