@@ -98,7 +98,7 @@ class TTSEngine(ctk.CTkFrame):
     def say(self, message, effects, sink=None, *args, **kwargs):
         tts = self.get_tts()
         # log.info(f'{self}.say({message=}, {effects=}, {sink=}, {args=}, {kwargs=}')
-        # log.info(f'Invoking voicebox.SimpleVoicebox({tts=}, {effects=}, {sink=})')
+        log.info(f'Invoking voicebox.SimpleVoicebox({tts=}, {effects=}, {sink=})')
         vb = voicebox.SimpleVoicebox(
             tts=tts,
             effects=effects, 
@@ -109,6 +109,7 @@ class TTSEngine(ctk.CTkFrame):
 
             try:
                 vb.say(message)
+                log.info('vb.say(message) complete')
             except Exception as err:
                 log.error('vb: %s', vb)
                 log.error("Error in TTSEngine.say(): %s", err)

@@ -62,7 +62,12 @@ def get_config(cf="config.json"):
         mtime = os.path.getmtime(cf)
         if CACHE_CONFIG_MTIME.get(cf) is None or mtime != CACHE_CONFIG_MTIME[cf]:
             with open(cf) as h:
-                config = json.loads(h.read())
+                try:
+                    config = json.loads(h.read())
+                except json.decoder.JSONDecodeError:
+                    log.error("Invalid json in %s", cf)
+                    config = {}
+
                 CACHE_CONFIG[cf] = config
                 CACHE_CONFIG_MTIME[cf] = mtime
 

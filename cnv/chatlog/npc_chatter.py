@@ -143,6 +143,7 @@ class TightTTS(threading.Thread):
                         if channel.get_queue():
                             # drain the queue until a spot is available
                             while channel.get_queue():
+                                log.info(f'Waiting for channel {1+channel_index} queue availability...')
                                 pygame.time.wait(250)  # milliseconds
                         
                         channel.queue(
@@ -158,8 +159,9 @@ class TightTTS(threading.Thread):
 
                             log.info(f'[TightTTS] [{category}][0] Playing wav file {fn}')
                             # wait for the queue spot to be available
+                            
                             while channel.get_queue():
-                                # log.info('Waiting for channel queue availability...')
+                                log.info('Waiting for system channel queue availability...')
                                 pygame.time.wait(250)  # milliseconds
                             
                             channel.queue(

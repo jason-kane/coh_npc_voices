@@ -354,6 +354,7 @@ class Character(Base):
                 session.add(effect_settings)
             session.commit()
 
+        log.info('create_character() complete: %s', character)
         return character
 
     @classmethod

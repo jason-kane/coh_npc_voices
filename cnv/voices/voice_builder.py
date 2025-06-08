@@ -15,7 +15,7 @@ from voicebox.sinks import Distributor, WaveFile
 from voicebox.sinks.wavefile import write_audio_to_wav
 from voicebox.sinks.sink import Sink
 from voicebox.tts.utils import sample_width_to_dtype
-import simpleaudio
+import pygame
 from dataclasses import dataclass
 import numpy as np
 import tempfile
@@ -44,17 +44,11 @@ class SimpleAudioDevice(Sink):
                 sample_width=2
             )
 
-            audio_obj = simpleaudio.WaveObject.from_wave_file(str(fp.name))
-            audio_obj.play()
+            if pygame.mixer.get_init() is None:
+                pygame.mixer.init()
 
+            pygame.mixer.Sound(fp.name)           
 
-        # simpleaudio sd.play(
-        #     audio.signal,
-        #     audio.sample_rate,
-        #     blocking=self.blocking,
-        #     device=self.device,
-        #     latency=self.latency,
-        # )    
 
 def create(character, message, session):
     """
@@ -145,7 +139,9 @@ def create(character, message, session):
             ])
 
         log.debug(f'Using engine: {character.engine}')
-        get_engine(character.engine)(None, 'primary', name, category).say(message, effect_list, sink=sink)
+        get_engine(character.engine)(None, 'primary', name, category).say(
+            message, effect_list, sink=sink
+        )
     except USE_SECONDARY:
         rank = 'secondary'
         # our chosen engine for this character isn't working.  So we're going to switch

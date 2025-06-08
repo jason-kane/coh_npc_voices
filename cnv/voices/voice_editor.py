@@ -1,26 +1,25 @@
 """Voice Editor component"""
 import logging
 import os
-from pygame import mixer
 import tkinter as tk
 from tkinter import ttk
 
 import customtkinter as ctk
-# import voicebox
-#import simpleaudio
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+from pygame import mixer
+from scipy.io import wavfile
+from sqlalchemy import delete, desc, select
+from translate import Translator
+from voicebox.sinks import Distributor, SoundDevice, WaveFile
+from voicebox.tts.utils import get_audio_from_wav_file
+
 from cnv.database import db, models
 from cnv.effects import registry
 from cnv.engines import engines
 from cnv.engines.base import USE_SECONDARY
 from cnv.lib import audio, settings
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-from scipy.io import wavfile
-from sqlalchemy import delete, desc, select
 from cnv.lib.gui import Feather
-from translate import Translator
-from voicebox.sinks import Distributor, SoundDevice, WaveFile
-from voicebox.tts.utils import get_audio_from_wav_file
 
 log = logging.getLogger(__name__)
 ENGINE_OVERRIDE = {}
@@ -300,19 +299,9 @@ class WavfileMajorFrame(ctk.CTkFrame):
             )
 
             self.show_wave(wavfilename)
-
-            # wrap the wav as an Audio()
-            # audio_obj = get_audio_from_wav_file(wavfilename)
-            #os.unlink(cachefile + ".wav")
             
-            # play the Audio()
-            #voicebox.sinks.SoundDevice(blocking=False).play(audio_obj)
             log.info(f'Playing {wavfilename}')
             mixer.Sound(file=wavfilename).play()
-            # audio_obj = simpleaudio.WaveObject.from_wave_file(
-            #     str(wavfilename)
-            # )
-            # audio_obj.play()
             
     def say_it(self, use_secondary=False):
         """
