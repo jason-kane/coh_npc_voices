@@ -4,25 +4,26 @@ There is more awesome to be had.
 import ctypes
 import logging
 import multiprocessing
+import os
 import queue
+import random
 import sys
 import time
-import random
 from datetime import datetime, timedelta
 
-import cnv.lib.settings as settings
-import cnv.logger
 import colorama
 import customtkinter as ctk
-
-from cnv.database import models
-from cnv.lib.proc import send_chatstring
 from tabs import (
     automation,
     character,
     configuration,
     voices,
 )
+
+import cnv.lib.settings as settings
+import cnv.logger
+from cnv.database import models
+from cnv.lib.proc import send_chatstring
 
 # this unlinks us from python so windows will
 # use our icon instead of the python icon in the
@@ -86,8 +87,17 @@ def main():
         sys.exit()
         # root.destroy()
 
+    print(os.path.abspath(os.curdir))
+    print(os.listdir('.'))
+
     root.protocol("WM_DELETE_WINDOW", on_closing)
-    root.iconbitmap("sidekick.ico")
+    
+    root.iconbitmap(
+        os.path.join(
+            os.path.dirname(__file__),
+            "sidekick.ico"
+        )
+    )
 
     root.geometry("720x640+200+200")
     root.resizable(True, True)

@@ -2,13 +2,12 @@
 import logging
 import multiprocessing
 import tkinter as tk
-import json
 from datetime import datetime, timedelta
 
 import cnv.database.models as models
 import customtkinter as ctk
 import matplotlib.dates as mdates
-import numpy as np
+# import numpy as np
 from cnv.chatlog import npc_chatter
 from cnv.lib import settings
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -215,7 +214,8 @@ class ChartFrame(ctk.CTkFrame):
                     data_inf.append(0)
                     rolling_xp_list.append(0)
                     
-                    rolling_data_xp.append(np.mean(rolling_xp_list[-1 * roll_size:]))
+                    #rolling_data_xp.append(np.mean(rolling_xp_list[-1 * roll_size:]))
+                    rolling_data_xp.append(sum(rolling_xp_list[-1 * roll_size:]) / roll_size)
 
                     previous_event = new_event_time
                                
@@ -231,7 +231,8 @@ class ChartFrame(ctk.CTkFrame):
 
                 log.debug(f'{rolling_xp_list=}')
                 if any(rolling_xp_list):
-                    rolling_average_value = np.mean(rolling_xp_list[-1 * roll_size:])
+                    #rolling_average_value = np.mean(rolling_xp_list[-1 * roll_size:])
+                    rolling_average_value = sum(rolling_xp_list[-1 * roll_size:]) / roll_size
                 else:
                     rolling_average_value = 0
 
@@ -545,8 +546,7 @@ class ChatterService:
         npc_chatter.TightTTS(speaking_queue, event_queue)
         speaking_queue.put((None, "Attaching to most recent log...", 'system'))
 
-        # TODO: WFT buddy, fix this shit
-        logdir = "G:/CoH/homecoming/accounts/VVonder/Logs"
+        logdir = settings.log_dir()
 
         badges = True
         team = True
@@ -579,11 +579,6 @@ class Chatter(ctk.CTkFrame):
         self.attached = False
         self.hero = None
         
-        self.logdir = tk.StringVar(
-            value=settings.get_config_key('logdir', default='')
-        )
-        self.logdir.trace_add('write', self.save_logdir)
-
         # expand the entry box
         self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)
@@ -595,27 +590,7 @@ class Chatter(ctk.CTkFrame):
             command=self.attach_chatter
         ).grid(column=0, row=0)
 
-        ctk.CTkEntry(
-            self, 
-            textvariable=self.logdir
-        ).grid(column=1, row=0, sticky="ew")
-         
-        ctk.CTkButton(
-            self,
-            text="Set Log Dir",
-            command=self.ask_directory
-        ).grid(column=2, row=0)
-        
         self.chatter_service = ChatterService()
-
-    def save_logdir(self, *args):
-        logdir = self.logdir.get()
-        log.debug(f'Persisting setting logdir={logdir}')
-        settings.set_config_key('logdir', logdir)
-
-    def ask_directory(self):
-        dirname = tk.filedialog.askdirectory()
-        self.logdir.set(dirname)
 
     def attach_chatter(self):
         """

@@ -53,3 +53,7 @@ class AutomationTab(ttk.Frame):
             mywidget = power.widget(frame)
             mywidget.pack(side='left')
             frame.pack(side="top")
+
+
+# /macro LFG local LFT 25 Blaster for Task Force in Atlas Park
+# /macro LFT "lfg Level $level $archetype looking for $side team."

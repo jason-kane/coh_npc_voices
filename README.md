@@ -1,5 +1,8 @@
 # Recent demo:
-[![Recent youtube demo](https://img.youtube.com/vi/1RjyqB8YMnY/0.jpg)](https://www.youtube.com/watch?v=1RjyqB8YMnY)
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/Ov29c91NtYQ?si=xKxBD7jAVD8Kji6J" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+[![Older demo](https://img.youtube.com/vi/1RjyqB8YMnY/0.jpg)](https://www.youtube.com/watch?v=1RjyqB8YMnY)
 
 
 # What is this?
@@ -56,6 +59,12 @@ ElevenLabs voices require an ElevenLabs API Token.  You can configure it on the 
 
 Very easy.  The quality is really great but the 10,000 characters of text-to-speech you get each month with a free account can easily run out.  How long varies dramatically with how much you play and which parts of the game.  Somewhere between a 5-15 hours of game play.  They have a $5/month plan than gives you 3x more.
 
+#### Azure
+
+#### OpenAI
+
+#### Amazon Polly
+
 # Voice Effects
 
 Every voice can have audio effect layers applied to it.
@@ -72,20 +81,75 @@ Players on your team get voices too.  Find them in the list to modify what they 
 
 # Installation
 
+## New way (6/20/25)
+
+### Download: 
+Go to the releases page:
+
+    https://github.com/jason-kane/coh_npc_voices/releases
+
+The release has one porky little pig zip.  Uncompress it whereever you want it.
+
+### Configure Directories
+In the "sidekick" directory run "sidekick.exe"  It should be pretty easy to find.
+
+Go to the "configuration" tab.  
+
+You need to set the directory for the CoH log.  It's important to get this right.  This is where CoH stores the chat logs.  Mine is:
+
+    C:/CoH/homecoming/accounts/VVonder/Logs
+
+You also need to choose a directory where generated audio is cached (clip library).  Thsi can be an empty folder, but you have to choose where to put it.  If it gets too big you can just delete all or parts of it.  They are just .wav files.
+
+### Configure TTS providers
+You see the tabs, "Google Cloud", "ElevenLabs", "Amazon Polly", "OpenAI", "Azure" ?
+
+Each of those explains how to configure sidekick to use those services.  You can configure all, none or anywhere in between.  Totally up to you.
+
+#### Primary / Secondary what?
+
+Below the instructions for each engine there is a grid for primary/second engine.
+
+You choose which TTS service should be used for NPC, which for other players and which for system messages.  This makes it easier to spread requests out over multiple providers so you can stay longer in the free tiers.
+
+The sidekick will use whatever you choose as the "Primary Engine" until it wants to spend cash.  Then it switches over to the "Secondary Engine".
+
+#### The Checkboxes
+
+Finally, you can choose how chatty you want the sidekick to be.  I would start will all the boxes checked and turn some off if they are annoying.
+
+
+### Playing the game
+
+Once you are configured, run the game launcher, login, pick a character, same as always.
+
+After you are zoned into the game, click "Attach to Log" from the Character tab.
+
+That is it.  Enjoy the ride.
+
+### Exiting
+
+The sidekick doesn't always exit cleanly.  I don't know why yet.  Clicking on the terminal window then pressing control-c can help.
+
+
+## OBSOLETE
 Go to the releases page:
 
     https://github.com/jason-kane/coh_npc_voices/releases
 
 Download sidekick_setup.exe and run it.  Windows will probably complain since I'm not paying 300/year for an application certificate.  The setup program is small (5MB-ish) but this thing downloads some heavy packages like numpy.  Just a heads up in case your connection is slow or expensive.  After the initial install it will be quick and upgrades to sidekick will not re-download unnecessarily.
 
-# Configuration
+# Troubleshooting
 
-You will need to use "Set Log Dir" in the upper right corner and point it at your City of Heroes log directory.
+### Triple check the "COH Log Dir"
+This the first option on the configuration page.
 
 It will vary based on the coh launcher/installer.  Probably something like:
 
     <COH Install Directory>/accounts/<Account Name>/logs/
     <COH Install Directory>/homecoming/accounts/<Account Name>/Logs/
+
+### Enable chat logging
 
 You will need to enable logging on your character inside the game.
 
@@ -93,7 +157,7 @@ You can use this slash command in the chat window:
 
     /logchat
 
-It has to be enabled before you start; which probably means quit and login again.  Now you are ready to "Attach to Log".
+It's very possible you have to quit CoH and login again before the logging works.  Now you are ready to "Attach to Log".
 
 # Usage
 
@@ -101,9 +165,10 @@ The "Character" tab currently shows a graph of how much XP/minute your character
 
 Any NPC that talks will get a voice.  If you don't like the way it sounds you can use the "Voices" tab, find the character that spoke and fiddle with it.  You'll find a record of the things that NPC says in the dropdown so you can tune it based on their own words.  It all saves itself as you go.
 
+
 # OSX / Linux?
 
-90% of this is totally compatible, no problem.  The other 10% is the windows sapi stuff; making it platform detect and default to the (good) osx text-to-voice or the (not as good) linux espeak will take some effort but isn't particularly difficult.  Its a longer-term TODO (PR welcome?).
+90% of this is totally compatible, no problem.  The other 10% is the windows sapi stuff; making it platform detect and default to the (good) osx text-to-voice or the (not as good) linux espeak will take some effort but isn't particularly difficult.  Its a longer-term TODO (PR welcome?).  I don't game on Linux so I'm just not setup for it.
 
 # Manual Installation
 
@@ -118,6 +183,8 @@ Any NPC that talks will get a voice.  If you don't like the way it sounds you ca
     pip uninstall coh_npc_voices
 
 # Running it (Manual Install)
+
+*OBSOLETE*
 
 Start a cmd terminal and run:
 
@@ -144,12 +211,6 @@ Once you are ready You will need to click "Attach to Log" in the upper left corn
 
 The right directory will have files with names like "chatlog 2024-03-31.txt".  If you are having trouble turn on /logchat for a few minutes in-game, then look for file named after todays date.
 
-Use "Set Log Dir" in the upper right corner to configure it for your log location.  You should only need to do this once.
-
-![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/73c1b2de-04ed-4096-bf10-b1baaa19d152)
-
-Once you are ready You will need to click "Attach to Log" in the upper left corner after you are in-game.  The "Attach" button changes to a "Detach".  You can attach/detach whenever you want.
-
 # Local Development
 
 If you are curious and want to poke around at the source code it is right here.  You can download your own copy with "git".
@@ -163,13 +224,21 @@ But it does work, and it is fun.
 
 # Building the Windows Installer
 
+*Obsolete*
+
+Getting inno to wrap a virtualenv in a portable way is hell.  So I threw in the towel and switched to pyinstaller.
+
 First run fresh.bat
 
     fresh.bat
 
 That will clean-slate the venv directory and apply some path detection tweaks.  Next run innosetup, load this projects .iss file then -> Build -> Compile.  Build -> Open Output folder will give you the dir with the sidekick_setup.exe.
 
-The way this works is a little bit awesome.  sidekick_setup.exe will install our files and a barebones python venv, then it will run win_install, which is a compiled version of win_install.ps1.  It installs (w/pip) all our dependencies.  End result?  A small (5MB) setup executable that installs all the crap we need (I'm looking at you numpy.  Try eating a salad).  Running it again?  No problem.  If you use the same destination directory it won't even need to re-download the packages.  The best part from my POV is the actual running code is sitting there for the user to poke at with no obfuscation.
+The way this works is a little bit awesome.  sidekick_setup.exe will install our files and a barebones python venv, then it will run win_install, which is a compiled version of win_install.ps1.  
+
+win_install.ps1 gets compiled into win_install.exe whenever 'fresh.bat' is run.
+
+It installs (using pip) all our dependencies.  End result?  A small (5MB) setup executable that installs all the crap we need (I'm looking at you numpy.  Try eating a salad).  Running it again?  No problem.  Totally idempotent.  If you use the same destination directory it won't even need to re-install anything that hasn't changed.  The best part from my POV is the actual running code is sitting there for the user to poke at with no obfuscation.
 
 I'm currently pleased as punch with the installer.  Kind of hell to get it all figured out but the results are quite nice.
 

@@ -1,12 +1,12 @@
 [project]
 name = "cnv"
-version = "2.0.0"
+version = "4.0.0"
 authors = [
   { name="Jason Kane" },
 ]
-description = "A simple python program that lets you hear City of Heroes NPCs talk"
+description = "Lets you hear City of Heroes NPCs talk"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.13"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -16,7 +16,6 @@ classifiers = [
     "Operating System :: Microsoft :: Windows"
 ]
 dependencies = [
-    "alembic",
     "azure-cognitiveservices-speech",
     "colorama",
     "elevenlabs",
@@ -33,12 +32,15 @@ dependencies = [
     "sqlalchemy",
     "tkinterweb",
     "translate",
-    "tts @ git+https://github.com/DeepHorizons/tts@master#11cabe8",
     "voicebox-tts",
     "voicebox-tts[elevenlabs]",
     "voicebox-tts[google-cloud-tts]",
     "watchdog",
     "wheel",
+    "customtkinter>=5.2.2",
+    "boto3>=1.37.8",
+    "mypy-boto3-polly>=1.37.0",
+    "tts",
 ]
 
 [build-system]
@@ -55,3 +57,6 @@ sidekick = "cnv.sidekick:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.uv.sources]
+tts = { git = "https://github.com/DeepHorizons/tts", rev = "master" }

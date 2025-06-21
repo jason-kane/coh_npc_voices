@@ -18,7 +18,13 @@ class Compressor(EffectParameterEditor):
 
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+        
+        # Widgets for configurating this effect, with sensible defaults.
+        # These widgets let you access the current value:
+        #   self.tkvars['threshold_db'].get()  (for example)
 
+        #  label  [------o----------]  0.23 
+        #
         LScale(
             self,
             pname="threshold_db",

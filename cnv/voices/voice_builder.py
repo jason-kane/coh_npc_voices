@@ -2,23 +2,15 @@ import logging
 import os
 import re
 
-import cnv.database.models as models
-from cnv.effects import registry
-from cnv.engines.engines import get_engine
-from cnv.engines.base import USE_SECONDARY
-import cnv.lib.settings as settings
-import cnv.lib.audio as audio
 import pyfiglet
 from sqlalchemy import select
-from voicebox.audio import Audio
 from voicebox.sinks import Distributor, WaveFile
-from voicebox.sinks.wavefile import write_audio_to_wav
-from voicebox.sinks.sink import Sink
-from voicebox.tts.utils import sample_width_to_dtype
-import pygame
-from dataclasses import dataclass
-import numpy as np
-import tempfile
+
+import cnv.database.models as models
+import cnv.lib.settings as settings
+from cnv.effects import registry
+from cnv.engines.base import USE_SECONDARY
+from cnv.engines.engines import get_engine
 
 log = logging.getLogger(__name__)
 
@@ -29,25 +21,6 @@ PLAYER_CATEGORY = models.category_str2int("player")
 # ENGINE_OVERRIDE has been triggered and we keep smacking elevenlabs even though we've run out of credits.
 
 ENGINE_OVERRIDE = {}
-
-# @dataclass
-# class SimpleAudioDevice(Sink):
-#     def play(self, audio: Audio) -> None:
-#         with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
-#             fp.close()
-#             log.info(f'Using temp file {fp.name}')
-            
-#             write_audio_to_wav(
-#                 audio=audio,
-#                 file_or_path=fp.name,
-#                 append=False,
-#                 sample_width=2
-#             )
-
-            # if pygame.mixer.get_init() is None:
-            #     pygame.mixer.init()
-
-            # pygame.mixer.Sound(fp.name)           
 
 
 def create(character, message, session):
@@ -100,7 +73,7 @@ def create(character, message, session):
 
     try:
         clean_name = re.sub(r'[^\w]', '',character.name)
-        os.mkdir(os.path.join("clip_library", character.cat_str(), clean_name))
+        os.mkdir(os.path.join(settings.clip_library_dir(), character.cat_str(), clean_name))
     except OSError:
         # the directory already exists.  This is not a problem.
         pass

@@ -1,15 +1,22 @@
 import glob
 import hashlib
 import io
+import rich
+import colorsys
 import logging
+import webcolors
 import os
-import queue
 import re
+import random
+import queue
 import threading
 import time
 from datetime import datetime
 
-import lib.settings as settings
+from rich.console import Console
+from rich.panel import Panel
+
+import cnv.lib.settings as settings
 import pygame
 import pythoncom
 from pedalboard.io import AudioFile
@@ -21,6 +28,8 @@ from cnv.lib.proc import send_log_lock
 
 cnv.logger.init()
 log = logging.getLogger(__name__)
+
+console = Console()
 
 # so frequently enough to merit this; people will identify themselves in the CAPTION messages.
 # like:
@@ -46,10 +55,12 @@ class TightTTS(threading.Thread):
         self.all_npcs = {}
 
         # so we can do this much once.
+ 
+        
         for category in ["npc", "player", "system"]:
             for dir in [
-                os.path.join("clip_library"),
-                os.path.join("clip_library", category),
+                settings.clip_library_dir(),         
+                os.path.join(settings.clip_library_dir(), category),
             ]:
                 try:
                     os.mkdir(dir)
@@ -102,12 +113,16 @@ class TightTTS(threading.Thread):
 
             # the modulus left us with buckets (0..max channel - 1), but we want 
             # channels (1..max_channel), hence 1 + 
-            channel_index = 1 + int(hashlib.sha256(name.encode()).hexdigest()[:3], 16) % (len(self.channels) - 1)
+            if name:
+                channel_index = 1 + int(hashlib.sha256(name.encode()).hexdigest()[:3], 16) % (len(self.channels) - 1)
+            else:
+                log.error('Invalid channel: name: %s  category: %s', name, category)
+                return random.choice(self.channels)
 
         return self.channels[channel_index]
 
 
-    def play(self, channel, fn):
+    def play(self, channel, wav_fn):
         # is there an audio already queued?
         if channel.get_queue():
             # we have to wait until a spot is available or we're going to drop audio.
@@ -115,16 +130,16 @@ class TightTTS(threading.Thread):
             # I really don't like polling interfaces like this.  pygame has ways to 
             # do this in an async or callback style.
             while channel.get_queue():
-                log.info(f'[TightTTS.play()] Waiting for channel {channel} queue availability...')
+                log.debug(f'[TightTTS.play()] Waiting for channel {channel} queue availability...')
                 pygame.time.wait(250)  # milliseconds
         
         # play this file on this channel, but if you're already
         # playing something let it finish.  No need to be rude.
-        log.info('[TightTTS.play()] invoking %s.queue(Sound(%s))', channel, fn)
+        log.debug('[TightTTS.play()] invoking %s.queue(Sound(%s))', channel, wav_fn)
         channel.queue(
-            pygame.mixer.Sound(file=fn)
+            pygame.mixer.Sound(file=wav_fn)
         )
-        log.info('[TightTTS.play()] Play Complete')
+        log.debug('[TightTTS.play()] Play Complete')
 
 
     def run(self):
@@ -148,15 +163,15 @@ class TightTTS(threading.Thread):
         raw_message = None
         
         while True:
-            log.info('[TightTTS] Top of True')
+            log.debug('[TightTTS] Top of True')
             while self.speaking_queue.empty():
                 time.sleep(0.25)
 
             played = False
-            log.info('Retrieving queued message')
+            log.debug('Retrieving queued message')
             raw_message = self.speaking_queue.get()
 
-            log.info('[TightTTS] TTS Message received: %s', raw_message)
+            log.debug('[TightTTS] TTS Message received: %s', raw_message)
             # we got a message
             try:
                 name, message, category = raw_message
@@ -173,43 +188,43 @@ class TightTTS(threading.Thread):
             phrase_id = models.get_or_create_phrase_id(name, category, message)
             message, is_translated = models.get_translated(phrase_id)
             
-            log.info('Retrieving get_channel(name=%s, category=%s)', name, category)
+            log.debug('Retrieving get_channel(name=%s, category=%s)', name, category)
             channel = self.get_channel(name=name, category=category)
 
             log.debug(f"[TightTTS] Speaking thread received {category} {name}:{message}")
 
             for rank in ['primary', 'secondary']:
                 cachefile = settings.get_cachefile(name, message, category, rank)
-                fn = str(cachefile + ".wav")
+                wav_fn = str(cachefile + ".wav")
 
                 # if primary exists, play that.  else secondary.
 
-                # we really want fn to exist, if we can.  Makes this all easier when it exists.
-                if os.path.exists(fn):
-                    log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {fn}')
-                    self.play(channel=channel, fn=fn)
+                # we really want wav_fn to exist, if we can.  Makes this all easier when it exists.
+                if os.path.exists(wav_fn):
+                    log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {wav_fn}')
+                    self.play(channel=channel, wav_fn=wav_fn)
                     played = True
                     break
                 else:
                     # uh oh, maybe the mp3 version of this file exists?
-                    if os.path.exists(cachefile):
+                    if os.path.exists(cachefile + ".mp3"):
                         log.debug(f"[TightTTS] (tighttts) Cache HIT: {cachefile}")
                         # requires pydub?
                         # what the hell are we doing? it sure as fuck looks like we're
                         # copying "cachefile" to "cachefile.wav".. fuck that noise, it's a damn mp3.
                         # we're converting an mp3 into a wav file.  that is what this noise is.
-
-                        with AudioFile(cachefile) as input:
+                        with AudioFile(cachefile + ".mp3", mode="r") as input:
                             with AudioFile(
-                                filename=fn,
+                                wav_fn,
+                                mode="w",
                                 samplerate=input.samplerate,
                                 num_channels=input.num_channels,
                             ) as output:
                                 while input.tell() < input.frames:
                                     output.write(input.read(1024))                       
                         
-                        log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {fn}')
-                        self.play(channel=channel, fn=fn)
+                        log.debug(f'[TightTTS] [{category}][{channel}] Playing wav file {wav_fn}')
+                        self.play(channel=channel, wav_fn=wav_fn)
                         played = True
                         break
 
@@ -229,10 +244,10 @@ class TightTTS(threading.Thread):
                     
                         for rank in ['primary', 'secondary']:
                             cachefile = settings.get_cachefile(name, message, category, "primary")
-                            fn = str(cachefile + ".wav")
+                            wav_fn = str(cachefile + ".wav")
 
-                            if os.path.exists(fn):
-                                self.play(channel=channel, fn=fn)
+                            if os.path.exists(wav_fn):
+                                self.play(channel=channel, wav_fn=wav_fn)
                                 played = True
                                 break
 
@@ -250,6 +265,157 @@ def plainstring(dialog):
     dialog = re.sub(r"<bordercolor [#a-zA-Z0-9]+>", "", dialog).strip()
     return dialog
 
+
+def luminance(rgb_hexstring):
+    """
+    Returns a value between 0 (black) and 255 (pure white)
+    """
+    red, green, blue = webcolors.hex_to_rgb(rgb_hexstring)
+    return (.299 * red) + (.587 * green) + (.114 * blue)
+
+
+def adjust_brightness(rgb_hexstring, change=0.1):
+    """
+    Convert to HSL, increase luminance, convert back to RGB.
+    """
+    log.debug('Adjusting brightness of %s by %s', rgb_hexstring, change)
+    # we want 0-1 floats for each color
+    red, green, blue = [x / 255.0 for x in webcolors.hex_to_rgb(rgb_hexstring)]
+    h, l, s = colorsys.rgb_to_hls(red, green, blue)
+    
+    log.debug('Luminosity before: %s', l)
+    
+    # ok, so lower case l was a stupid choice
+    l += change
+    l = min(1.0, l)
+    l = max(0.0, l)
+    
+    log.debug('Luminosity after: %s', l)
+
+    # and back to 0-255 values 
+    red, green, blue = [int(x * 255) for x in colorsys.hls_to_rgb(h, l, s)]
+    log.debug('As 0-255 tuple: (%s, %s, %s)', red, green, blue)
+
+    # and back to a hex string
+    hexstr = webcolors.rgb_to_hex((red, green, blue))
+    log.debug('Adjustment complete.  New color: %s', hexstr)
+    return hexstr
+
+
+def darken(rgb_hexstring, value=0.1):
+    """
+    Return the same color but a little darker
+    """
+    return adjust_brightness(rgb_hexstring, change=-1 * value)
+
+
+def lighten(rgb_hexstring, value=0.1):
+    """
+    Return the same color but a little brighter
+    """
+    return adjust_brightness(rgb_hexstring, change=value)
+
+
+def color_contrast(fg_luminance, bg_luminance):
+    fg_luminance /= 255
+    bg_luminance /= 255
+
+    contrast = (
+        max((fg_luminance, bg_luminance)) + 0.05
+    ) / (
+        min((fg_luminance, bg_luminance)) + 0.05
+    )    
+    return contrast
+
+
+def expand_contrast(fgcolor, bgcolor, threshold=10):
+    fg_luminance = luminance(fgcolor)
+    bg_luminance = luminance(bgcolor)
+    
+    contrast = color_contrast(fg_luminance, bg_luminance)
+
+    while contrast < threshold:   
+        # light on dark or dark on light?
+        if fg_luminance > bg_luminance:
+            # light on dark, pull them further apart
+            bgcolor = darken(bgcolor)
+            fgcolor = lighten(fgcolor)
+        else:
+            # dark on light, pull them further apart
+            bgcolor = lighten(bgcolor)
+            fgcolor = darken(fgcolor)
+
+        fg_luminance = luminance(fgcolor)
+        bg_luminance = luminance(bgcolor)
+
+        contrast = color_contrast(fg_luminance, bg_luminance)
+
+    return fgcolor, bgcolor, contrast
+
+
+def colorstring(dialog):
+    """
+    dialog might be something like:
+
+    Mr. Delaine: <color #38a7ff><bgcolor #010101>wanted to make sure they stacked before getting it
+    Albiorix Albici: <color #010101>It's not, but who knows.
+    Lightslinger: <color #0101fb><bgcolor #ffff01>modified enough and it's not a worry
+    """
+    if dialog is None:
+        return ""
+
+    # Impulse: <color #40ff01><bgcolor #010101>speed tinpex lfm, pst 2/8
+    for tag, color in [
+        ['color', '#FFFFFF'], ['bgcolor', '#000000']
+    ]:
+
+        if f"<{tag}" in dialog:
+            color_match = re.match(
+                r"(?P<before>.*)<" + tag + r" (?P<color>#?[a-zA-F0-9]*)>(?P<after>.*)",
+                dialog,
+                re.IGNORECASE
+            )
+
+            if color_match is not None:
+                color = color_match.group('color')
+                if "#" not in color:
+                    color_rgb = webcolors.name_to_rgb(color)
+                    color = webcolors.rgb_to_hex(color_rgb)
+
+                before = color_match.group('before')
+                after = color_match.group('after')
+                dialog = f"{before}{after}"
+            else:
+                # our regex failed, but it could be a named color
+                color_match = re.match(
+                    r"(?P<before>.*)<color (?P<color>[a-zA-Z]*)>(?P<after>.*)",
+                    dialog,
+                    re.IGNORECASE
+                )
+                if color_match is not None:
+                    # potentially a named color
+                    try:
+                        color_rgb = webcolors.name_to_rgb(color_match.group('color'))
+                        color = webcolors.rgb_to_hex(color_rgb)
+                                       
+                        before = color_match.group('before')
+                        after = color_match.group('after')
+                        dialog = f"{before}{after}"
+                    except ValueError:
+                        pass
+
+        if tag == "color":
+            fg_color = color
+        elif tag == "bgcolor":
+            bg_color = color
+
+    # adjust to meet contrast requirements, so black on black turns into grey on black
+    fg_color, bg_color, contrast = expand_contrast(fg_color, bg_color)
+
+    # log.debug(f'fgcolor: {fg_color}  bgcolor: {bg_color}  contrast: {contrast}')
+    dialog = f"[{fg_color} on {bg_color}]{dialog}[/]"
+
+    return dialog
 
 class LogStream:
     """
@@ -514,32 +680,142 @@ class LogStream:
         return self.caption_speaker, dialog
 
     def channel_messager(self, lstring, line_string: str):
+        """
+        All we know is that line_string starts with a [
+        """
         # channel message
         dialog = line_string.strip()
         if ']' in dialog:
-            channel = dialog[1: dialog.find(']')]
+            close_bracket_index = dialog.find(']')
+            channel = dialog[1: close_bracket_index]
+            dialog = dialog[close_bracket_index + 1:].strip()
         else:
             log.error('Malformed channel message: %s', line_string)
-            return
-
-        log.info("dialog: %s", dialog)
+            return       
         
         guide = self.channel_guide.get(channel, None)
         if guide and guide['enabled']:
-            log.info('Applying channel guide %s', guide)
+            # log.info('Applying channel guide %s', guide)
             # channel messages are _from_ someone, the parsers extract that.
             parser = getattr(self, guide['parser'])
             speaker, dialog = parser(lstring)
+            if dialog:
+                console.log(f"\\[{channel}] {speaker}: " + colorstring(dialog))
+            else:
+                log.warning('Invalid lstring has no dialog: %s', lstring)
 
             # sometimes people don't say anything we can vocalize, like "..." so we drop any
             # non-dialog messages.
             if speaker not in ['__self__'] and dialog and dialog.strip():
-                log.info(f"[{channel}] Adding {speaker}/{dialog} to speaking queue")
+                # log.info(f"Speaking: [{channel}] {speaker}: {dialog}")
                 # speaker name, spoken dialog, channel (npc, system, player)
                 self.speaking_queue.put((speaker, dialog, guide['name']))
+            else:
+                log.warning('Not speaking: %s', lstring)
 
         elif guide is None:
-            log.debug(f'{channel=}')
+            # long lines will wrap
+            hints = (
+                (
+                    ('DFB', 'Death From Below'), 
+                    '''DFB: Death From Below
+BLUE lvl 1-20
+Started by LFG menu option.
+Four missions chained together ending in a fight against two Hydra monsters'''
+                ),  (
+                    ('posi 1', 'POSI1', 'Posi Pt 1', ' pos1 ', 'Positron Part 1'), 
+                    '''posi 1: Positron Task Force Part 1
+BLUE lvl 10-15
+Started by Positron in Steel Canyon.
+Five missions, ending in a fight inside city hall'''
+                ), (
+                    ('posi 2', 'POSI2', 'Posi Pt 2', 'Positron Part 2'), 
+                    '''posi 2: Positron Task Force Part 2
+BLUE lvl 11-16
+Started by Positron in Steel Canyon.
+Five missions, ending in a fight near faultline dam'''
+                ), (
+                    ('YIN', 'PYIN'), 
+                    '''yin: Penelope Yin Task Force
+BLUE lvl 20-25
+Started by Penelope Yin in Independence Port.
+Five missions, ending in a fight inside the Terra Volta reactor'''
+                ), (
+                    ('NUMI', ), 
+                    '''NUMI: Numina Task Force
+BLUE lvl 35-40
+Started by Numina in Founder's Falls.
+Includes a set of 14 "Defeat X in Location" tasks
+Five missions, ending in a fight against Jurassik deep inside Eden'''
+                ), (
+                    ('SBB', ), 
+                    '''SBB: Summer Blockbuster Double Feature
+BLUE lvl 15-?
+Started by LFG menu option.
+The trial takes the form of a double feature, where characters play roles inside two segments: "The Casino Heist" and "Time Gladiator". The segments are shown in random order, and are accessed through doors to different theaters.'''
+                ), (
+                    ('AEON', ), 
+                    '''AEON: Dr. Aeon Strike Force
+RED lvl 35-50
+Started by Dr. Aeon in Cap Au Diable
+Seven major missions'''
+                ), (
+                    ('Moonfire', ), 
+                    '''MOONFIRE: The Kheldian War
+BLUE lvl 23-28
+Started by Moonfire on Striga Isle
+Seven major missions, ends in fight with Arakhn -- A Nictus AV'''
+                ), (
+                    ('Market Crash', ), 
+                    '''MARKET CRASH: Market Crash Trial
+BLUE/RED lvl 40-50
+Started by Ada Wellington in Kallisti Wharf
+Three missions and a purple recipe reward
+Ends with an AV fight against Crimson Prototype Waves of Sky Raiders 
+adds at 75%, 50% and 25% health
+Destroy the force field generators first
+'''
+                ), (
+                    ('TinPex', ), 
+                    '''TINPEX: Tin Mage Mark II Task Force
+BLUE/RED lvl 50
+Started by Tin Mage Mark II in Rikti War Zone
+Three missions, ends in fight against two Goliath War Walkers'''
+                ), (
+                    ('Manti', 'Manticore'), 
+                    '''MANTI: Manticore Task Force
+Following Countess Crey
+BLUE lvl 30-35
+Started by Manticore in Brickstown
+Seven missions, ends in fight against AV Hopkins in Creys Folly'''
+                ),  (
+                    ('Citadel', ), 
+                    '''CITADEL: Citadel Task Force
+Citadel's Children
+BLUE lvl 25-30
+Started by Citadel on Talos Island
+Ten missions, ends in fight against AV Vandal'''
+                )
+
+            )
+            found = False
+            #console.log(f"\\[{channel}] {speaker}: " + colorstring(dialog))
+            # there is no guide enabled, so we aren't giong to _speak_ this
+            # but we might as well make the display pretty.
+            
+            console.log(f"\\[{channel}] " + colorstring(dialog))
+            
+            for references, helptext in hints:
+                if found:
+                    break
+
+                for reference in references:
+                    if reference.upper() in dialog.upper():
+                        narrow_console = Console(width=60)
+                        narrow_console.print(Panel(helptext))
+                        found = True
+                        break
+ 
         else:
             log.debug(f'{guide=}')
 
@@ -579,13 +855,13 @@ class LogStream:
                     self.first_tail = False
 
                 if activity_count > 50:
-                    log.info('primary log evaluation loop')
+                    log.debug('primary log evaluation loop')
                     activity_count = 0
                 else:
                     activity_count += 1
 
                 for line in handle:
-                    log.debug("line: '%s'", line)
+                    # log.debug("line: '%s'", line)
 
                     if line.strip():
                         log.debug('Top of True')               
@@ -598,26 +874,26 @@ class LogStream:
                             # log.error('Invalid line.split(%s)', line)
                             continue
 
-                        log.info('line_string: %s', line_string)
+                        # log.info('line_string: %s', line_string)
                         try:
                             lstring = line_string.replace(".", "").strip().split()
                             # "['Hasten', 'is', 'recharged']" 
-                            log.info("lstring: %s", lstring)
+                            # log.info("lstring: %s", lstring)
                         except Exception as err:
                             log.error(err)
                             raise
 
                         if lstring[0][0] == "[":
-                            log.info('Invoking channel_messager()')
+                            log.debug('Invoking channel_messager()')
                             self.channel_messager(lstring, line_string)
-                            log.info('Returned from channel_messager()')
+                            log.debug('Returned from channel_messager()')
                             continue
 
                         elif self.announce_badges and lstring[0] == "Congratulations!":
                             self.ssay(" ".join(lstring[4:]))
 
                         elif lstring[0] == "You":
-                            log.info('"You" path')
+                            log.debug('"You" path')
                             if lstring[1] in ["found", "stole", "begin", "finished", "open", "didn't", "rescued"]:
                                 # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
                                 # You have cleared the Snakes from the Arachnos base, and learned something interesting.
@@ -887,7 +1163,7 @@ class LogStream:
                                 self.ssay(dialog)
                             
                         else:
-                            log.warning(f'tag "{lstring[0]}" not classified.')
+                            log.debug(f'tag "{lstring[0]}" not classified.')
                             continue
                         #
                         # Team task completed.

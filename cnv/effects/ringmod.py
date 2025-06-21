@@ -60,6 +60,7 @@ class RingMod(EffectParameterEditor):
         effect = voicebox.effects.RingMod(
             carrier_freq=self.tkvars['carrier_freq'].get(),
             blend=self.tkvars['blend'].get(),
+            # ie: np.sin.get() or np.cos.get()
             carrier_wave=getattr(np, self.tkvars['carrier_wave'].get())
         )
         return effect

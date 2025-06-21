@@ -264,12 +264,68 @@ class SpeakingToggles(ctk.CTkFrame):
         return
 
 
+class DirectoryChoices(ctk.CTkFrame):
+
+    def save_config(self, *args):
+        logdir = self.logdir.get()
+        clip_library_dir = self.clip_library_dir.get()
+        
+        log.debug(f'Persisting setting {logdir=};{clip_library_dir=}')
+        settings.set_config_key('logdir', logdir)
+        settings.set_config_key('clip_library_dir', clip_library_dir)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.logdir = tk.StringVar(
+            value=settings.get_config_key('logdir', default='')
+        )
+        # too much magic?  when you change the stringvar, it saves the new value to the config file.
+        self.logdir.trace_add(
+            'write', 
+            lambda var_name, index, mode: settings.set_config_key('logdir', self.logdir.get())
+        )
+
+        self.clip_library_dir = tk.StringVar(
+            value=settings.get_config_key('clip_library_dir', default='')
+        )
+        # self.clip_library_dir.trace_add('write', self.save_config)
+        self.clip_library_dir.trace_add(
+            'write', 
+            lambda var_name, index, mode: settings.set_config_key('clip_library_dir', self.clip_library_dir.get())
+        )
+
+        ctk.CTkEntry(
+            self, 
+            textvariable=self.logdir
+        ).grid(column=1, row=0, columnspan=3, sticky="ew")
+         
+        ctk.CTkButton(
+            self,
+            text="COH Log Dir",
+            command=lambda: self.logdir.set(tk.filedialog.askdirectory())
+        ).grid(column=4, row=0)
+
+        ctk.CTkEntry(
+            self, 
+            textvariable=self.clip_library_dir
+        ).grid(column=1, row=1, columnspan=3, sticky="ew")
+         
+        ctk.CTkButton(
+            self,
+            text="Set Clip Library Dir",
+            command=lambda: self.clip_library_dir.set(tk.filedialog.askdirectory())
+        ).grid(column=4, row=1)        
+
+
 class ConfigurationTab(tk.Frame):
   
     def __init__(self, parent, event_queue, speaking_queue, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
         # MasterVolume(self).pack(side="top", fill="x")
+        DirectoryChoices(self).pack(side="top", fill="x")
+
         SpokenLanguageSelection(self).pack(side="top", fill="x")
         EngineAuthentication(
             self,

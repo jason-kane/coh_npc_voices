@@ -44,6 +44,14 @@ SESSION_CLEAR_IN_REPLAY = False
 log = logging.getLogger(__name__)
 
 
+def clip_library_dir() -> str:
+    return get_config_key('clip_library_dir')
+
+
+def log_dir() -> str:
+    return get_config_key('logdir')
+
+
 def how_did_i_get_here():
     log.info(
         "| Called by: \n%s", "\n".join([str(frame) for frame in inspect.stack()[1:]])
@@ -93,7 +101,7 @@ def save_config(config, cf="config.json"):
         CACHE_CONFIG_MTIME[cf] = os.path.getmtime(cf)
 
 
-def get_config_key(key, default=None, cf="config.json"):
+def get_config_key(key, default=None, cf="config.json") -> str | None:
     config = get_config(cf=cf)
     return config.get(key, default)
 
@@ -128,7 +136,10 @@ def get_language_code():
     Returns the two character language code for feeding the translator
     """
     language = get_config_key('language', default="English")
-    return LANGUAGES[language][0]
+    if language:
+        return LANGUAGES[language][0]
+    else:
+        return None
 
 def get_language_code_regex():
     code = get_language_code()
@@ -140,7 +151,10 @@ def get_voice_language_codes():
     filtering voices in any engine.
     """
     language = get_config_key('language', default="English")
-    return LANGUAGES[language][1]  
+    if language:
+        return LANGUAGES[language][1]  
+    else:
+        return None
 
 
 CACHE_DIR = "cache"
@@ -162,7 +176,7 @@ def cache_filename(name, message, rank):
     clean_message = re.sub(r'[^\w]', '', message)
     clean_message = hashlib.sha256(message.encode()).hexdigest()[:5] + f"_{clean_message[:10]}"
     clean_message += rank[0]
-    return clean_message + ".mp3"
+    return clean_message
 
 
 def get_cachefile(name, message, category, rank):
@@ -178,7 +192,7 @@ def get_cachefile(name, message, category, rank):
     # first we need the path the file ought to have
     try:
         cachefile = os.path.abspath(
-            os.path.join("clip_library", category, clean_name, filename)
+            os.path.join(clip_library_dir(), category, clean_name, filename)
         )
     except Exception:
         log.error(
@@ -211,13 +225,21 @@ def diskcache(key, value=None):
 
 
 ALL_NPC = {}
-
+ALL_NPC_FN = os.path.join(
+    os.path.dirname(__file__), 
+    "..", '..',
+    "all_npcs.json"
+)
 
 def get_npc_data(character_name):
     global ALL_NPC
     log.debug(f"get_npc_data({character_name=})")
     if not ALL_NPC:
-        with open("all_npcs.json", "r") as h:
+        # log.info(os.listdir(
+        #     os.path.dirname(ALL_NPC_FN)
+        # ))
+
+        with open(ALL_NPC_FN, "r") as h:
             ALL_NPC = json.loads(h.read())
     return ALL_NPC.get(character_name)
 

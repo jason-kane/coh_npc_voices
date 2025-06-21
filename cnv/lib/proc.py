@@ -64,7 +64,7 @@ def send_log_lock(timeout=10):
     
     # send to a tell to ourselves with an infodump
     #for var in ['name', 'level', 'primary', 'secondary', 'archetype']:
-    send_chatstring('/tell $name, [SIDEKICK] name="$name";level="$level"\n')    
-    send_chatstring('/tell $name, [SIDEKICK] primary="$primary";secondary="$secondary"\n');
-    send_chatstring('/tell $name, [SIDEKICK] archetype="$archetype"\n')
+    send_chatstring(r'/tell $name, [SIDEKICK] name="$name";level="$level"' + "\n")    
+    send_chatstring(r'/tell $name, [SIDEKICK] primary="$primary";secondary="$secondary"' + "\n")
+    send_chatstring(r'/tell $name, [SIDEKICK] archetype="$archetype"' + "\n")
     
