@@ -10,13 +10,15 @@ It still does that, mostly.  Instead of using the same built-in voice for everyt
 
 When Sidekick starts you get a text window and a GUI.  It takes a hot second to get going.
 
-![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/cd233679-b559-4633-9fe2-785e9d640c3a)
+![image](https://github.com/user-attachments/assets/bab85e85-4461-4ced-9e62-05436bafb76b)
 
-After you've started the game and are logged in with your character (and have followed the steps under 'Configure' to enable loggin) click "Attach to Log" and you'll see something more like this:
+After you've started the game and are logged in with your character (and have followed the steps under 'Configure' to enable logging) click "Attach to Log" and you'll see something more like this:
 
-![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/d749697e-05f8-41bc-8142-22576ed54d12)
+![image](https://github.com/user-attachments/assets/c36257b5-95d6-43bc-9381-4d975b645129)
 
-As you play that will expand out to graph of your experience gained over time.  Its a good way to gauge your progress in the game.
+Note the chat dialog echoing in the terminal window and the framed contextual help for "DFB".
+
+As you play the graph will update and track your experience and influence gain over time.  Its a good way to gauge your progress in the game.
 
 You'll also start hearing things.  This time the voices in your head are real.  Whenever an NPC or a team member says something in chat, it will be converted into audio.
 
@@ -44,15 +46,15 @@ I think you have to reboot or logout/login before the extra voices are available
 
 #### Google Text-to-Speech
 
-Paid text-to-speech services are supported.  Right now that includes both google text-to-speech and ElevenLabs.  For google you will need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  
+Multiple paid text-to-speech services are supported.  For google you will need a valid application default login.  https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login  
+
+![image](https://github.com/user-attachments/assets/d187e330-4493-42bd-8991-4a194bee84d5)
 
 I know this is a pain.  The quality and flexibility are much better than Windows TTS but it takes a moment to generate and the delay is annoying.  Responses are cached to keep costs down to near zero.
 
 #### ElevenLabs
 
 ElevenLabs voices require an ElevenLabs API Token.  You can configure it on the "configuration" page.
-
-![image](https://github.com/jason-kane/coh_npc_voices/assets/1907832/d67352a3-7ff2-448c-b2f9-3b5b8883df19)
 
 Very easy.  The quality is really great but the 10,000 characters of text-to-speech you get each month with a free account can easily run out.  How long varies dramatically with how much you play and which parts of the game.  Somewhere between a 5-15 hours of game play.  They have a $5/month plan than gives you 3x more.
 
