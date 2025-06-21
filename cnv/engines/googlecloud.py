@@ -112,7 +112,8 @@ class GoogleCloudAuthUI(ctk.CTkFrame):
             per-character.
             """.replace("\n", " ")
         ) 
-        mdlabel.on_link_click(self.link_click) 
+        # mdlabel.on_link_click(self.link_click) 
+        
         mdlabel.grid(column=0, row=0, sticky="nsew")
         #pack(side="top", fill="x", expand=False)
         #s = ttk.Style()

@@ -5,20 +5,21 @@ import tkinter as tk
 from tkinter import ttk
 
 import customtkinter as ctk
-import voicebox
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+from pygame import mixer
+from scipy.io import wavfile
+from sqlalchemy import delete, desc, select
+from translate import Translator
+from voicebox.sinks import Distributor, SoundDevice, WaveFile
+from voicebox.tts.utils import get_audio_from_wav_file
+
 from cnv.database import db, models
 from cnv.effects import registry
 from cnv.engines import engines
 from cnv.engines.base import USE_SECONDARY
 from cnv.lib import audio, settings
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-from scipy.io import wavfile
-from sqlalchemy import delete, desc, select
 from cnv.lib.gui import Feather
-from translate import Translator
-from voicebox.sinks import Distributor, SoundDevice, WaveFile
-from voicebox.tts.utils import get_audio_from_wav_file
 
 log = logging.getLogger(__name__)
 ENGINE_OVERRIDE = {}
@@ -82,6 +83,8 @@ class WavfileMajorFrame(ctk.CTkFrame):
         # Wavfile visualizations
         self.visualize_wav = ctk.CTkFrame(self)
 
+        mixer.init()
+
         # must be called after self.play_btn exists
         self.populate_phrases()
 
@@ -124,17 +127,17 @@ class WavfileMajorFrame(ctk.CTkFrame):
             character, message, self.rank
         )
 
-        if os.path.exists(cachefile):
+        if os.path.exists(cachefile + ".wav"):
             # activate the play button and display the waveform
-            wavfilename = audio.mp3file_to_wavfile(
-                mp3filename=cachefile
-            )
+            #wavfilename = audio.mp3file_to_wavfile(
+            #    mp3filename=cachefile
+            #)
             self.play_btn.configure(state="normal")
             # and display the wav
-            self.show_wave(wavfilename)
+            self.show_wave(cachefile + ".wav")
             return
     
-        log.debug(f'Cached mp3 {cachefile} does not exist.')
+        log.debug(f'{cachefile}.wav does not exist.')
         self.clear_wave()
         self.play_btn.configure(state="disabled")
 
@@ -252,14 +255,13 @@ class WavfileMajorFrame(ctk.CTkFrame):
         _, clean_name = settings.clean_customer_name(character.name)
         filename = settings.cache_filename(character.name, msg, rank)
         
-        return os.path.abspath(
-            os.path.join(
-                "clip_library",
-                character.cat_str(),
-                clean_name,
-                filename
-            )
-        )        
+        return os.path.join(
+            settings.clip_library_dir(),
+            character.cat_str(),
+            clean_name,
+            filename
+        )
+ 
 
     def play_cache(self):
         """
@@ -291,18 +293,14 @@ class WavfileMajorFrame(ctk.CTkFrame):
             msg, is_translated = models.get_translated(phrase.id)
             cachefile = self.get_cachefile(character, msg, self.rank)
 
-            wavfilename = audio.mp3file_to_wavfile(
-                mp3filename=cachefile
-            )
-
+            # wavfilename = audio.mp3file_to_wavfile(
+            #     mp3filename=cachefile
+            # )
+            wavfilename = cachefile + ".wav"
             self.show_wave(wavfilename)
-
-            # wrap the wav as an Audio()
-            audio_obj = get_audio_from_wav_file(wavfilename)
-            #os.unlink(cachefile + ".wav")
             
-            # play the Audio()
-            voicebox.sinks.SoundDevice().play(audio_obj)
+            log.info(f'Playing {wavfilename}')
+            mixer.Sound(file=wavfilename).play()
             
     def say_it(self, use_secondary=False):
         """
@@ -379,13 +377,13 @@ class WavfileMajorFrame(ctk.CTkFrame):
                     
             self.show_wave(cachefile + ".wav")
 
-            cachefile = audio.wavfile_to_mp3file(
-                cachefile + ".wav",
-                mp3filename=cachefile
-            )
+            # why?
+            # cachefile = audio.wavfile_to_mp3file(
+            #     wavfilename=cachefile + ".wav",
+            #     mp3filename=cachefile + ".mp3"
+            # )
             
             self.play_btn["state"] = "normal"
-            # unlink the wav file?
 
         if not all_phrases:
             # this isn't an existing phrase

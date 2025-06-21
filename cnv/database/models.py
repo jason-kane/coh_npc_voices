@@ -237,7 +237,7 @@ class Character(Base):
                     # but.. we can accesss the cache?.  does that introduce a
                     # sequence dependency (yes)
                     raw_values = diskcache(f"{engine_key}_{config_meta.key}")
-                    log.info(f'{engine_key=} {config_meta.key=}')
+                    log.debug(f'{engine_key=} {config_meta.key=}')
                     all_values = list(raw_values)
                     
                     if all_values is None:
@@ -354,6 +354,7 @@ class Character(Base):
                 session.add(effect_settings)
             session.commit()
 
+        log.info('create_character() complete: %s', character)
         return character
 
     @classmethod

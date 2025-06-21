@@ -47,16 +47,16 @@ class LScale(ctk.CTkFrame):
     def __init__(
         self,
         parent,
-        pname,
-        label,
-        desc,
-        default,
-        from_,
-        to,
+        pname,    # property name: "threshold_db"
+        label,    # cosmetic: "Threshold (db)"
+        desc,     # ""
+        default,  # initial value: 0.0
+        from_,    # left-most value:  -10
+        to,       # right-most value:  10
         _type=float,
         *args, 
-        digits=None, 
-        resolution=0, 
+        digits=None, #  how many numbers after the . should we display
+        resolution: float=0.0,  #  Distance between 'notches' in scale: 0.5 
         **kwargs
     ):
         super().__init__(parent, *args, **kwargs)
@@ -80,6 +80,8 @@ class LScale(ctk.CTkFrame):
         )
 
         if digits is not None:
+            # parent is the frame, digits is a friendly dict it uses to let anyone 
+            # passing by to override the number of digits displayed.
             parent.digits[pname] = digits
 
         # label for the setting
@@ -282,7 +284,7 @@ class EffectParameterEditor(ctk.CTkFrame):
         persist that change.  Make the database reflect
         the UI.
         """
-        log.info(f'reconfig triggered by {varname}/{lindex}/{operation}')
+        log.debug(f'reconfig triggered by {varname}/{lindex}/{operation}')
         effect_id = self.effect_id.get()
 
         with models.Session(models.engine) as session:
@@ -296,14 +298,14 @@ class EffectParameterEditor(ctk.CTkFrame):
 
             found = set()
             for effect_setting in effect_settings:
-                log.info(f'Sync to db {effect_setting}')
+                log.debug(f'Sync to db {effect_setting}')
                 found.add(effect_setting.key)
                 try:
                     new_value = self.tkvars[effect_setting.key].get()
                     
                     if effect_setting.key in self.digits:
                         formatted_value = self.cosmetic(effect_setting.key, new_value)
-                        log.info(f'Setting widget to {formatted_value} (!= {new_value})')
+                        log.debug(f'Setting widget to {formatted_value} (!= {new_value})')
                         self.display_tkvars[effect_setting.key].set(formatted_value)
                     else:
                         log.debug(f'{effect_setting.key} not in digits {self.digits}')

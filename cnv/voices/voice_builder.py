@@ -2,15 +2,15 @@ import logging
 import os
 import re
 
-import cnv.database.models as models
-from cnv.effects import registry
-from cnv.engines.engines import get_engine
-from cnv.engines.base import USE_SECONDARY
-import cnv.lib.settings as settings
-import cnv.lib.audio as audio
 import pyfiglet
 from sqlalchemy import select
-from voicebox.sinks import Distributor, SoundDevice, WaveFile
+from voicebox.sinks import Distributor, WaveFile
+
+import cnv.database.models as models
+import cnv.lib.settings as settings
+from cnv.effects import registry
+from cnv.engines.base import USE_SECONDARY
+from cnv.engines.engines import get_engine
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ PLAYER_CATEGORY = models.category_str2int("player")
 # ENGINE_OVERRIDE has been triggered and we keep smacking elevenlabs even though we've run out of credits.
 
 ENGINE_OVERRIDE = {}
+
 
 def create(character, message, session):
     """
@@ -60,34 +61,30 @@ def create(character, message, session):
         rank = 'secondary'
 
     # have we seen this particular phrase before?
-    if character.category != PLAYER_CATEGORY or settings.get_toggle(settings.taggify("Persist player chat")):
+    #if character.category != PLAYER_CATEGORY or settings.get_toggle(settings.taggify("Persist player chat")):
         # phrase_id = models.get_or_create_phrase_id(
         #     name=character.name,
         #     category=character.category,
         #     message=message
         # )
         
-        # message = models.get_translated(phrase_id)
-        cachefile = settings.get_cachefile(
-            character.name, 
-            message, 
-            character.cat_str(),
-            rank
-        )
+    # message = models.get_translated(phrase_id)
 
-        try:
-            clean_name = re.sub(r'[^\w]', '',character.name)
-            os.mkdir(os.path.join("clip_library", character.cat_str(), clean_name))
-        except OSError:
-            # the directory already exists.  This is not a problem.
-            pass
 
-        save = True
-    else:
-        sink = Distributor([
-            SoundDevice()
-        ])
-        save = False 
+    try:
+        clean_name = re.sub(r'[^\w]', '',character.name)
+        os.mkdir(os.path.join(settings.clip_library_dir(), character.cat_str(), clean_name))
+    except OSError:
+        # the directory already exists.  This is not a problem.
+        pass
+
+    #     save = True
+    # else:
+    #     # play it without saving it.
+    #     # sink = Distributor([
+    #     #     SimpleAudioDevice()
+    #     # ])
+    #     save = False 
     
     name = character.name
     category = character.category
@@ -100,18 +97,38 @@ def create(character, message, session):
         if rank == 'secondary':
             raise USE_SECONDARY
         
-        if save:
-            sink = Distributor([
-                SoundDevice(),
-                WaveFile(cachefile + '.wav')
-            ])
-        else:
-            sink = Distributor([
-                SoundDevice()
-            ])
+        cachefile = settings.get_cachefile(
+            character.name, 
+            message, 
+            character.cat_str(),
+            rank
+        )
+
+        #if save:
+        sink = Distributor([
+            #SimpleAudioDevice(),
+            WaveFile(cachefile + '.wav')
+        ])
+        # else:
+        #     sink = Distributor([
+        #         SimpleAudioDevice()
+        #     ])
 
         log.debug(f'Using engine: {character.engine}')
-        get_engine(character.engine)(None, 'primary', name, category).say(message, effect_list, sink=sink)
+        
+        # this is a stupid interface.
+        # every character gets a primary engine config, even if it's os TTS.
+        get_engine(character.engine)(
+            None, 
+            'primary', 
+            name, 
+            category
+        ).say(
+            message, 
+            effect_list, 
+            sink=sink
+        )
+
     except USE_SECONDARY:
         rank = 'secondary'
         # our chosen engine for this character isn't working.  So we're going to switch
@@ -132,15 +149,15 @@ def create(character, message, session):
         )
 
         # new cachefile, new sink.
-        if save:
-            sink = Distributor([
-                SoundDevice(),
-                WaveFile(cachefile + '.wav')
-            ])
-        else:
-            sink = Distributor([
-                SoundDevice()
-            ])
+        #if save:
+        sink = Distributor([
+            #SimpleAudioDevice(),
+            WaveFile(cachefile + '.wav')
+        ])
+        # else:
+        #     sink = Distributor([
+        #         SimpleAudioDevice()
+        #     ])
 
         if character.engine_secondary:
             # use the secondary engine config defined for this character
@@ -152,14 +169,5 @@ def create(character, message, session):
             engine_instance = get_engine(engine_name)
             engine_instance(None, 'secondary', name, category).say(message, effect_list, sink=sink)
      
-    if save:
-        # it is already saved as a wav file, this converts it to an mp3 then
-        # erases the wav file.
-        if settings.get_config_key('save_as_mp3', True):
-            audio.wavfile_to_mp3file(
-                wavfilename=cachefile + ".wav",
-                mp3filename=cachefile
-            )
+        # End result: cachefile + ".wav" exists, for at least one of primary/secondary.
 
-        if not settings.get_config_key('save_as_wav', True):
-            os.unlink(cachefile + ".wav")

@@ -4,23 +4,26 @@ There is more awesome to be had.
 import ctypes
 import logging
 import multiprocessing
+import os
 import queue
+import random
 import sys
+import time
 from datetime import datetime, timedelta
 
-import cnv.lib.settings as settings
-import cnv.logger
 import colorama
 import customtkinter as ctk
-
-from cnv.database import models
-from cnv.lib.proc import send_chatstring
 from tabs import (
     automation,
     character,
     configuration,
     voices,
 )
+
+import cnv.lib.settings as settings
+import cnv.logger
+from cnv.database import models
+from cnv.lib.proc import send_chatstring
 
 # this unlinks us from python so windows will
 # use our icon instead of the python icon in the
@@ -62,8 +65,18 @@ def main():
     colorama.init()
     root = ctk.CTk()
 
-    event_queue = multiprocessing.Queue()
-    speaking_queue = multiprocessing.Queue()
+    event_queue = multiprocessing.SimpleQueue()
+    speaking_queue = multiprocessing.SimpleQueue()
+
+    for msg in random.choices([
+        "Returning to Paragon City",
+        "Back so soon?",
+        "Go get em' Tiger",
+        "and then she said, it's a duck!"
+    ], weights=(75, 10, 10, 5)):
+        speaking_queue.put(
+            ('narrator', msg, "system")
+        )
 
     def on_closing():
         global EXIT
@@ -74,8 +87,17 @@ def main():
         sys.exit()
         # root.destroy()
 
+    print(os.path.abspath(os.curdir))
+    print(os.listdir('.'))
+
     root.protocol("WM_DELETE_WINDOW", on_closing)
-    root.iconbitmap("sidekick.ico")
+    
+    root.iconbitmap(
+        os.path.join(
+            os.path.dirname(__file__),
+            "sidekick.ico"
+        )
+    )
 
     root.geometry("720x640+200+200")
     root.resizable(True, True)
@@ -106,44 +128,40 @@ def main():
     update_frequency = timedelta(minutes=1)
 
     while not EXIT:
-        # our primary event loop
+        # our primary event loop, these are queue messages that are instructing the UI process to do things.
         try:
             # the event queue is how messages are sent up
             # from children.
-            try:
-                event_action = event_queue.get(block=False)
-            except queue.Empty:
-                event_action = None, None
 
-            # we got an action (no exception)
-            # log.info('Event Received: %s', event_action)
-            key, value = event_action
-            
-            if key == "SET_CHARACTER":
-                # if this chatter hasn't been started this 
-                # will fail.
-                # speaking_queue.put(
-                #     (None, f"Welcome back {value}", "system")
-                # )
-                models.set_hero(name=value)
-                mtv.tabdict['Character'].set_progress_chart()
+            if not event_queue.empty():
+                # we got an action (no exception)
+                key, value = event_queue.get()
+                
+                log.info(f'{key}({value}) event received')
 
-                #log.debug('path set_chraracter')
-                #char.chatter.hero = npc_chatter.Hero(value)
-                #log.debug('Calling set_hero()...')
-                #char.set_hero()
-                last_character_update = datetime.now()
-            elif key == "SPOKE":
-                # name, category = value
-                log.debug('Refreshing character list...')
-                mtv.tabdict['Voices'].listside.refresh_character_list()
-            elif key == "RECHARGED":
-                log.debug(f'Power {value} has recharged.')
-                if value in ["Hasten", "Domination"]:
-                    if settings.get_config_key(f'auto_{value.lower()}'):
-                        send_chatstring(f"/powexec_name \"{value}\"\n")
-                    else:
-                        log.info(f'auto_{value.lower()} is disabled')
+                if key == "SET_CHARACTER":
+                    speaking_queue.put(
+                        ('narrator', f"Welcome back {value}", "system")
+                    )
+                    models.set_hero(name=value)
+                    mtv.tabdict['Character'].set_progress_chart()
+
+                    #log.debug('path set_chraracter')
+                    #char.chatter.hero = npc_chatter.Hero(value)
+                    #log.debug('Calling set_hero()...')
+                    #char.set_hero()
+                    last_character_update = datetime.now()
+                elif key == "SPOKE":
+                    # name, category = value
+                    log.debug('Refreshing character list...')
+                    mtv.tabdict['Voices'].listside.refresh_character_list()
+                elif key == "RECHARGED":
+                    log.debug(f'Power {value} has recharged.')
+                    if value in ["Hasten", "Domination"]:
+                        if settings.get_config_key(f'auto_{value.lower()}'):
+                            send_chatstring(f"/powexec_name \"{value}\"\n")
+                        else:
+                            log.info(f'auto_{value.lower()} is disabled')
 
         except Exception as err:
             log.error(f"{err=}")

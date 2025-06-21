@@ -403,7 +403,7 @@ class WindowsTTS(TTSEngine):
 
 
 @dataclass
-class WindowsSapi(voicebox.tts.tts.TTS):
+class WindowsSapi(voicebox.tts.TTS):
     rate: int = 1
     voice: str = "Zira"
 
@@ -418,12 +418,13 @@ class WindowsSapi(voicebox.tts.tts.TTS):
         # save the original output stream
         temp_stream = voice.voice.AudioOutputStream
 
-        # hijack it
+        # hijack it, write to our memory stream
         voice.voice.AudioOutputStream = stream
 
+        # speak the text
         voice.say(text)
 
-        # restore it
+        # restore our stream hijack
         voice.voice.AudioOutputStream = temp_stream
         
         samples = np.frombuffer(
@@ -431,6 +432,9 @@ class WindowsSapi(voicebox.tts.tts.TTS):
             dtype=np.int16
         )
 
+        # voicebox == numpy, I don't see any way around it in general. in this
+        # case we could switch to an SpFileStream and dump a .wav then make this
+        # get_audio_from_wav_file, but it's just np there vs np here.
         audio = voicebox.tts.utils.get_audio_from_samples(
             samples,
             22050
