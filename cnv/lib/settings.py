@@ -1,8 +1,9 @@
-import logging
+import datetime
+import hashlib
 import inspect
 import json
+import logging
 import os
-import hashlib
 import re
 
 LOGLEVEL = logging.INFO
@@ -205,8 +206,10 @@ def get_cachefile(name, message, category, rank):
 
 def diskcache(key, value=None, force=False):
     """
-    key must be valid as a base filename
+    key must be valid as a base filename, no directories (yet)
     value must be None or a json-able object
+
+    These expire weekly.
     """
     log.debug(f"diskcache({key=}, {value=})")
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -233,8 +236,13 @@ def diskcache(key, value=None, force=False):
         
         # read
         if os.path.exists(filename):
-            with open(filename, "rb") as h:
-                content = json.loads(h.read())
+            # has it expired?
+            last_modified_timestamp = os.path.getmtime(filename)
+            last_modified = datetime.datetime.fromtimestamp(last_modified_timestamp)
+            content = None
+            if last_modified >= datetime.datetime.now() - datetime.timedelta(weeks=1):
+                with open(filename, "rb") as h:
+                    content = json.loads(h.read())
             return content
     else:
         # write

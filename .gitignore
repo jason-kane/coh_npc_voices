@@ -177,3 +177,4 @@ cnv/voices/generate_defaults.py
 
 sqlite-tools/
 state.json
+win_venv_mover/coh_npc_voices.code-workspace
