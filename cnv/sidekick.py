@@ -74,8 +74,9 @@ def main():
         "Returning to Paragon City",
         "Back so soon?",
         "Go get em' Tiger",
-        "and then she said, it's a duck!"
-    ], weights=(75, 10, 10, 5)):
+        "and then she said, it's a duck!",
+        "quiet, stop talking, he is here.",
+    ], weights=(75, 10, 10, 5, 2)):
         speaking_queue.put(
             ('narrator', msg, "system")
         )

@@ -4,7 +4,6 @@ from dataclasses import dataclass
 import cnv.database.models as models
 import cnv.lib.settings as settings
 import numpy as np
-import tts.sapi
 import voicebox
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
@@ -13,6 +12,144 @@ from .base import TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
+######
+# https://github.com/DeepHorizons/tts/blob/master/tts/sapi.py
+# because pyinstaller3 ain't gonna install a git url package
+#
+
+import os # Allows checking if using Windows
+try:
+    assert(os.name == 'nt') # Checks for Windows
+except:
+    raise RuntimeError("Windows is required.")
+
+import comtypes.client  # Importing comtypes.client will make the gen subpackage
+try:
+    from comtypes.gen import SpeechLib  # comtypes
+except ImportError:
+    # Generate the SpeechLib lib and any associated files
+    engine = comtypes.client.CreateObject("SAPI.SpVoice")
+    stream = comtypes.client.CreateObject("SAPI.SpFileStream")
+    from comtypes.gen import SpeechLib
+
+from enum import Enum
+
+class SpeechVoiceSpeakFlags(Enum):
+    # SpVoice Flags
+    Default = 0
+    FlagsAsync = 1
+    PurgeBeforeSpeak = 2
+    IsFilename = 4
+    IsXML = 8
+    IsNotXML = 16
+    PersistXML = 32
+
+    # Normalizer Flags
+    NLPSpeakPunc = 64
+
+    # Masks
+    NLPMask = 64
+    VoiceMask = 127
+    UnusedFlags = -128
+
+class Sapi(object):
+    """A speech API using the Microsoft SAPI through COM"""
+
+    def __init__(self):
+        super().__init__()
+        self.voice = comtypes.client.CreateObject('Sapi.SpVoice')
+
+    def get_voices(self, name=''):
+        """Get a list of voices, search by name optional"""
+        voice_list = []
+        voices = self.voice.GetVoices()
+
+        if name is not '':
+            for voice in voices:
+                if name in voice.GetDescription():
+                    voice_list.append(voice)
+                    break
+            else:
+                print('Voice not found')
+        else:
+            for voice in voices:
+                voice_list.append(voice)
+
+        return voice_list
+
+    def get_voice_names(self):
+        """Get the names of all the voices"""
+        return [voice.GetDescription() for voice in self.get_voices()]
+
+    def set_voice(self, voice):
+        """Set the voice to the given voice"""
+        if type(voice) is str:
+            self.voice.Voice = self.get_voices(voice)[0]
+        else:
+            self.voice.Voice = voice
+        return
+
+    def get_audio_outputs(self, name=''):
+        """Get the audio outputs, search for the one with the name if given"""
+        output_list = []
+        outputs = self.voice.GetAudioOutputs()
+
+        if name is not '':
+            for output in outputs:
+                if name in output.GetDescription():
+                    output_list.append(output)
+                    break
+            else:
+                print('Audio output not found')
+        else:
+            for output in outputs:
+                output_list.append(output)
+
+        return output_list
+
+    def get_audio_output_names(self):
+        """Get the names of all the audio outpus"""
+        return [output.GetDescription() for output in self.get_audio_outputs()]
+
+    def set_audio_output(self, output):
+        if type(output) is str:
+            self.voice.AudioOutput = self.get_audio_outputs(output)[0]
+        else:
+            self.voice.AudioOutput = output
+        return
+
+    def say(self, message, flag = SpeechVoiceSpeakFlags.Default.value):
+        self.voice.Speak(message, flag)
+        return
+    
+    def set_rate(self, rate):
+        """Set the speed of the speaker
+        -10 is slowest, 10 is fastest"""
+        self.voice.Rate = rate
+
+    def set_volume(self, volume):
+        """Recording volume (0-100)"""
+        self.voice.Volume = volume
+
+    def _create_stream(self, filename):
+        """Create a file stream handler"""
+        stream = comtypes.client.CreateObject('Sapi.SpFileStream')
+        stream.Open(filename, SpeechLib.SSFMCreateForWrite)
+        return stream
+
+    def create_recording(self, filename, message, flag = SpeechVoiceSpeakFlags.Default.value):
+        """Make a recording of the given message to the file
+        The file should be a .wav as the output is
+        PCM 22050 Hz 16 bit, Little endianness, Signed"""
+        stream = self._create_stream(filename)
+        temp_stream = self.voice.AudioOutputStream
+        self.voice.AudioOutputStream = stream
+        self.say(message, flag)
+        self.voice.AudioOutputStream = temp_stream
+        stream.Close()
+##
+##
+###########################################
 
 class WindowsTTS(TTSEngine):
     cosmetic = "Windows TTS"
@@ -357,7 +494,7 @@ class WindowsTTS(TTSEngine):
 
         if all_voices is None:
             all_voices = []
-            wintts = tts.sapi.Sapi()
+            wintts = Sapi()
             voices = wintts.get_voice_names()
             for v in voices:
                 if "Desktop" in v:
@@ -408,24 +545,24 @@ class WindowsSapi(voicebox.tts.TTS):
     voice: str = "Zira"
 
     def get_speech(self, text: StrOrSSML) -> Audio:
-        voice = tts.sapi.Sapi()
+        sapi = Sapi()
         log.debug(f"Saying {text!r} as {self.voice} at rate {self.rate}")
-        voice.set_rate(self.rate)
-        voice.set_voice(self.voice)
+        sapi.set_rate(self.rate)
+        sapi.set_voice(self.voice)
 
-        stream = tts.sapi.comtypes.client.CreateObject('SAPI.SpMemoryStream')
+        stream = comtypes.client.CreateObject('SAPI.SpMemoryStream')
         
         # save the original output stream
-        temp_stream = voice.voice.AudioOutputStream
+        temp_stream = sapi.voice.AudioOutputStream
 
         # hijack it, write to our memory stream
-        voice.voice.AudioOutputStream = stream
+        sapi.voice.AudioOutputStream = stream
 
         # speak the text
-        voice.say(text)
+        sapi.say(text)
 
         # restore our stream hijack
-        voice.voice.AudioOutputStream = temp_stream
+        sapi.voice.AudioOutputStream = temp_stream
         
         samples = np.frombuffer(
             bytes(stream.GetData()), 
