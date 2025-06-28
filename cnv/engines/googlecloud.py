@@ -184,6 +184,9 @@ class GoogleCloudAuthUI(ctk.CTkFrame):
 
 
 class GoogleCloud(TTSEngine):
+    """
+    TODO: This engine needs some help.  The problem is that there are just too many voices.  We can't just use one select box, we have to narrow it down more.
+    """
     cosmetic = "Google Text-to-Speech"
     key = 'googletts'
     auth_ui_class = GoogleCloudAuthUI
@@ -223,7 +226,27 @@ class GoogleCloud(TTSEngine):
                     out.add(voice['voice_name'])
         
         if not out:
+            # seems pretty unlikely, but..
             log.error(f'There are no voices available for the language: {settings.get_voice_language_codes()} and gender={self.gender.title()}')
+            for voice in all_voices:
+                # try without the gender filter -- interesting choice I guess;
+                # if you have to drop language or gender, which is a worse
+                # customer experience?  Misgender or Bad accent?  That is the
+                # choice here.
+                #
+                # not really, in practice getting the language wrong is way
+                # worse, because it's frequenctly unintelligible.  it is a cool
+                # character effect, it's wrong to call this 'accent', it's more
+                # like what would X sound like if someone that only speeks Y tried to read
+                # it.   Situational at best.
+
+                # misgender:
+                if self._language_code_filter(voice):
+                    out.add(voice['voice_name'])
+
+                # or bad accent:
+                #if self._gender_filter(voice):
+                #    out.add(voice['voice_name'])
         
         out = sorted(list(out))
 
