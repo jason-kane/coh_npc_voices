@@ -35,9 +35,10 @@ class MarkdownLabel(HtmlLabel):  # Label
         super().__init__(*args, **kwargs)
 
 
-# Base Class for engines
+# Base Class for TTS engines/services
 class TTSEngine(ctk.CTkFrame):
     auth_ui_class = None
+    cosmetic="TTSEngine Base Class (You screwed up buddy)"
 
     def __init__(self, parent, rank, name, category, *args, **kwargs):
         log.debug(f'Initializing TTSEngine {parent=} {rank=} {name=} {category=}')
@@ -368,7 +369,10 @@ class TTSEngine(ctk.CTkFrame):
             # our change may filter the other widgets, possibly
             # rendering the previous value invalid.
             if m.varfunc == "StringVar":
-                # log.info(f"{m.cosmetic=} {m.key=} {m.default=} {m.gatherfunc=}")
+                # log.info(f"{m.cosmetic=} {m.key=} {m.default=}
+                # {m.gatherfunc=}") m.gatherfunc() is the function on the module
+                # responsible for returning all configuration options available
+                # in this plugin.
                 all_options = getattr(self, m.gatherfunc)()
                 if not all_options:
                     log.error(f'{m.gatherfunc=} returned no options ({self.cosmetic})')
@@ -376,10 +380,11 @@ class TTSEngine(ctk.CTkFrame):
                 if m.key in self.widget:
                     # log.info(f'{all_options=}')
                     self.widget[m.key].configure(values=all_options)
-            
-                    if self.config_vars[m.key].get() not in all_options:
-                        # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')                    
-                        self.config_vars[m.key].set(all_options[0])
+
+                    if all_options:
+                        if self.config_vars[m.key].get() not in all_options:
+                            # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')                    
+                            self.config_vars[m.key].set(all_options[0])
             
     def _gender_filter(self, voice):
         if hasattr(self, 'gender') and self.gender:
@@ -390,3 +395,39 @@ class TTSEngine(ctk.CTkFrame):
                 log.warning('Failed to find "gender" in:')
                 log.debug(f"{voice=}")
         return True
+
+class EngineRegistry:
+    """
+    engines in this registry are expected to be subclasses of TTSEngine.
+    """
+    def __init__(self):
+        self.engines = {}
+        self.engines_by_cosmetic = {}
+
+    def add_engine(self, cls):
+        key = cls.key
+        self.engines[key] = cls
+        self.engines_by_cosmetic[cls.cosmetic] = cls
+    
+    def get_engine(self, key):
+        if key in self.engines:
+            return self.engines[key]
+        
+        if key in self.engines_by_cosmetic:
+            return self.engines_by_cosmetic[key]
+        
+        log.error("Unknown engine: %s", key)
+        log.error(f"{self.engines=}")
+        log.error(f"{self.engines_by_cosmetic=}")
+
+
+    def engine_list(self) -> list:
+        out = []
+        for engine in self.engines:
+            out.append((engine, self.engines[engine]))
+        return out
+    
+    def count(self):
+        return len(self.engines)
+    
+registry = EngineRegistry()

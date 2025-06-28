@@ -15,7 +15,7 @@ import voicebox
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
 
-from .base import MarkdownLabel, TTSEngine
+from .base import MarkdownLabel, TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
@@ -229,3 +229,6 @@ class ttsOpenAI(voicebox.tts.TTS):
                 samples,
                 24000
             )
+
+# add this class to the the registry of engines
+registry.add_engine(Azure)

@@ -12,7 +12,7 @@ from voicebox.tts.amazonpolly import AmazonPolly as AmazonPollyTTS
 import cnv.database.models as models
 import cnv.lib.settings as settings
 
-from .base import MarkdownLabel, TTSEngine
+from .base import MarkdownLabel, TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
@@ -392,3 +392,5 @@ class AmazonPolly(TTSEngine):
 
         return all_voices
 
+# add this class to the the registry of engines
+registry.add_engine(AmazonPolly)

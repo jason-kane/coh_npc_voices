@@ -16,7 +16,8 @@ from voicebox.tts.utils import get_audio_from_wav_file
 
 from cnv.database import db, models
 from cnv.effects import registry
-from cnv.engines import engines
+
+from cnv.engines.base import registry as engine_registry
 from cnv.engines.base import USE_SECONDARY
 from cnv.lib import audio, settings
 from cnv.lib.gui import Feather
@@ -316,7 +317,7 @@ class WavfileMajorFrame(ctk.CTkFrame):
         log.debug(f"Speak: {message}")
         
         engine_name = models.get_engine(self.rank)
-        ttsengine = engines.get_engine(engine_name)
+        ttsengine = engine_registry.get_engine(engine_name)
         log.debug(f"Engine: {ttsengine}")
 
         effect_list = [
@@ -396,13 +397,13 @@ class WavfileMajorFrame(ctk.CTkFrame):
                 translator = Translator(to_lang=language)
                 msg = translator.translate(msg)
 
-            try:
-                ttsengine(None, self.rank, character.name, character.category).say(msg, effect_list)
-            except engines.DISABLE_ENGINES:
-                # I'm not even sure what we want to do.  The user clicked 'play' but
-                # we don't have any quota left for the selected engine.
-                # lets go dumb-simple.
-                tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
+            #try:
+            ttsengine(None, self.rank, character.name, character.category).say(msg, effect_list)
+            # except engines.DISABLE_ENGINES:
+            #     # I'm not even sure what we want to do.  The user clicked 'play' but
+            #     # we don't have any quota left for the selected engine.
+            #     # lets go dumb-simple.
+            #     tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
 
 
 class EngineSelectAndConfigure(ctk.CTkFrame):
@@ -436,11 +437,13 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
             self.change_selected_engine
         )
 
+        # doing this by cosmetic is so icky.
+        # TODO: figure out how to do that in ctk
         base_tts = ctk.CTkComboBox(
             speech_engine_selection, 
             variable=self.selected_engine,
             state='readonly',
-            values=[e.cosmetic for e in engines.ENGINE_LIST]
+            values=[e.cosmetic for (_, e) in engine_registry.engine_list()]
         )
 
         base_tts.grid(
@@ -538,12 +541,12 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
             log.debug(f'Not changing the {self.rank} character engines ({engine_name})')
 
         models.set_engine(self.rank, engine_name)
-        engine_cls = engines.get_engine(engine_name)
+        engine_cls = engine_registry.get_engine(engine_name)
 
         if not engine_cls:
             # that didn't work.. try the default engine
             log.warning(f'Invalid Engine: {engine_name!r}.  Using default {settings.DEFAULT_ENGINE} engine.')
-            engine_cls = engines.get_engine(settings.DEFAULT_ENGINE)
+            engine_cls = engine_registry.get_engine(settings.DEFAULT_ENGINE)
 
         self.engine_parameters = engine_cls(
             self,

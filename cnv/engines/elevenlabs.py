@@ -16,7 +16,7 @@ from voicebox.types import StrOrSSML
 import cnv.database.models as models
 import cnv.lib.audio as audio
 
-from .base import MarkdownLabel, TTSEngine
+from .base import MarkdownLabel, TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
@@ -275,3 +275,6 @@ class ttsElevenLabs(voicebox.tts.TTS):
             elevenlabs.save(audio_data, mp3filename)
 
             return audio.mp3file_to_Audio(mp3filename)
+
+# add this class to the the registry of engines
+registry.add_engine(ElevenLabs)

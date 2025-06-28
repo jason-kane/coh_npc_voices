@@ -9,7 +9,7 @@ import voicebox
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
 
-from .base import TTSEngine
+from .base import TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
@@ -441,3 +441,6 @@ class WindowsSapi(voicebox.tts.TTS):
         )
 
         return audio
+    
+# add this class to the the registry of engines
+registry.add_engine(WindowsTTS)
