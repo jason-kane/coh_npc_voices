@@ -5,7 +5,10 @@ a = Analysis(
     ['cnv\\sidekick.py'],
     pathex=['.', 'cnv'],
     binaries=[
-        ('.venv\\Lib\\site-packages\\azure\\cognitiveservices\\speech\\Microsoft.CognitiveServices.Speech.core.dll', 'azure\\cognitiveservices\\speech\\'),
+        (
+            '.venv\\Lib\\site-packages\\azure\\cognitiveservices\\speech\\Microsoft.CognitiveServices.Speech.core.dll', 
+            '.'
+        ),
         ('.venv\\Lib\\site-packages\\pyfiglet', '.\\pyfiglet'),
         ('sidekick.ico', '.'),
         ('cnv\\lib\\icons\\trash-2.png', 'cnv\\lib\\icons\\'),
@@ -23,6 +26,9 @@ a = Analysis(
         'google_auth_oauthlib',  # google
         'openai',  # umm?  (joking, duhh)
         'comtypes',  # windows tts
+        'azure',
+        'azure.cognitiveservices',
+        'azure.cognitiveservices.speech',
     ],
     hookspath=[],
     hooksconfig={},

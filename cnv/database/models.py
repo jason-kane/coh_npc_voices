@@ -236,11 +236,12 @@ class Character(Base):
 
                     # but.. we can accesss the cache?.  does that introduce a
                     # sequence dependency (yes)
-                    raw_values = diskcache(f"{engine_key}_{config_meta.key}")
+                    all_values = diskcache(f"{engine_key}_{config_meta.key}")
                     log.debug(f'{engine_key=} {config_meta.key=}')
-                    all_values = list(raw_values)
                     
-                    if all_values is None:
+                    try:
+                        all_values = list(all_values)
+                    except (TypeError, AttributeError):
                         log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
                         value = "<Cache Failure>"
 
@@ -249,7 +250,7 @@ class Character(Base):
                         engine.get_engine(engine_key)(None, None, None, None)
                         all_values = list(
                             diskcache(f"{engine_key}_{config_meta.key}")
-                        )
+                        )                 
 
                     if all_values:
                         # it's a dict, key in a voice_name
