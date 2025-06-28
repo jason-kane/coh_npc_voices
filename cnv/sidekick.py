@@ -17,6 +17,7 @@ from tabs import (
     automation,
     character,
     configuration,
+    translation,
     voices,
 )
 
@@ -51,6 +52,7 @@ class MainTabView(ctk.CTkTabview):
             ('Character', character.CharacterTab, (event_queue, speaking_queue)),
             ('Voices', voices.VoicesTab, (event_queue, speaking_queue)), 
             ('Configuration', configuration.ConfigurationTab, (event_queue, speaking_queue)),
+            ('Translation', translation.TranslationTab, (event_queue, speaking_queue)),
             ('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
         ):
             ctkframe = self.add(tablabel)
