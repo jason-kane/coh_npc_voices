@@ -34,16 +34,40 @@ class RingMod(EffectParameterEditor):
             resolution=10
         ).pack(side='top', fill='x', expand=True)
 
+        # LScale(
+        #     self,
+        #     pname="blend",
+        #     label='Signal Blend', 
+        #     desc="Blend between the original and modulated signals.  0 is all original, 1 is all modulated.",
+        #     default=0.5,
+        #     from_=0,
+        #     to=1,
+        #     digits=0,
+        #     resolution=0.01
+        # ).pack(side='top', fill='x', expand=True)
+
         LScale(
             self,
-            pname="blend",
-            label='Signal Blend', 
-            desc="Blend between the original and modulated signals.  0 is all original, 1 is all modulated.",
+            pname="dry",
+            label='Dry', 
+            desc="Dry",
             default=0.5,
             from_=0,
             to=1,
-            digits=0,
-            resolution=0.01
+            digits=1,
+            resolution=0.1
+        ).pack(side='top', fill='x', expand=True)
+
+        LScale(
+            self,
+            pname="wet",
+            label='Wet', 
+            desc="Wet",
+            default=0.5,
+            from_=0,
+            to=1,
+            digits=1,
+            resolution=0.1
         ).pack(side='top', fill='x', expand=True)
 
         LCombo(
@@ -57,11 +81,27 @@ class RingMod(EffectParameterEditor):
 
 
     def get_effect(self):
+        # def __init__(
+        #         self,
+        #         carrier_freq: float = 20.,
+        #         carrier_wave: WaveFunc = np.sin,
+        #         dry: float = 0.5,
+        #         wet: float = 0.5,
+        # ):       
+        carrier_freq = self.tkvars['carrier_freq'].get()
+        
+        # ie: np.sin.get() or np.cos.get()
+        carrier_wave = getattr(np, self.tkvars['carrier_wave'].get())
+
+        wet = self.tkvars['wet'].get()
+        dry = self.tkvars['dry'].get()
+
+        log.debug(f"get_effect() -> RingMod({carrier_freq=}, {carrier_wave=}, {dry=}, {wet=})") 
         effect = voicebox.effects.RingMod(
-            carrier_freq=self.tkvars['carrier_freq'].get(),
-            blend=self.tkvars['blend'].get(),
-            # ie: np.sin.get() or np.cos.get()
-            carrier_wave=getattr(np, self.tkvars['carrier_wave'].get())
+            carrier_freq=carrier_freq,
+            carrier_wave=carrier_wave,
+            dry=dry,
+            wet=wet
         )
         return effect
 

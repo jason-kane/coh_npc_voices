@@ -576,7 +576,7 @@ class WindowsSapi(voicebox.tts.TTS):
             samples,
             22050
         )
-
+        log.debug('get_speech() returning %s', audio)
         return audio
     
 # add this class to the the registry of engines

@@ -12,6 +12,7 @@ from typing import Optional, Self
 import pyfiglet
 from cnv.lib import settings
 from cnv.lib.settings import diskcache
+from cnv.engines import registry
 from sqlalchemy import (
     JSON,
     DateTime,
@@ -247,10 +248,10 @@ class Character(Base):
 
                         # just creating this should be enough to populate the
                         # engine cache.
-                        engine.get_engine(engine_key)(None, None, None, None)
+                        registry.get_engine(engine_key)(None, None, None, None)
                         all_values = list(
                             diskcache(f"{engine_key}_{config_meta.key}")
-                        )                 
+                        )
 
                     if all_values:
                         # it's a dict, key in a voice_name

@@ -15,6 +15,7 @@ IIR_FILTERS = ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
 # how long can effect description be before the text wraps
 WRAPLENGTH=350
 
+IGNORE_SETTING = ['blend', ]
 
 class EffectRegistry:
     def __init__(self):
@@ -298,6 +299,10 @@ class EffectParameterEditor(ctk.CTkFrame):
 
             found = set()
             for effect_setting in effect_settings:
+                # backward compatability is a bit of an after though.
+                if effect_setting.key in IGNORE_SETTING:
+                    continue
+
                 log.debug(f'Sync to db {effect_setting}')
                 found.add(effect_setting.key)
                 try:
@@ -365,6 +370,9 @@ class EffectParameterEditor(ctk.CTkFrame):
 
             found = set()
             for setting in effect_settings:
+                if setting.key in IGNORE_SETTING:
+                    continue
+
                 log.debug(f'Working on {setting}')
                 
                 if setting.key in found:
@@ -382,12 +390,13 @@ class EffectParameterEditor(ctk.CTkFrame):
                         if setting.key in self.digits:
                             formatted_string = self.cosmetic(setting.key, setting.value)
                             self.display_tkvars[setting.key].set(formatted_string)
+
+                        tkvar.trace_add("write", self.reconfig)
+                        self.traces[setting.key] = tkvar
                     else:
                         log.error(
                             f'Invalid configuration.  '
                             f'{setting.key} is not available for '
                             f'{self}')
                 
-                    tkvar.trace_add("write", self.reconfig)
-                    self.traces[setting.key] = tkvar
             session.commit()

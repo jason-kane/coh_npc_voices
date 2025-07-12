@@ -371,7 +371,8 @@ class WavfileMajorFrame(ctk.CTkFrame):
             log.debug(f"Creating ttsengine for {character.name}")
 
             # None because we aren't attaching any widgets
-            try:                
+            try: 
+                log.debug(f'{ttsengine}(None, {self.rank}, name={character.name}, category={character.category}).say(msg, effect_list, sink={sink})')
                 ttsengine(None, self.rank, name=character.name, category=character.category).say(msg, effect_list, sink=sink)
             except USE_SECONDARY:
                 return
