@@ -242,8 +242,19 @@ class Character(Base):
                     
                     try:
                         all_values = list(all_values)
-                    except (TypeError, AttributeError):
+                    except TypeError:
                         log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
+                        value = "<Cache Failure>"
+
+                        # just creating this should be enough to populate the
+                        # engine cache?  I guess not.
+                        registry.get_engine(engine_key)(None, None, None, None)
+                        # (parent, rank, name, category, *args, **kwargs):
+                        all_values = list(
+                            diskcache(f"{engine_key}_{config_meta.key}")
+                        )
+                    except AttributeError:
+                        log.warning(f'Cache {engine_key}_{config_meta.key} is invalid')
                         value = "<Cache Failure>"
 
                         # just creating this should be enough to populate the
@@ -251,7 +262,7 @@ class Character(Base):
                         registry.get_engine(engine_key)(None, None, None, None)
                         all_values = list(
                             diskcache(f"{engine_key}_{config_meta.key}")
-                        )
+                        )                        
 
                     if all_values:
                         # it's a dict, key in a voice_name
