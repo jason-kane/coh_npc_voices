@@ -114,7 +114,8 @@ class GoogleCloudAuthUI(ctk.CTkFrame):
             (currently 7/24) provides 1 million characters per month. if you run
             out it (currently) costs $4-$16 per million characters, billed
             per-character.
-            """.replace("\n", " ")
+            """.replace("\n", " "),
+            messages_enabled=False
         ) 
         # mdlabel.on_link_click(self.link_click) 
         

@@ -33,6 +33,7 @@ class LinkList(ctk.CTkFrame):
             MarkdownLabel(
                 self,
                 text=docs,
+                messages_enabled=False
             ).grid(column=1, row=index)
             index += 1
 

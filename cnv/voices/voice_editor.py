@@ -145,8 +145,9 @@ class WavfileMajorFrame(ctk.CTkFrame):
     def populate_phrases(self):
         log.debug('** populate_phrases() called **')
         
-        character = models.get_selected_character()
-        if character is None:
+        try:
+            character = models.get_selected_character()
+        except models.NoCharacterSelected:
             # no character selected
             return 
 
@@ -609,13 +610,12 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
     def load_character_engines(self, session):
         """
         We've set the character name, we want the rest of the metadata to
-        populate.  Setting the engine name will domino the rest.
+        populate.  Setting the engine name should domino the rest.
         """
-        character = models.get_selected_character()
-
-        if character is None:
-            log.error('Character %s does not exist.' % character)
-            return None
+        try:
+            character = models.get_selected_character()
+        except models.NoCharacterSelected:
+            return
        
         if character.engine in ["", None]:
             if character.category == "player":

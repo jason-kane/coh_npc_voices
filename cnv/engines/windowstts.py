@@ -64,7 +64,7 @@ class Sapi(object):
         voice_list = []
         voices = self.voice.GetVoices()
 
-        if name is not '':
+        if name != '':
             for voice in voices:
                 if name in voice.GetDescription():
                     voice_list.append(voice)
@@ -94,7 +94,7 @@ class Sapi(object):
         output_list = []
         outputs = self.voice.GetAudioOutputs()
 
-        if name is not '':
+        if name != '':
             for output in outputs:
                 if name in output.GetDescription():
                     output_list.append(output)

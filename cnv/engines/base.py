@@ -396,6 +396,16 @@ class TTSEngine(ctk.CTkFrame):
                 log.debug(f"{voice=}")
         return True
 
+
+class UnknownEngine(Exception):
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+
+        log.error("Unknown engine: %s", args)
+        #log.error(f"{self.engines=}")
+        #log.error(f"{self.engines_by_cosmetic=}")
+
+
 class EngineRegistry:
     """
     engines in this registry are expected to be subclasses of TTSEngine.
@@ -409,18 +419,15 @@ class EngineRegistry:
         self.engines[key] = cls
         self.engines_by_cosmetic[cls.cosmetic] = cls
     
-    def get_engine(self, key):
+    def get_engine(self, key) -> TTSEngine:
         if key in self.engines:
             return self.engines[key]
         
         if key in self.engines_by_cosmetic:
             return self.engines_by_cosmetic[key]
         
-        log.error("Unknown engine: %s", key)
-        log.error(f"{self.engines=}")
-        log.error(f"{self.engines_by_cosmetic=}")
-
-
+        raise UnknownEngine(key)
+    
     def engine_list(self) -> list:
         out = []
         for engine in self.engines:

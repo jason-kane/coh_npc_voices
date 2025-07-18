@@ -418,9 +418,16 @@ def set_selected_character(name, category):
     TKVAR['character'].set(name)
     TKVAR['category'].set(category)
 
-def get_selected_character():
+
+class NoCharacterSelected(Exception):
+    """
+    No character has been selected so some features will not work.
+    """
+
+
+def get_selected_character() -> Character:
     if 'character' not in TKVAR:
-        return None
+        raise NoCharacterSelected()
 
     with db() as session:
         character = Character.get(

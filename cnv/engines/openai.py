@@ -34,7 +34,8 @@ class OpenAIAuthUI(ctk.CTkFrame):
             "It is easy to put a hard limit on how much you want to spend. "
             "The variety of voices is extremely limited (there are 6).  I think "
             "this is a great choice for the most important snippets of NPC dialog "
-            "where having a few high quality unique voices in reserve pays off."
+            "where having a few high quality unique voices in reserve pays off.",
+            messages_enabled=False
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 

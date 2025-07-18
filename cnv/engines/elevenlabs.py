@@ -38,6 +38,7 @@ class ElevenLabsAuthUI(ctk.CTkFrame):
             "* login to it\n"
             "* In the bottom left corner, click yourself\n"
             "* Choose *'Profile + API key'*",
+            messages_enabled=False
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 

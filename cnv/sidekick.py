@@ -1,14 +1,13 @@
 """
 There is more awesome to be had.
 """
+import argparse
 import ctypes
 import logging
 import multiprocessing
 import os
-import queue
 import random
 import sys
-import time
 from datetime import datetime, timedelta
 
 import colorama
@@ -32,7 +31,6 @@ from cnv.lib.proc import send_chatstring
 myappid = u'fun.side.projects.sidekick.1.0'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-cnv.logger.init()
 log = logging.getLogger(__name__)
 EXIT = False
 
@@ -64,6 +62,7 @@ class MainTabView(ctk.CTkTabview):
 
 
 def main():
+    log.debug('main() START')
     colorama.init()
     root = ctk.CTk()
 
@@ -88,10 +87,6 @@ def main():
         event_queue.close()
         speaking_queue.close()
         sys.exit()
-        # root.destroy()
-
-    print(os.path.abspath(os.curdir))
-    print(os.listdir('.'))
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
     
@@ -179,7 +174,15 @@ def main():
         root.update_idletasks()
         root.update()
 
+    log.debug('main() END')
+
 if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description="City of Heroes Sidekick")
+    parser.add_argument('-d', '--debug', action='store_true', help='Enable debug mode')
+    args = parser.parse_args()
+
+    cnv.logger.init(DEBUG=args.debug)
 
     if sys.platform.startswith('win'):
         multiprocessing.freeze_support()
