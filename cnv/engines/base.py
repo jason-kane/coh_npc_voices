@@ -1,13 +1,15 @@
 import logging
 import tkinter as tk
-from tkinter import ttk
+from typing import Type
+
 import customtkinter as ctk
-import cnv.database.models as models
-import cnv.lib.settings as settings
 import voicebox
 from markdown_it import MarkdownIt
 from sqlalchemy import select
 from tkinterweb import HtmlLabel
+
+import cnv.database.models as models
+import cnv.lib.settings as settings
 
 log = logging.getLogger(__name__)
 
@@ -419,7 +421,7 @@ class EngineRegistry:
         self.engines[key] = cls
         self.engines_by_cosmetic[cls.cosmetic] = cls
     
-    def get_engine(self, key) -> TTSEngine:
+    def get_engine(self, key) -> Type[TTSEngine]:
         if key in self.engines:
             return self.engines[key]
         

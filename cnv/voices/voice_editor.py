@@ -12,14 +12,13 @@ from scipy.io import wavfile
 from sqlalchemy import delete, desc, select
 from translate import Translator
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
-from voicebox.tts.utils import get_audio_from_wav_file
 
 from cnv.database import db, models
 from cnv.effects import registry
 
 from cnv.engines.base import registry as engine_registry
 from cnv.engines.base import USE_SECONDARY
-from cnv.lib import audio, settings
+from cnv.lib import settings
 from cnv.lib.gui import Feather
 
 log = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ class WavfileMajorFrame(ctk.CTkFrame):
         super().__init__(*args, **kwargs)
         self.phrase_id = []
         self.rank = rank
-        self.visualize_wav = None
+        # self.visualize_wav = None
         
         self.fig = None
         self.plt = None
@@ -343,6 +342,7 @@ class WavfileMajorFrame(ctk.CTkFrame):
                 message=message
             ), ]
 
+        msg = ""  # in case all_phrases is empty
         for phrase in all_phrases:
             if phrase.text in ["", ]:
                 continue
@@ -1281,6 +1281,9 @@ class ListSide(ctk.CTkFrame):
         self.refresh_character_list()
 
     def selected_category_and_name(self):
+        """
+        returns currently selected category, name, item
+        """
         item = self.get_selected_character_item()
         if item is None:
             return None, None, None
