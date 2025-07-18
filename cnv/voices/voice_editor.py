@@ -12,19 +12,58 @@ from scipy.io import wavfile
 from sqlalchemy import delete, desc, select
 from translate import Translator
 from voicebox.sinks import Distributor, SoundDevice, WaveFile
-from voicebox.tts.utils import get_audio_from_wav_file
 
 from cnv.database import db, models
 from cnv.effects import registry
-from cnv.engines import engines
 from cnv.engines.base import USE_SECONDARY
-from cnv.lib import audio, settings
+from cnv.engines.base import registry as engine_registry
+from cnv.lib import settings
 from cnv.lib.gui import Feather
 
 log = logging.getLogger(__name__)
 ENGINE_OVERRIDE = {}
 
-#class ChoosePhrase(ttk.Frame):
+
+
+class Character:
+    def __init__(self, id, name, engine, category):
+        self.id = id
+        self.name = name
+        self.category = category
+    
+    @classmethod
+    def get_by_raw_name(cls, raw_name):
+        if not raw_name:
+            return None
+
+        category, name = raw_name.split(maxsplit=1)
+
+        cursor = db.get_cursor()
+        character_id, engine_name = cursor.execute(
+            "SELECT id, engine FROM character WHERE name = ? AND category = ?", 
+            (name, category)
+        ).fetchone()
+        cursor.close()
+
+        return cls(id=character_id, name=name, engine=engine_name, category=category)
+
+    def __str__(self) -> str:
+        return f"{self.category} {self.name}"
+    
+    def get_phrases(self):
+        """
+        Return a list of all the phrases this character has previously spoken
+        """
+        cursor = db.get_cursor()
+        phrases = [
+            phrase[0] for phrase in cursor.execute("""
+                SELECT text FROM phrases WHERE character_id = ?
+            """, (self.id, )).fetchall()
+        ]
+        cursor.close()
+        return phrases
+
+
 class WavfileMajorFrame(ctk.CTkFrame):    
     ALL_PHRASES = "⪡  Rebuild all phrases  ⪢"
     
@@ -34,7 +73,7 @@ class WavfileMajorFrame(ctk.CTkFrame):
         super().__init__(*args, **kwargs)
         self.phrase_id = []
         self.rank = rank
-        self.visualize_wav = None
+        # self.visualize_wav = None
         
         self.fig = None
         self.plt = None
@@ -92,6 +131,7 @@ class WavfileMajorFrame(ctk.CTkFrame):
         """
         The translated string has changed, display it in
         the user interface.
+        TODO
         """
         return
 
@@ -144,19 +184,14 @@ class WavfileMajorFrame(ctk.CTkFrame):
     def populate_phrases(self):
         log.debug('** populate_phrases() called **')
         
-        character = models.get_selected_character()
-        if character is None:
+        try:
+            character = models.get_selected_character()
+        except models.NoCharacterSelected:
             # no character selected
             return 
 
         # pull phrases for this character from the database
         with models.db() as session:
-            # character = models.get_character_from_rawname(raw_name, session)
-        
-            #if character is None:
-            #    log.error(f'62 Character {raw_name} does not exist!')
-            #    return
-
             character_phrases = session.scalars(
                 select(models.Phrases).where(
                     models.Phrases.character_id == character.id
@@ -251,7 +286,8 @@ class WavfileMajorFrame(ctk.CTkFrame):
         # self.plt.set_xlim(0, duration)
         self.visualize_wav.pack(side='top', fill=tk.BOTH, expand=1)
 
-    def get_cachefile(self, character, msg, rank):
+    def get_cachefile(self, character: models.Character, msg, rank):
+        log.debug(f'Determining cachefile name for {character} {msg} {rank}')
         _, clean_name = settings.clean_customer_name(character.name)
         filename = settings.cache_filename(character.name, msg, rank)
         
@@ -262,7 +298,6 @@ class WavfileMajorFrame(ctk.CTkFrame):
             filename
         )
  
-
     def play_cache(self):
         """
         Play the cachefile
@@ -316,7 +351,7 @@ class WavfileMajorFrame(ctk.CTkFrame):
         log.debug(f"Speak: {message}")
         
         engine_name = models.get_engine(self.rank)
-        ttsengine = engines.get_engine(engine_name)
+        ttsengine = engine_registry.get_engine(engine_name)
         log.debug(f"Engine: {ttsengine}")
 
         effect_list = [
@@ -341,6 +376,7 @@ class WavfileMajorFrame(ctk.CTkFrame):
                 message=message
             ), ]
 
+        msg = ""  # in case all_phrases is empty
         for phrase in all_phrases:
             if phrase.text in ["", ]:
                 continue
@@ -370,7 +406,8 @@ class WavfileMajorFrame(ctk.CTkFrame):
             log.debug(f"Creating ttsengine for {character.name}")
 
             # None because we aren't attaching any widgets
-            try:                
+            try: 
+                log.debug(f'{ttsengine}(None, {self.rank}, name={character.name}, category={character.category}).say(msg, effect_list, sink={sink})')
                 ttsengine(None, self.rank, name=character.name, category=character.category).say(msg, effect_list, sink=sink)
             except USE_SECONDARY:
                 return
@@ -396,13 +433,13 @@ class WavfileMajorFrame(ctk.CTkFrame):
                 translator = Translator(to_lang=language)
                 msg = translator.translate(msg)
 
-            try:
-                ttsengine(None, self.rank, character.name, character.category).say(msg, effect_list)
-            except engines.DISABLE_ENGINES:
-                # I'm not even sure what we want to do.  The user clicked 'play' but
-                # we don't have any quota left for the selected engine.
-                # lets go dumb-simple.
-                tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
+            #try:
+            ttsengine(None, self.rank, character.name, character.category).say(msg, effect_list)
+            # except engines.DISABLE_ENGINES:
+            #     # I'm not even sure what we want to do.  The user clicked 'play' but
+            #     # we don't have any quota left for the selected engine.
+            #     # lets go dumb-simple.
+            #     tk.messagebox.showerror(title="Error", message=f"Engine {engine_name} did not provide audio")
 
 
 class EngineSelectAndConfigure(ctk.CTkFrame):
@@ -436,11 +473,13 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
             self.change_selected_engine
         )
 
+        # doing this by cosmetic is so icky.
+        # TODO: figure out how to do that in ctk
         base_tts = ctk.CTkComboBox(
             speech_engine_selection, 
             variable=self.selected_engine,
             state='readonly',
-            values=[e.cosmetic for e in engines.ENGINE_LIST]
+            values=[e.cosmetic for (_, e) in engine_registry.engine_list()]
         )
 
         base_tts.grid(
@@ -538,12 +577,12 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
             log.debug(f'Not changing the {self.rank} character engines ({engine_name})')
 
         models.set_engine(self.rank, engine_name)
-        engine_cls = engines.get_engine(engine_name)
+        engine_cls = engine_registry.get_engine(engine_name)
 
         if not engine_cls:
             # that didn't work.. try the default engine
             log.warning(f'Invalid Engine: {engine_name!r}.  Using default {settings.DEFAULT_ENGINE} engine.')
-            engine_cls = engines.get_engine(settings.DEFAULT_ENGINE)
+            engine_cls = engine_registry.get_engine(settings.DEFAULT_ENGINE)
 
         self.engine_parameters = engine_cls(
             self,
@@ -605,13 +644,12 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
     def load_character_engines(self, session):
         """
         We've set the character name, we want the rest of the metadata to
-        populate.  Setting the engine name will domino the rest.
+        populate.  Setting the engine name should domino the rest.
         """
-        character = models.get_selected_character()
-
-        if character is None:
-            log.error('Character %s does not exist.' % character)
-            return None
+        try:
+            character = models.get_selected_character()
+        except models.NoCharacterSelected:
+            return
        
         if character.engine in ["", None]:
             if character.category == "player":
@@ -901,7 +939,6 @@ class BiographyFrame(ctk.CTkFrame):
         ).grid(column=0, row=2, sticky="nsew")
 
 
-
 class DetailSide(ctk.CTkScrollableFrame):
     """
     Primary frame for the "detail" side of the application.
@@ -1118,94 +1155,6 @@ class DetailSide(ctk.CTkScrollableFrame):
         # self.canvas.yview_moveto(0)
 
 
-# class PresetSelector(ttk.Frame):
-#     choose_a_preset = f"{'< Use a Preset >': ^70}"
-
-#     def __init__(self, parent, detailside, selected_character, *args, **kwargs):
-#         super().__init__(parent, *args, **kwargs)
-#         self.selected_character = selected_character
-#         self.detailside = detailside
-       
-#         self.chosen_preset = tk.StringVar(value=self.choose_a_preset)
-#         self.chosen_preset.trace_add("write", self.choose_preset)
-
-#         preset_combobox = ttk.Combobox(
-#             self,
-#             textvariable=self.chosen_preset
-#         )
-#         preset_combobox["values"] = list(PRESETS.keys())
-#         preset_combobox["state"] = "readonly"
-
-#         preset_combobox.pack(side="left", fill="x", expand=True)
-
-#     def reset(self):
-#         self.chosen_preset.set(self.choose_a_preset)
-
-#     def choose_preset(self, varname, lindex, operation):
-#         log.debug('PresetSeelctor.choose_preset()')
-#         preset_name = self.chosen_preset.get()
-#         if preset_name == self.choose_a_preset:
-#             log.debug('** No choice detected **')
-#             return
-
-#         raw_name = self.selected_character.get()
-#         if raw_name:
-#             category, name = raw_name.split(maxsplit=1)
-#         else:
-#             category = 'system'
-#             name = None
-
-#         # load the character from the db
-#         character = models.get_character(name, category)
-
-#         log.debug(f'Applying preset {preset_name}')
-#         voice_builder.apply_preset(
-#             character.name, 
-#             character.category, 
-#             preset_name
-#         )
-
-#         self.detailside.load_character(self.selected_character.get())
-
-
-class Character:
-    def __init__(self, id, name, engine, category):
-        self.id = id
-        self.name = name
-        self.category = category
-    
-    @classmethod
-    def get_by_raw_name(cls, raw_name):
-        if not raw_name:
-            return None
-
-        category, name = raw_name.split(maxsplit=1)
-
-        cursor = db.get_cursor()
-        character_id, engine_name = cursor.execute(
-            "SELECT id, engine FROM character WHERE name = ? AND category = ?", 
-            (name, category)
-        ).fetchone()
-        cursor.close()
-
-        return cls(id=character_id, name=name, engine=engine_name, category=category)
-
-    def __str__(self) -> str:
-        return f"{self.category} {self.name}"
-    
-    def get_phrases(self):
-        """
-        Return a list of all the phrases this character has previously spoken
-        """
-        cursor = db.get_cursor()
-        phrases = [
-            phrase[0] for phrase in cursor.execute("""
-                SELECT text FROM phrases WHERE character_id = ?
-            """, (self.id, )).fetchall()
-        ]
-        cursor.close()
-        return phrases
-
 class ListSide(ctk.CTkFrame):
     def __init__(self, parent, detailside, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -1277,6 +1226,9 @@ class ListSide(ctk.CTkFrame):
         self.refresh_character_list()
 
     def selected_category_and_name(self):
+        """
+        returns currently selected category, name, item
+        """
         item = self.get_selected_character_item()
         if item is None:
             return None, None, None
@@ -1505,43 +1457,3 @@ class ListSide(ctk.CTkFrame):
         )
        
         return item
-        
-
-# def main():
-#     root = tk.Tk()
-#     # root.iconbitmap("myIcon.ico")
-#     root.geometry("640x480+200+200")
-#     root.resizable(True, True)
-#     root.title("Character Voice Editor")
-
-#     chatter = Chatter(root, None)
-#     chatter.pack(side="top", fill="x")
-
-#     editor = ttk.Frame(root)
-#     editor.pack(side="top", fill="both", expand=True)
-
-#     cursor = db.get_cursor()
-    
-#     first_character = cursor.execute("select id, name, category from character order by name").fetchone()
-    
-#     cursor.close()
-
-#     if first_character:
-#         selected_character = tk.StringVar(value=f"{first_character[2]} {first_character[1]}")
-#     else:
-#         selected_character = tk.StringVar()
-
-#     detailside = DetailSide(editor, selected_character)
-#     listside = ListSide(editor, detailside)
-
-#     listside.pack(side="left", fill="x", expand=True)
-#     detailside.pack(side="left", fill="x", expand=True)
-
-#     root.mainloop()
-
-
-# if __name__ == '__main__':
-#     if sys.platform.startswith('win'):
-#         multiprocessing.freeze_support()
-#     main()
-

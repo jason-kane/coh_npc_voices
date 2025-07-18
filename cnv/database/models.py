@@ -12,6 +12,7 @@ from typing import Optional, Self
 import pyfiglet
 from cnv.lib import settings
 from cnv.lib.settings import diskcache
+from cnv.engines import registry
 from sqlalchemy import (
     JSON,
     DateTime,
@@ -45,7 +46,14 @@ engine = create_engine(
 
 @contextmanager
 def db():
-    #connection = engine.connect()
+    """
+    Context manager for a database session.
+
+    Usage:
+        with db() as session:
+            session.add(...)
+            session.commit()
+    """
     session = scoped_session(
         sessionmaker(
             bind=engine,
@@ -54,14 +62,23 @@ def db():
     )
     yield session
     session.close()
-    #connection.close()
 
+# parent class for all the table models
 Base = declarative_base()
 
-class InvalidPreset(Exception):
-    """Error in the preset"""
-
 def category_str2int(instr):
+    """
+    So I was kind of an idiot.  This is essentially an enum, but it started as a
+    string.  So we've got this hack to convert back and forth between string and
+    int.
+
+    TODO:  fix this.  Lots of ways to do it that are not ridiculous.  The main
+    reason I haven't is that the whole npc vs player vs system thing was also a
+    bad idea.  They are completely artificial constructs that don't really
+    accomplish anything useful.  You should just be able to assign/reassign
+    which engine is the default primary/secondary on a per-channel basis with a
+    'mute' default.
+    """
     try:
         return ['', 'npc', 'player', 'system'].index(instr)
     except ValueError:
@@ -236,20 +253,32 @@ class Character(Base):
 
                     # but.. we can accesss the cache?.  does that introduce a
                     # sequence dependency (yes)
-                    raw_values = diskcache(f"{engine_key}_{config_meta.key}")
+                    all_values = diskcache(f"{engine_key}_{config_meta.key}")
                     log.debug(f'{engine_key=} {config_meta.key=}')
-                    all_values = list(raw_values)
                     
-                    if all_values is None:
+                    try:
+                        all_values = list(all_values)
+                    except TypeError:
                         log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
                         value = "<Cache Failure>"
 
                         # just creating this should be enough to populate the
-                        # engine cache.
-                        engine.get_engine(engine_key)(None, None, None, None)
+                        # engine cache?  I guess not.
+                        registry.get_engine(engine_key)(None, None, None, None)
+                        # (parent, rank, name, category, *args, **kwargs):
                         all_values = list(
                             diskcache(f"{engine_key}_{config_meta.key}")
                         )
+                    except AttributeError:
+                        log.warning(f'Cache {engine_key}_{config_meta.key} is invalid')
+                        value = "<Cache Failure>"
+
+                        # just creating this should be enough to populate the
+                        # engine cache.
+                        registry.get_engine(engine_key)(None, None, None, None)
+                        all_values = list(
+                            diskcache(f"{engine_key}_{config_meta.key}")
+                        )                        
 
                     if all_values:
                         # it's a dict, key in a voice_name
@@ -405,9 +434,16 @@ def set_selected_character(name, category):
     TKVAR['character'].set(name)
     TKVAR['category'].set(category)
 
-def get_selected_character():
+
+class NoCharacterSelected(Exception):
+    """
+    No character has been selected so some features will not work.
+    """
+
+
+def get_selected_character() -> Character:
     if 'character' not in TKVAR:
-        return None
+        raise NoCharacterSelected()
 
     with db() as session:
         character = Character.get(

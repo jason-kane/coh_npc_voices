@@ -16,7 +16,7 @@ from voicebox.types import StrOrSSML
 import cnv.database.models as models
 import cnv.lib.audio as audio
 
-from .base import MarkdownLabel, TTSEngine
+from .base import MarkdownLabel, TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ class ElevenLabsAuthUI(ctk.CTkFrame):
             "* login to it\n"
             "* In the bottom left corner, click yourself\n"
             "* Choose *'Profile + API key'*",
+            messages_enabled=False
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 
@@ -275,3 +276,6 @@ class ttsElevenLabs(voicebox.tts.TTS):
             elevenlabs.save(audio_data, mp3filename)
 
             return audio.mp3file_to_Audio(mp3filename)
+
+# add this class to the the registry of engines
+registry.add_engine(ElevenLabs)

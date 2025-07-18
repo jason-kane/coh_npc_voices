@@ -12,7 +12,7 @@ from voicebox.tts.amazonpolly import AmazonPolly as AmazonPollyTTS
 import cnv.database.models as models
 import cnv.lib.settings as settings
 
-from .base import MarkdownLabel, TTSEngine
+from .base import MarkdownLabel, TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ class LinkList(ctk.CTkFrame):
             MarkdownLabel(
                 self,
                 text=docs,
+                messages_enabled=False
             ).grid(column=1, row=index)
             index += 1
 
@@ -392,3 +393,5 @@ class AmazonPolly(TTSEngine):
 
         return all_voices
 
+# add this class to the the registry of engines
+registry.add_engine(AmazonPolly)

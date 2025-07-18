@@ -1,14 +1,13 @@
 """
 There is more awesome to be had.
 """
+import argparse
 import ctypes
 import logging
 import multiprocessing
 import os
-import queue
 import random
 import sys
-import time
 from datetime import datetime, timedelta
 
 import colorama
@@ -17,6 +16,7 @@ from tabs import (
     automation,
     character,
     configuration,
+    translation,
     voices,
 )
 
@@ -31,7 +31,6 @@ from cnv.lib.proc import send_chatstring
 myappid = u'fun.side.projects.sidekick.1.0'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-cnv.logger.init()
 log = logging.getLogger(__name__)
 EXIT = False
 
@@ -51,6 +50,7 @@ class MainTabView(ctk.CTkTabview):
             ('Character', character.CharacterTab, (event_queue, speaking_queue)),
             ('Voices', voices.VoicesTab, (event_queue, speaking_queue)), 
             ('Configuration', configuration.ConfigurationTab, (event_queue, speaking_queue)),
+            ('Translation', translation.TranslationTab, (event_queue, speaking_queue)),
             ('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
         ):
             ctkframe = self.add(tablabel)
@@ -62,6 +62,7 @@ class MainTabView(ctk.CTkTabview):
 
 
 def main():
+    log.debug('main() START')
     colorama.init()
     root = ctk.CTk()
 
@@ -72,8 +73,9 @@ def main():
         "Returning to Paragon City",
         "Back so soon?",
         "Go get em' Tiger",
-        "and then she said, it's a duck!"
-    ], weights=(75, 10, 10, 5)):
+        "and then she said, it's a duck!",
+        "quiet, stop talking, he is here.",
+    ], weights=(75, 10, 10, 5, 2)):
         speaking_queue.put(
             ('narrator', msg, "system")
         )
@@ -85,10 +87,6 @@ def main():
         event_queue.close()
         speaking_queue.close()
         sys.exit()
-        # root.destroy()
-
-    print(os.path.abspath(os.curdir))
-    print(os.listdir('.'))
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
     
@@ -176,8 +174,16 @@ def main():
         root.update_idletasks()
         root.update()
 
-if __name__ == '__main__':
+    log.debug('main() END')
 
+if __name__ == '__main__':
     if sys.platform.startswith('win'):
         multiprocessing.freeze_support()
+
+    parser = argparse.ArgumentParser(description="City of Heroes Sidekick")
+    parser.add_argument('-d', '--debug', action='store_true', help='Enable debug mode')
+    args = parser.parse_args()
+
+    cnv.logger.init(DEBUG=args.debug)
+
     main()

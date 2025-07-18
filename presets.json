@@ -19,7 +19,8 @@
             }, {
                 "name": "RingMod",
                 "carrier_freq": "86",
-                "blend": "0.3",
+                "wet": "0.5",
+                "dry": "0.5",
                 "carrier_wave": "sin"
             }, {
                 "name": "Normalize",

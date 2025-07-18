@@ -8,9 +8,11 @@ from voicebox.sinks import Distributor, WaveFile
 
 import cnv.database.models as models
 import cnv.lib.settings as settings
-from cnv.effects import registry
+from cnv.effects.base import registry as effect_registry
+from cnv.engines.base import registry as engine_registry
 from cnv.engines.base import USE_SECONDARY
-from cnv.engines.engines import get_engine
+
+
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ def create(character, message, session):
     effect_list = []
     for effect in voice_effects:
         log.debug(f'Adding effect {effect} found in the database')
-        effect_class = registry.get_effect(effect.effect_name)
+        effect_class = effect_registry.get_effect(effect.effect_name)
         effect_instance = effect_class(None)
 
         effect_instance.effect_id.set(effect.id)
@@ -116,9 +118,11 @@ def create(character, message, session):
 
         log.debug(f'Using engine: {character.engine}')
         
-        # this is a stupid interface.
         # every character gets a primary engine config, even if it's os TTS.
-        get_engine(character.engine)(
+        engine = engine_registry.get_engine(character.engine)
+
+        #TTSEngine.__init__(self, parent, rank, name, category, *args, **kwargs):
+        engine(
             None, 
             'primary', 
             name, 

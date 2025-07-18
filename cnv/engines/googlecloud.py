@@ -14,9 +14,13 @@ from sqlalchemy import select
 import cnv.database.models as models
 import cnv.lib.settings as settings
 
-from .base import MarkdownLabel, TTSEngine
+from .base import MarkdownLabel, TTSEngine, registry
+
 
 log = logging.getLogger(__name__)
+
+# pitch control was removed by google?
+with_pitch = False
 
 # https://cloud.google.com/text-to-speech/docs/reference/rest/v1/text/synthesize
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
@@ -110,7 +114,8 @@ class GoogleCloudAuthUI(ctk.CTkFrame):
             (currently 7/24) provides 1 million characters per month. if you run
             out it (currently) costs $4-$16 per million characters, billed
             per-character.
-            """.replace("\n", " ")
+            """.replace("\n", " "),
+            messages_enabled=False
         ) 
         # mdlabel.on_link_click(self.link_click) 
         
@@ -180,21 +185,25 @@ class GoogleCloudAuthUI(ctk.CTkFrame):
 
 
 class GoogleCloud(TTSEngine):
+    """
+    TODO: This engine needs some help.  The problem is that there are just too many voices.  We can't just use one select box, we have to narrow it down more.
+    """
     cosmetic = "Google Text-to-Speech"
     key = 'googletts'
     auth_ui_class = GoogleCloudAuthUI
 
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
-        ('Speakin Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.5, 'max': 1.75, 'digits': 3, 'resolution': 0.25}, None),
-        ('Voice Pitch', 'voice_pitch', "DoubleVar", 1, {'min': -10, 'max': 10, 'resolution': 0.5}, None)
+        ('Speaking Rate', 'speaking_rate', "DoubleVar", 1, {'min': 0.5, 'max': 1.75, 'digits': 3, 'resolution': 0.25}, None)
+        # ('Voice Pitch', 'voice_pitch', "DoubleVar", 1, {'min': -10, 'max': 10, 'resolution': 0.5}, None)
     )   
 
     def _language_code_filter(self, voice):
         """
         True if this voice is able to speak this language_code.
         """
-        allowed_language_codes = settings.get_voice_language_codes()           
+        allowed_language_codes = settings.get_voice_language_codes()
+        #log.info(f"{allowed_language_codes=}")
 
         # two letter code ala: en, and matches against en-whatever
         for allowed_code in allowed_language_codes:
@@ -204,6 +213,7 @@ class GoogleCloud(TTSEngine):
         return False
 
     def get_voice_names(self, gender=None):
+        log.info(f'get_voices_names({gender=})')
         all_voices = self.get_voices()
 
         if gender and not hasattr(self, 'gender'):
@@ -211,12 +221,33 @@ class GoogleCloud(TTSEngine):
         
         out = set()
         for voice in all_voices:
+            #log.info(f'considering {voice=} to be added to {out=}')
             if self._language_code_filter(voice):
                 if self._gender_filter(voice):
                     out.add(voice['voice_name'])
         
         if not out:
-            log.error(f'There are no voices available with language={self.language_code} and gender={self.gender}')
+            # seems pretty unlikely, but..
+            log.error(f'There are no voices available for the language: {settings.get_voice_language_codes()} and gender={self.gender.title()}')
+            for voice in all_voices:
+                # try without the gender filter -- interesting choice I guess;
+                # if you have to drop language or gender, which is a worse
+                # customer experience?  Misgender or Bad accent?  That is the
+                # choice here.
+                #
+                # not really, in practice getting the language wrong is way
+                # worse, because it's frequenctly unintelligible.  it is a cool
+                # character effect, it's wrong to call this 'accent', it's more
+                # like what would X sound like if someone that only speeks Y tried to read
+                # it.   Situational at best.
+
+                # misgender:
+                if self._language_code_filter(voice):
+                    out.add(voice['voice_name'])
+
+                # or bad accent:
+                #if self._gender_filter(voice):
+                #    out.add(voice['voice_name'])
         
         out = sorted(list(out))
 
@@ -224,16 +255,17 @@ class GoogleCloud(TTSEngine):
             voice_name = self.config_vars["voice_name"].get()
             if voice_name not in out:
                 # our currently selected voice is invalid.  Pick a new one.
-                log.error(f'Voice {voice_name} is now invalid ({gender})')
+                log.error(f'Voice {voice_name} is no longer valid ({gender}), replacing with {out[0]}.')
                 self.config_vars["voice_name"].set(out[0])
             return out
         else:
             return []
 
     def get_voices(self):
-        all_voices = models.diskcache(f'{self.key}_voice_name')
+        all_voices = models.diskcache(f'{self.key}_voice_name', force=False)
 
         if all_voices is None:
+            log.warning('Google get_voices() Cache Miss')
             client = texttospeech.TextToSpeechClient()
             req = texttospeech.ListVoicesRequest()
             resp = client.list_voices(req)
@@ -241,6 +273,7 @@ class GoogleCloud(TTSEngine):
             for voice in resp.voices:
                 # log.info(f'{voice.language_codes=}')
                 # log.info(dir(voice.language_codes))
+                log.info(f"{voice.ssml_gender=}")
 
                 language_codes = []
                 for code in voice.language_codes:
@@ -252,7 +285,7 @@ class GoogleCloud(TTSEngine):
                     'gender': {1: 'Female', 2: 'Male'}[voice.ssml_gender.value],
                     'language_codes': language_codes
                 }
-                # log.info(f'{row=}')
+                log.info(f'{row=}')
                 # for key in row:
                 #    log.info(f'{key} == {json.dumps(row[key])}')
 
@@ -290,7 +323,8 @@ class GoogleCloud(TTSEngine):
     def get_tts(self):
         voice_name = self.override.get('voice_name', self.config_vars["voice_name"].get())
         speaking_rate = self.override.get('speaking_rate', self.config_vars["speaking_rate"].get())
-        voice_pitch = self.override.get('voice_pitch', self.config_vars["voice_pitch"].get())
+        if with_pitch:
+            voice_pitch = self.override.get('voice_pitch', self.config_vars["voice_pitch"].get())
         language_code = self.get_voice_language(voice_name)
 
         kwargs = {}
@@ -304,7 +338,7 @@ class GoogleCloud(TTSEngine):
 
         audio_config = texttospeech.AudioConfig(
             speaking_rate=float(speaking_rate), 
-            pitch=float(voice_pitch)
+            # pitch=float(voice_pitch)
         )
 
         voice_params = texttospeech.VoiceSelectionParams(
@@ -318,3 +352,5 @@ class GoogleCloud(TTSEngine):
             audio_config=audio_config
         )
 
+# add this class to the the registry of engines
+registry.add_engine(GoogleCloud)

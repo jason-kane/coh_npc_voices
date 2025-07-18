@@ -15,7 +15,7 @@ import voicebox
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
 
-from .base import MarkdownLabel, TTSEngine
+from .base import MarkdownLabel, TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,8 @@ class AzureAuthUI(ctk.CTkFrame):
             text="[Azure](https://azure.microsoft.com/en-us/products/ai-services/text-to-speech) "
             "In the azure console you're going to need to create a speech service.  Defaults for "
             "everything not required.  You'll end up in the overview page with two keys and a "
-            "region.  We only need one of the keys (and the region)."
+            "region.  We only need one of the keys (and the region).",
+            messages_enabled=False
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 
@@ -229,3 +230,6 @@ class ttsOpenAI(voicebox.tts.TTS):
                 samples,
                 24000
             )
+
+# add this class to the the registry of engines
+registry.add_engine(Azure)

@@ -5,7 +5,7 @@ from tkinter import ttk
 import customtkinter as ctk
 import hashlib
 import cnv.lib.settings as settings
-from cnv.engines import engines
+from cnv.engines.base import registry as engine_registry
 
 log = logging.getLogger(__name__)
 
@@ -16,48 +16,6 @@ class MasterVolume(ctk.CTkFrame):
     This is for playback volume.
     """
 
-
-class SpokenLanguageSelection(ctk.CTkFrame):
-    """
-    The user gets to decide which language they want to hear.  They may also
-    need to decide which translation provider to utilize w/config for that
-    provider.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.columnconfigure(0, minsize=125, uniform="baseconfig")
-        self.columnconfigure(1, weight=2, uniform="baseconfig")
-
-        ctk.CTkLabel(
-            self,
-            text="Spoken Language",
-            anchor="e",   
-        ).grid(column=0, row=0, sticky='e')
-
-        current = settings.get_config_key('language', "English")
-        self.language = tk.StringVar(value=current)
-
-        default_engine_combo = ctk.CTkComboBox(
-            self, 
-            variable=self.language,
-            state='readonly',
-            values=list(settings.LANGUAGES.keys())
-        )
-        default_engine_combo.grid(column=1, row=0, sticky='w')
-
-        self.language.trace_add('write', self.change_language)
-       
-    def change_language(self, a, b, c):
-        newvalue = self.language.get()
-        prior = settings.get_config_key('language', "English")
-        settings.set_config_key('language', newvalue)
-        # tempting to just restart
-        if prior and newvalue != prior:
-            log.info(f'Changing language to {newvalue}')
-            # we should immediately translate and localize the UI       
-
-
 class EngineAuthentication(ctk.CTkTabview):
     """
     Collects tabs for configuring authentication for each of the TTS engines.  The 
@@ -67,7 +25,7 @@ class EngineAuthentication(ctk.CTkTabview):
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
-        for engine_ui in engines.ENGINE_LIST:
+        for _, engine_ui in engine_registry.engine_list():
             if engine_ui.auth_ui_class:
                                 
                 tab = self.add(name=engine_ui.auth_ui_class.label)
@@ -182,12 +140,13 @@ class ChannelToEngineMap(ctk.CTkFrame):
             frame, 
             variable=engine_var,
             state='readonly',
-            values=[e.cosmetic for e in engines.ENGINE_LIST]
+            values=[e.cosmetic for (_, e) in engine_registry.engine_list()]
         )
         default_engine_combo.grid(column=1, row=0)
 
         return frame
 
+    # WTF do you think you are doing!?!  What is this shit?
     def change_default_engine(self, a, b, c):
         settings.set_config_key(
             'DEFAULT_ENGINE',
@@ -214,7 +173,7 @@ class ChannelToEngineMap(ctk.CTkFrame):
 
     def normalize_prompt_frame(self, parent, category):
         """
-        frame with ui for the normalize checkbox
+        frame with ui for per-channel configuration of the normalize feature
         """
         frame = ctk.CTkFrame(parent)
 
@@ -234,6 +193,21 @@ class SpeakingToggles(ctk.CTkFrame):
         self.toggles = {}
 
         index = 0
+        # so the _idea_ is, by making it easy to add these toggles, it will be
+        # easy to let users opt in/opt out of different types of generated audio
+        # because tastes differ.  
+        # TODO: We are missing a default state, so these have to be phrased to
+        # the default false which is dumb. 
+
+        # IMPORTANT 
+
+        # ie: I want the initial default for the "Acknowledge each win" audio to
+        # be true because I think it's a better experience.  But because the
+        # default must be false to get the desired result, I have to rephrase it
+        # as "Igmore each win" or "Victories are beneith your notice".
+        # 
+        #  I can't do it right now though, becase I'm doing something else and
+        #  it would be a distraction.
         for toggle in [
             "Acknowledge each win", 
             "Persist player chat",
@@ -294,28 +268,34 @@ class DirectoryChoices(ctk.CTkFrame):
             'write', 
             lambda var_name, index, mode: settings.set_config_key('clip_library_dir', self.clip_library_dir.get())
         )
+        
+        # wide directory name display
+        self.columnconfigure(1, weight=4)
+        
+        # short button
+        self.columnconfigure(2, weight=1)
 
         ctk.CTkEntry(
             self, 
             textvariable=self.logdir
-        ).grid(column=1, row=0, columnspan=3, sticky="ew")
+        ).grid(column=1, row=0, sticky="ew")
          
         ctk.CTkButton(
             self,
             text="COH Log Dir",
             command=lambda: self.logdir.set(tk.filedialog.askdirectory())
-        ).grid(column=4, row=0)
+        ).grid(column=2, row=0, sticky="w")
 
         ctk.CTkEntry(
             self, 
             textvariable=self.clip_library_dir
-        ).grid(column=1, row=1, columnspan=3, sticky="ew")
+        ).grid(column=1, row=1, sticky="ew")
          
         ctk.CTkButton(
             self,
             text="Set Clip Library Dir",
             command=lambda: self.clip_library_dir.set(tk.filedialog.askdirectory())
-        ).grid(column=4, row=1)        
+        ).grid(column=2, row=1, sticky="w")
 
 
 class ConfigurationTab(tk.Frame):
@@ -326,9 +306,9 @@ class ConfigurationTab(tk.Frame):
         # MasterVolume(self).pack(side="top", fill="x")
         DirectoryChoices(self).pack(side="top", fill="x")
 
-        SpokenLanguageSelection(self).pack(side="top", fill="x")
+        ChannelToEngineMap(self).pack(side="top", fill="x")
+        SpeakingToggles(self).pack(side="top", fill="x")
         EngineAuthentication(
             self,
         ).pack(side="top", fill="x")
-        ChannelToEngineMap(self).pack(side="top", fill="x")
-        SpeakingToggles(self).pack(side="top", fill="x")
+        

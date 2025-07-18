@@ -1,13 +1,15 @@
-import logging
+import datetime
+import hashlib
 import inspect
 import json
+import logging
 import os
-import hashlib
 import re
 
 LOGLEVEL = logging.INFO
 # this is the ultimate fallback engine if there is nothing configured
 DEFAULT_ENGINE = "Windows TTS"
+DEFAULT_PLAYER_ENGINE = "Windows TTS"
 DEFAULT_NORMALIZE = False
 
 PRESETS = "presets.json"
@@ -202,26 +204,53 @@ def get_cachefile(name, message, category, rank):
 
     return cachefile
 
-def diskcache(key, value=None):
+
+def diskcache(key, value=None, force=False):
     """
-    key must be valid as a base filename
+    key must be valid as a base filename, no directories (yet)
     value must be None or a json-able object
+
+    These expire weekly.
     """
     log.debug(f"diskcache({key=}, {value=})")
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    
     filename = os.path.join(CACHE_DIR, key + ".json")
+    #force = true
+        # when force is true, the rules are:
+        # when value is none, we want to clear any existing entry and return None
+        # when value is not none, we make 'value' the new value
+    #else:
+        # when force is false, the rules are:
+        # when value is none, it's a read, so we return the current value or None if there is no current value.
+        # when value is not none, it's a write, we store the new value of value.  You don't care about the result.
     if value is None:
+        if force:
+            # clear umm, so do I, ya, know, kill it?  do I feel good about doing
+            # that?  This file might be exactly the problem.  that's what I'm
+            # here to do.  Delete it.  I can do it.
+            if os.path.exists(filename):
+                log.warning(f"I'm doing it.  I'm removing {filename}.  It will be gone forever.  I hope you're happy.")
+                os.unlink(filename)
+
+            return None
+        
+        # read
         if os.path.exists(filename):
-            with open(filename, "rb") as h:
-                content = json.loads(h.read())
+            # has it expired?
+            last_modified_timestamp = os.path.getmtime(filename)
+            last_modified = datetime.datetime.fromtimestamp(last_modified_timestamp)
+            content = None
+            if last_modified >= datetime.datetime.now() - datetime.timedelta(weeks=1):
+                with open(filename, "rb") as h:
+                    content = json.loads(h.read())
             return content
     else:
-        if not os.path.exists(CACHE_DIR):
-            os.mkdir(CACHE_DIR)
-
+        # write
         with open(filename, "w") as h:
             h.write(json.dumps(value, indent=2))
 
-        return value
+    return value
 
 
 ALL_NPC = {}

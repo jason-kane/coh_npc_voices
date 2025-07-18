@@ -14,7 +14,7 @@ from voicebox.types import StrOrSSML
 
 from cnv.lib.settings import diskcache
 
-from .base import MarkdownLabel, TTSEngine
+from .base import MarkdownLabel, TTSEngine, registry
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +34,8 @@ class OpenAIAuthUI(ctk.CTkFrame):
             "It is easy to put a hard limit on how much you want to spend. "
             "The variety of voices is extremely limited (there are 6).  I think "
             "this is a great choice for the most important snippets of NPC dialog "
-            "where having a few high quality unique voices in reserve pays off."
+            "where having a few high quality unique voices in reserve pays off.",
+            messages_enabled=False
         )
         mdlabel.pack(side="top", fill="x", expand=False)
 
@@ -203,3 +204,6 @@ class ttsOpenAI(voicebox.tts.TTS):
             samples,
             24000
         )       
+
+# add this class to the the registry of engines
+registry.add_engine(OpenAI)
