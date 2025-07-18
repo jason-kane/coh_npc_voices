@@ -177,6 +177,8 @@ def main():
     log.debug('main() END')
 
 if __name__ == '__main__':
+    if sys.platform.startswith('win'):
+        multiprocessing.freeze_support()
 
     parser = argparse.ArgumentParser(description="City of Heroes Sidekick")
     parser.add_argument('-d', '--debug', action='store_true', help='Enable debug mode')
@@ -184,6 +186,4 @@ if __name__ == '__main__':
 
     cnv.logger.init(DEBUG=args.debug)
 
-    if sys.platform.startswith('win'):
-        multiprocessing.freeze_support()
     main()

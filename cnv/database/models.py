@@ -46,7 +46,14 @@ engine = create_engine(
 
 @contextmanager
 def db():
-    #connection = engine.connect()
+    """
+    Context manager for a database session.
+
+    Usage:
+        with db() as session:
+            session.add(...)
+            session.commit()
+    """
     session = scoped_session(
         sessionmaker(
             bind=engine,
@@ -55,14 +62,23 @@ def db():
     )
     yield session
     session.close()
-    #connection.close()
 
+# parent class for all the table models
 Base = declarative_base()
 
-class InvalidPreset(Exception):
-    """Error in the preset"""
-
 def category_str2int(instr):
+    """
+    So I was kind of an idiot.  This is essentially an enum, but it started as a
+    string.  So we've got this hack to convert back and forth between string and
+    int.
+
+    TODO:  fix this.  Lots of ways to do it that are not ridiculous.  The main
+    reason I haven't is that the whole npc vs player vs system thing was also a
+    bad idea.  They are completely artificial constructs that don't really
+    accomplish anything useful.  You should just be able to assign/reassign
+    which engine is the default primary/secondary on a per-channel basis with a
+    'mute' default.
+    """
     try:
         return ['', 'npc', 'player', 'system'].index(instr)
     except ValueError:
