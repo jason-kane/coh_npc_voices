@@ -1,3 +1,6 @@
+# Installation Walkthrough
+[INSTALLATION.md](https://github.com/jason-kane/coh_npc_voices/blob/main/INSTALLATION.md)
+
 # Recent demo:
 
 [![Newest Demo](http://img.youtube.com/vi/Ov29c91NtYQ/0.jpg)](http://www.youtube.com/watch?v=Ov29c91NtYQ)
