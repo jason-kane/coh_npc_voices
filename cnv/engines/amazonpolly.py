@@ -144,7 +144,10 @@ class AmazonPollyAuthUI(ttk.Frame):
 
     def get_access_key_id(self):
         config = self._read_credentials()
-        return config['default']['aws_access_key_id']
+        try:
+            return config['default']['aws_access_key_id']
+        except KeyError:
+            return ""
     
     def set_access_key_id(self, *args, **kwargs):
         self._set_credential(
@@ -154,7 +157,10 @@ class AmazonPollyAuthUI(ttk.Frame):
         
     def get_secret_access_key(self):
         config = self._read_credentials()
-        return config['default']['aws_secret_access_key']
+        try:
+            return config['default']['aws_secret_access_key']
+        except KeyError:
+            return ""    
     
     def set_secret_access_key(self, *args, **kwargs):
         self._set_credential(
