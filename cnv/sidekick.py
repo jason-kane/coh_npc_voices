@@ -184,6 +184,7 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--debug', action='store_true', help='Enable debug mode')
     args = parser.parse_args()
 
+    print('Initializing logger...')
     cnv.logger.init(DEBUG=args.debug)
 
     main()

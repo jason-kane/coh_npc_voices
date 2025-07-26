@@ -1161,7 +1161,13 @@ Ten missions, ends in fight against AV Vandal'''
                             dialog = plainstring(" ".join(lstring))
                             if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
                                 self.ssay(dialog)
-                            
+
+                        elif lstring[0] == "The":
+                            if lstring[1] in ["bottom", "whiteboard", ]:
+                                # The bottom of this empty box..
+                                # The whiteboard appears to be...
+                                dialog = plainstring(" ".join(lstring))
+                                self.ssay(dialog)
                         else:
                             log.debug(f'tag "{lstring[0]}" not classified.')
                             continue

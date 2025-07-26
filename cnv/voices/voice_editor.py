@@ -16,7 +16,7 @@ from voicebox.sinks import Distributor, SoundDevice, WaveFile
 from cnv.database import db, models
 from cnv.effects import registry
 from cnv.engines.base import USE_SECONDARY
-from cnv.engines.base import registry as engine_registry
+from cnv.engines import registry as engine_registry
 from cnv.lib import settings
 from cnv.lib.gui import Feather
 
@@ -537,7 +537,10 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
         
         character = models.get_selected_character()
         engine_name = self.selected_engine.get()
-        
+        log.debug('{engine_name=} {character=}')
+        if not engine_name:
+            return
+
         clear = False
 
         if character is None:
@@ -554,7 +557,8 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
 
         if self.engine_parameters:
             log.debug('Clearing prior engine_parameters')
-            for w in self.engine_parameters.winfo_children():
+            children = self.engine_parameters.winfo_children()
+            for w in children:
                 w.destroy()
             self.engine_parameters.destroy()
 
@@ -671,8 +675,8 @@ class EngineSelectAndConfigure(ctk.CTkFrame):
 
 
 class EffectList(ctk.CTkFrame):
-    def __init__(self, parent, *args, **kwargs):       
-        super().__init__(parent, *args, **kwargs)
+    def __init__(self, master, *args, **kwargs):       
+        super().__init__(master, *args, **kwargs)
 
         self.name = None
         self.category = None
@@ -855,8 +859,8 @@ class AddEffect(ttk.Frame):
     # and all the other entries will be different.
     ADD_AN_EFFECT = "⪡  Add an Effect  ⪢"
 
-    def __init__(self, parent, effect_list, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
+    def __init__(self, master, effect_list, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
         self.effect_list = effect_list
 
         # we're using the textvariable as the action associated with changing
@@ -896,14 +900,14 @@ class AddEffect(ttk.Frame):
 class BiographyFrame(ctk.CTkFrame):
     def __init__(
             self, 
-            parent, 
+            master, 
             character_name, 
             group_name, 
             character_description, 
             *args, 
             **kwargs
         ):
-        super().__init__(parent, *args, **kwargs)
+        super().__init__(master, *args, **kwargs)
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure((0, 1), weight=0)
@@ -943,10 +947,9 @@ class DetailSide(ctk.CTkScrollableFrame):
     """
     Primary frame for the "detail" side of the application.
     """
-    def __init__(self, parent, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
 
-        self.parent = parent
         self.listside = None
         self.trashcan = Feather(
             'trash-2',
@@ -1156,8 +1159,8 @@ class DetailSide(ctk.CTkScrollableFrame):
 
 
 class ListSide(ctk.CTkFrame):
-    def __init__(self, parent, detailside, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
+    def __init__(self, master, detailside, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
         self.detailside = detailside
         #wait, what?
         self.detailside.listside = self
