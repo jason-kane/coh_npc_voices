@@ -20,6 +20,7 @@ class USE_SECONDARY(Exception):
     """
 
 class MarkdownLabel(HtmlLabel):  # Label
+    
     def __init__(self, *args, **kwargs):
         md = MarkdownIt(
             'commonmark',
@@ -41,6 +42,7 @@ class MarkdownLabel(HtmlLabel):  # Label
 class TTSEngine(ctk.CTkFrame):
     auth_ui_class = None
     cosmetic="TTSEngine Base Class (You screwed up buddy)"
+    key = "base"
 
     def __init__(self, parent, rank, name, category, *args, **kwargs):
         log.debug(f'Initializing TTSEngine {parent=} {rank=} {name=} {category=}')
@@ -83,20 +85,21 @@ class TTSEngine(ctk.CTkFrame):
             session.commit()
 
         with models.db() as session:
-            for row in rows[0]:
-                # log.info(f"{row=}")
-                cosmetic, key, varfunc, default, cfg, fn = row
-                field = models.EngineConfigMeta(
-                    engine_key=self.key,
-                    cosmetic=cosmetic,
-                    key=key,
-                    varfunc=varfunc,
-                    default=default,
-                    cfgdict=cfg,
-                    gatherfunc=fn
-                )
-                session.add(field)
-            session.commit()
+            if rows:
+                for row in rows[0]:
+                    # log.info(f"{row=}")
+                    cosmetic, key, varfunc, default, cfg, fn = row
+                    field = models.EngineConfigMeta(
+                        engine_key=self.key,
+                        cosmetic=cosmetic,
+                        key=key,
+                        varfunc=varfunc,
+                        default=default,
+                        cfgdict=cfg,
+                        gatherfunc=fn
+                    )
+                    session.add(field)
+                session.commit()
 
     def say(self, message, effects, sink=None, *args, **kwargs):
         tts = self.get_tts()

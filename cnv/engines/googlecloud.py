@@ -273,7 +273,7 @@ class GoogleCloud(TTSEngine):
             for voice in resp.voices:
                 # log.info(f'{voice.language_codes=}')
                 # log.info(dir(voice.language_codes))
-                log.info(f"{voice.ssml_gender=}")
+                log.debug(f"{voice.ssml_gender=}")
 
                 language_codes = []
                 for code in voice.language_codes:
