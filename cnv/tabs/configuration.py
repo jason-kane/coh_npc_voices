@@ -88,13 +88,13 @@ class ChannelToEngineMap(ctk.CTkFrame):
 
         primary_engine = self.choose_engine(
             frame,
-            self.get_tkvar(tk.StringVar, category, 'engine', 'primary')
+            self.get_tkvar(tk.StringVar, category, 'engine', 'primary', default='Disabled')
         )
         primary_engine.grid(column=1, row=0, sticky='n')
 
         secondary_engine = self.choose_engine(
             frame,
-            self.get_tkvar(tk.StringVar, category, 'engine', 'secondary')
+            self.get_tkvar(tk.StringVar, category, 'engine', 'secondary', default='Disabled')
         )
         secondary_engine.grid(column=2, row=0, sticky='n')
 
@@ -115,7 +115,7 @@ class ChannelToEngineMap(ctk.CTkFrame):
             settings.set_config_key(key, value)
         return
 
-    def get_tkvar(self, tkvarClass, category, system, tag):
+    def get_tkvar(self, tkvarClass, category, system, tag, default: str | bool = False):
         """
         There is a tkvarClass instance located at category/system/tag.
         Instantiate it, give it the right value, hand it back.
@@ -124,7 +124,7 @@ class ChannelToEngineMap(ctk.CTkFrame):
         tkvar = self.tkdict.get(key)
         if tkvar is None:
             tkvar = tkvarClass(
-                value=settings.get_config_key(key, False)  # False is sus.
+                value=settings.get_config_key(key, default)  # False is sus.
             )
             tkvar.trace_add(
                 'write', self.polymorph
