@@ -706,7 +706,7 @@ class LogStream:
             if dialog:
                 console.log(f"\\[{channel}] {speaker}: " + colorstring(dialog))
             else:
-                log.warning('Invalid lstring has no dialog: %s', lstring)
+                log.debug('Invalid lstring has no dialog: %s', lstring)
 
             # sometimes people don't say anything we can vocalize, like "..." so we drop any
             # non-dialog messages.
@@ -715,7 +715,7 @@ class LogStream:
                 # speaker name, spoken dialog, channel (npc, system, player)
                 self.speaking_queue.put((speaker, dialog, guide['name']))
             else:
-                log.warning('Not speaking: %s', lstring)
+                log.debug('Not speaking: %s', lstring)
 
         elif guide is None:
             # long lines will wrap
@@ -1260,7 +1260,7 @@ Ten missions, ends in fight against AV Vandal'''
                                 dialog = plainstring(" ".join(lstring[:-4]))
                                 self.ssay(dialog)                        
                         else:
-                            log.info(f'tag "{lstring}" not classified.')
+                            log.debug(f'tag "{lstring}" not classified.')
                             continue
                         #
                         # Team task completed.

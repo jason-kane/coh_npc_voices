@@ -51,7 +51,7 @@ class MainTabView(ctk.CTkTabview):
             ('Voices', voices.VoicesTab, (event_queue, speaking_queue)), 
             ('Configuration', configuration.ConfigurationTab, (event_queue, speaking_queue)),
             ('Translation', translation.TranslationTab, (event_queue, speaking_queue)),
-            ('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
+            #('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
         ):
             ctkframe = self.add(tablabel)
             ctkframe.grid_columnconfigure(0, weight=1)
