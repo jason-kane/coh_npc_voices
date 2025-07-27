@@ -50,7 +50,8 @@ class AmazonPollyAuthUI(ttk.Frame):
             excellent text-to-speech service in AWS. A free tier account is good
             for one year and provides 5 million characters of text-to-speech.
             That is a lot.  After the free year expires, or if you run out it
-            (currently) costs $4 per million characters.""".replace("\n", " ")
+            (currently) costs $4 per million characters.""".replace("\n", " "),
+            messages_enabled=False
         ) 
         # mdlabel.on_link_click(self.link_click) 
         

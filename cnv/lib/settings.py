@@ -119,9 +119,10 @@ def set_toggle(key, value):
         value=value
     )
 
-def get_toggle(key):
+def get_toggle(key, default="off"):
     return get_config_key(
-        key=f'toggle_{key}'
+        key=f'toggle_{key}',
+        default=default
     ) == "on"
 
 

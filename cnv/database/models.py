@@ -271,6 +271,7 @@ class Character(Base):
                         )
                     except AttributeError:
                         log.warning(f'Cache {engine_key}_{config_meta.key} is invalid')
+                        # Cache openai_voice_name is empty
                         value = "<Cache Failure>"
 
                         # just creating this should be enough to populate the
@@ -281,7 +282,7 @@ class Character(Base):
                         )                        
 
                     if all_values:
-                        # it's a dict, key in a voice_name
+                        # it's a dict, key is a voice_name
                         language_code_regex = settings.get_language_code_regex()
 
                         if language_code_regex and 'language_code' in all_values[0].keys():

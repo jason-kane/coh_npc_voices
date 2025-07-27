@@ -10,6 +10,18 @@ from cnv.engines.base import registry as engine_registry
 log = logging.getLogger(__name__)
 
 
+TOGGLES = [
+    ("Acknowledge each win", "on"),
+    ("Persist player chat", "on"),
+    ("Speak Buffs", "on"),
+    ("Speak Debuffs", "on"),
+    ("Speak Recharges", "on"),
+    ("Speak Merits", "on"),
+    ("Speak Recipes", "on"),
+    ("Snark", "on"),
+]
+
+
 class MasterVolume(ctk.CTkFrame):
     """
     Frame to provide widgets and persistence logic for a global volume control.  
@@ -208,27 +220,32 @@ class SpeakingToggles(ctk.CTkFrame):
         # 
         #  I can't do it right now though, becase I'm doing something else and
         #  it would be a distraction.
-        for toggle in [
-            "Acknowledge each win", 
-            "Persist player chat",
-            "Speak Buffs",
-            "Speak Debuffs",
-        ]:
-            tag = settings.taggify(toggle)
+        #
+        COLUMN_COUNT = 4
+        row_index = 0
+
+        for col in range(COLUMN_COUNT):
+            self.grid_columnconfigure(col, weight=1)
+
+        for index, (toggle_name, default) in enumerate(TOGGLES):
+            tag = settings.taggify(toggle_name)
             self.toggles[tag] = tk.StringVar(
-                value="on" if settings.get_toggle(tag) else "off"
+                value="on" if settings.get_toggle(tag, default) else "off"
             )
+            
+            column = index % COLUMN_COUNT
 
             ctk.CTkCheckBox(
                 self,
                 command=self.toggle,
-                text=toggle,
+                text=toggle_name,
                 variable=self.toggles[tag],
                 onvalue="on", 
                 offvalue="off"
-            ).grid(column=0, row=index, sticky='w')
+            ).grid(column=column, row=row_index, sticky='w')
 
-            index += 1
+            if column == COLUMN_COUNT - 1:
+                row_index += 1
 
     def toggle(self, *args, **kwargs):
         for tag in self.toggles:

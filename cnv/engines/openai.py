@@ -72,16 +72,6 @@ class OpenAIAuthUI(ctk.CTkFrame):
         return value
 
 
-def get_openai_client():
-    if os.path.exists(OPENAI_KEY_FILE):
-        with open(OPENAI_KEY_FILE) as h:
-            openai_api_key = h.read().strip()
-
-        client = OAI(api_key=openai_api_key)
-        return client
-    else:
-        log.warning(f"OpenAI Requires valid {OPENAI_KEY_FILE} file")
-
 # female = ['alloy, 'nova', 'shimmer']
 # male = ['echo', 'onyx']
 # neutral = ['fable']
@@ -99,6 +89,12 @@ class OpenAI(TTSEngine):
         ('Speed', 'speed', "DoubleVar", 1.0, {'min': 0.25, 'max': 4.0, 'resolution': 0.25}, None),
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # force the voice table to be populated
+        self.get_voices()
+
+
     def get_models(self):
         all_models = diskcache(
             f"{self.key}_model"
@@ -112,34 +108,27 @@ class OpenAI(TTSEngine):
             )
         return [k['model'] for k in all_models]
 
-    def get_voices(self):
+    def get_voices(self) -> list:
         all_voices = diskcache(
-            f"{self.key}_voice"
+            f"{self.key}_voice_name"
         )
+
         if all_voices is None:
             all_voices = diskcache(
-                f"{self.key}_voice", [{
-                'name': 'alloy',
-                'gender': 'Female'
-            }, {
-                'name': 'nova',
-                'gender': 'Female'
-            }, {
-                'name': 'shimmer',
-                'gender': 'Female'
-            }, {
-                'name': 'fable',
-                'gender': 'Female'
-            }, {
-                'name': 'echo',
-                'gender': 'Male'
-            }, {
-                'name': 'onyx',
-                'gender': 'Male'
-            }, {
-                'name': 'fable',
-                'gender': 'Male'
-            }])
+                f"{self.key}_voice_name", [
+            {'voice_name': 'alloy', 'gender': 'Female'}, 
+            {'voice_name': 'ash', 'gender': 'Male'},  
+            # {'voice_name': 'ballad', 'gender': 'Male'}, 
+            {'voice_name': 'coral', 'gender': 'Male'}, 
+            {'voice_name': 'echo', 'gender': 'Male'},
+            {'voice_name': 'fable', 'gender': 'Female'}, 
+            {'voice_name': 'fable', 'gender': 'Male'},
+            {'voice_name': 'nova', 'gender': 'Female'}, 
+            {'voice_name': 'onyx', 'gender': 'Male'},
+            {'voice_name': 'sage', 'gender': 'Female'}, 
+            {'voice_name': 'shimmer', 'gender': 'Female'}, 
+            # {'voice_name': 'verse', 'gender': 'Female'}, 
+            ])
 
         return all_voices
 
@@ -149,7 +138,7 @@ class OpenAI(TTSEngine):
         out = set()
         for voice in all_voices:
             if self._gender_filter(voice):
-                out.add(voice['name'])
+                out.add(voice['voice_name'])
 
         out = sorted(list(out))
 
@@ -175,35 +164,61 @@ class OpenAI(TTSEngine):
 
 @dataclass
 class ttsOpenAI(voicebox.tts.TTS):
-    """    
-    """
-    voice: Union[str] = "alloy"
-    model: Union[str] = "tts-1"
+    voice: str = "alloy"
+    model: str = "tts-1"
     speed: float = 1.0
 
+    def get_openai_client(self):
+        if hasattr(self, 'client'):
+            return self.client
+        
+        if os.path.exists(OPENAI_KEY_FILE):
+            with open(OPENAI_KEY_FILE) as h:
+                openai_api_key = h.read().strip()
+
+            client = OAI(api_key=openai_api_key)
+            self.client = client
+            return client
+        else:
+            log.warning(f"OpenAI Requires valid {OPENAI_KEY_FILE} file")
+
     def get_speech(self, text: StrOrSSML) -> Audio:
-        client = get_openai_client()
+        client = self.get_openai_client()
 
         log.debug(f"self.voice: {self.voice}")      
-
         # PCM: Similar to WAV but containing the raw samples in 24kHz (16-bit
         # signed, low-endian), without the header.
-        response = client.audio.speech.create(
-            model=self.model,
-            voice=self.voice,
-            response_format="pcm",
-            input=text
-        )
+        try:
+            response = client.audio.speech.create(
+                model=self.model,
+                voice=self.voice,
+                response_format="pcm",
+                input=text
+            )
+        except Exception as e:
+            log.error(f"speech.create(model={self.model}, voice={self.voice}, response_format='pcm', input={text})")
+            log.error(f"OpenAI TTS speech.create() error: {e}")
+            raise
 
-        samples = np.frombuffer(
-            bytes(response.read()),
-            dtype=np.int16
-        )
+        try:
+            samples = np.frombuffer(
+                bytes(response.read()),
+                dtype=np.int16
+            )
+        except Exception as e:
+            log.error(f"OpenAI TTS PCM->NP error: {e}")
+            raise
 
-        return voicebox.tts.utils.get_audio_from_samples(
-            samples,
-            24000
-        )       
+        try:
+            v = voicebox.tts.utils.get_audio_from_samples(
+                samples,
+                24000
+            )
+        except Exception as e:
+            log.error(f"OpenAI TTS Error converting samples to .wav: {e}")
+            raise
+
+        return v
 
 # add this class to the the registry of engines
 registry.add_engine(OpenAI)

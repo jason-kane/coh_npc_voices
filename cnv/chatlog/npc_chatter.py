@@ -417,6 +417,8 @@ def colorstring(dialog):
 
     return dialog
 
+DARKEST_SOAK = 5  # for how many seconds after the first darkest night do we want to ignore subsequent messages?
+
 class LogStream:
     """
     This is a streaming processor for the log file.  Its kind of sorely
@@ -427,6 +429,8 @@ class LogStream:
     # sure we're actually reading the most recent log file.  I think a float
     # would work here too.
     READ_TIMEOUT = 60
+    previous_stopwatch = {}
+    previous_darkest = 0
 
     # what channels are we paying attention to, which self.parser function is
     # going to be called to properly extract the data from that log entry.
@@ -702,7 +706,7 @@ class LogStream:
             if dialog:
                 console.log(f"\\[{channel}] {speaker}: " + colorstring(dialog))
             else:
-                log.warning('Invalid lstring has no dialog: %s', lstring)
+                log.debug('Invalid lstring has no dialog: %s', lstring)
 
             # sometimes people don't say anything we can vocalize, like "..." so we drop any
             # non-dialog messages.
@@ -711,7 +715,7 @@ class LogStream:
                 # speaker name, spoken dialog, channel (npc, system, player)
                 self.speaking_queue.put((speaker, dialog, guide['name']))
             else:
-                log.warning('Not speaking: %s', lstring)
+                log.debug('Not speaking: %s', lstring)
 
         elif guide is None:
             # long lines will wrap
@@ -894,14 +898,14 @@ Ten missions, ends in fight against AV Vandal'''
 
                         elif lstring[0] == "You":
                             log.debug('"You" path')
-                            if lstring[1] in ["found", "stole", "begin", "finished", "open", "didn't", "rescued"]:
+                            if lstring[1] in ["stopped", "found", "stole", "begin", "finished", "open", "didn't", "rescued"]:
+                                # You stopped the Superadine shipment and arrested Chernobog Petrovic, one of the Skulls' founders!
                                 # You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.
                                 # You have cleared the Snakes from the Arachnos base, and learned something interesting.
                                 # You stole the money!
                                 # You finished searching through the records
                                 # You didn't find Percy's Record
                                 # You open the records and find it filled with wooden tubes studded with holes. As you pick one up it emits a verbal record of the individual it is about.
-
                                 dialog = plainstring(" ".join(lstring))
                                 if talking:
                                     self.ssay(dialog)
@@ -1085,6 +1089,19 @@ Ten missions, ends in fight against AV Vandal'''
                                 # skip "You activated ..."
                                 continue
 
+                            elif lstring[1] == "received":
+                                # You received 6 reward merits.
+                                if lstring[-2:0] == ["reward", "merits."]:
+                                    if settings.get_toggle(settings.taggify('Speak Merits')):
+                                        dialog = plainstring(" ".join(lstring))
+                                        self.ssay(dialog)
+
+                                elif lstring[-1] == "(Recipe).":
+                                    # You received Cacophony: Confuse/Range (Recipe).
+                                    if settings.get_toggle(settings.taggify('Speak Recipes')):
+                                        dialog = plainstring(" ".join(lstring))
+                                        self.ssay(dialog)
+
                         elif self.hero and lstring[0] == "MISSED":
                             # MISSED Mamba Blade!! Your Contaminated Strike power had a 95.00% chance to hit, you rolled a 95.29.
                             m = re.fullmatch(
@@ -1126,12 +1143,44 @@ Ten missions, ends in fight against AV Vandal'''
                                 # find_character_login should have already set self.hero()
                                 self.hero = Hero(" ".join(lstring[5:]).strip("!"))
 
+                        elif lstring[0] == "Entering" and lstring[-2:] == ["Medical", "Center"]:
+                            # Entering Steel Canyon Medical Center.
+                            if settings.get_toggle(settings.taggify('Snark')):
+                                dialog = "Welcome back to " + plainstring(" ".join(lstring[1:]) + ".  Again.  Maybe you should buy an awaken or six.")
+                                self.ssay(dialog)
 
                         elif lstring[-2:] == ["is", "recharged"]:
+
                             log.debug('Adding RECHARGED event to event_queue...')
                             self.event_queue.put(
                                 ("RECHARGED", " ".join(lstring[0:lstring.index("is")]))
                             )
+
+                            # how long ago did this power last recharge?
+                            power_name = " ".join(lstring[0:-2])
+                            if power_name in self.previous_stopwatch:
+                                dur_h, dur_m, dur_s = self.previous_stopwatch[power_name].split(':')
+                                this_h, this_m, this_s = timestr.split(':')
+
+                                h, m, s = (
+                                    int(this_h) - int(dur_h),
+                                    int(this_m) - int(dur_m),
+                                    int(this_s) - int(dur_s)
+                                )
+
+                                total_seconds = (s + (m * 60) + (h * 3600))
+                                # if this is a power we don't use very often, it's more likely we're interested in knowing when
+                                # it recharges.  Two minutes feels about right to me.
+
+                                if total_seconds >= (2 * 60):  # two minutes
+                                    # only speak it if it took more than a minute
+                                    if settings.get_toggle(settings.taggify('Speak Recharges')):
+                                        dialog = plainstring(
+                                            f"{power_name} recharged"
+                                        )
+                                        self.ssay(dialog)
+
+                            self.previous_stopwatch[power_name] = timestr
 
                         elif lstring[-2:] == ["the", "team"]:
                             name = " ".join(lstring[0:-4])
@@ -1153,6 +1202,29 @@ Ten missions, ends in fight against AV Vandal'''
                             'level', level, cf='state.json'
                             )
 
+                        elif lstring[0:3] == ["Your", "Siphon", "Speed"]:
+                            # Your Siphon Speed has slowed the attack and movement speed of Prototype Oscillator while increasing your own!
+                            if settings.get_toggle(settings.taggify('Speak Buffs')):
+                                dialog = plainstring(" ".join(lstring))
+                                self.ssay(dialog)
+
+                        elif lstring[0:3] == ["Your", "Darkest", "Night"]:
+                            # Your Darkest Night reduced the damage and chance to hit of Fallen Buckshot and all foes nearby.
+                            h, m, s = timestr.split(':')
+                            total_seconds = (int(h) * 3600) + (int(m) * 60) + int(s)
+
+                            if total_seconds - self.previous_darkest >= DARKEST_SOAK:
+                                if settings.get_toggle(settings.taggify('Speak Buffs')):
+                                    dialog = plainstring("Darkest Night attached to " + " ".join(lstring[11:-4]))
+                                    self.ssay(dialog)
+                                    self.previous_darkest = total_seconds
+
+                        elif lstring[0:4] == ["Shutting", "off", "Darkest", "Night"]:
+                            # Shutting off Darkest Night.
+                            if settings.get_toggle(settings.taggify('Speak Buffs')):
+                                dialog = plainstring("Darkest Night detached")
+                                self.ssay(dialog)
+
                         # single word things to speak, mostly clicky descriptions
                         elif lstring[0] in ["Something's", "In", "Jones", "This", "You've", "Where"]:
                             # Something's not right with this spot on the floor...
@@ -1162,14 +1234,33 @@ Ten missions, ends in fight against AV Vandal'''
                             if (settings.REPLAY and settings.SPEECH_IN_REPLAY) or not settings.REPLAY:
                                 self.ssay(dialog)
 
+                        elif len(lstring) >= 6 and lstring[-6:] == ["boosts", "the", "damage", "of", "your", "attacks!"]:
+                            # siphon power
+                            # The Just Chillin' boosts the damage of your attacks!
+                            if settings.get_toggle(settings.taggify('Speak Buffs')):
+                                dialog = plainstring(" ".join(lstring[1:]))  # This one is buggy, adds a "The" to the beginning.
+                                self.ssay(dialog)
+
                         elif lstring[0] == "The":
                             if lstring[1] in ["bottom", "whiteboard", ]:
                                 # The bottom of this empty box..
                                 # The whiteboard appears to be...
                                 dialog = plainstring(" ".join(lstring))
                                 self.ssay(dialog)
+
+                        elif len(lstring) >= 6 and lstring[-6:-4] == ['Twilight', 'Grasp']:
+                            # Old McFahrty heals you with their Twilight Grasp for 22.02 health points.
+                            if settings.get_toggle(settings.taggify('Speak Buffs')):
+                                dialog = plainstring(" ".join(lstring[:-4]))
+                                self.ssay(dialog)
+
+                        elif len(lstring) >= 9 and lstring[-9:-4] == ['heals', 'you', 'with', 'their', 'Transfusion']:
+                            # Just Chillin' heals you with their Transfusion for 92.22 health points.
+                            if settings.get_toggle(settings.taggify('Speak Buffs')):
+                                dialog = plainstring(" ".join(lstring[:-4]))
+                                self.ssay(dialog)                        
                         else:
-                            log.debug(f'tag "{lstring[0]}" not classified.')
+                            log.debug(f'tag "{lstring}" not classified.')
                             continue
                         #
                         # Team task completed.

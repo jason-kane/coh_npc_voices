@@ -465,7 +465,7 @@ class WindowsTTS(TTSEngine):
 
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
-        ('Speaking Rate', 'rate', "DoubleVar", 1, {'min': -3.5, 'max': 3.5, 'digits': 2, 'resolution': 0.5}, None)
+        ('Speaking Rate', 'rate', "DoubleVar", 1, {'min': -2.0, 'max': 2.0, 'digits': 2, 'resolution': 0.5}, None)
     )
 
     def get_tts(self):
