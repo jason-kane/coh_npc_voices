@@ -213,7 +213,7 @@ class GoogleCloud(TTSEngine):
         return False
 
     def get_voice_names(self, gender=None):
-        log.info(f'get_voices_names({gender=})')
+        log.debug(f'get_voices_names({gender=})')
         all_voices = self.get_voices()
 
         if gender and not hasattr(self, 'gender'):

@@ -13,10 +13,11 @@ from datetime import datetime, timedelta
 import colorama
 import customtkinter as ctk
 from tabs import (
-    automation,
+    # automation,
     character,
     configuration,
     translation,
+    patterns,
     voices,
 )
 
@@ -50,6 +51,7 @@ class MainTabView(ctk.CTkTabview):
             ('Character', character.CharacterTab, (event_queue, speaking_queue)),
             ('Voices', voices.VoicesTab, (event_queue, speaking_queue)), 
             ('Configuration', configuration.ConfigurationTab, (event_queue, speaking_queue)),
+            ('Patterns', patterns.PatternsTab, (event_queue, speaking_queue)),
             ('Translation', translation.TranslationTab, (event_queue, speaking_queue)),
             #('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
         ):

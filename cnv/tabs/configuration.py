@@ -19,6 +19,7 @@ TOGGLES = [
     ("Speak Merits", "on"),
     ("Speak Recipes", "on"),
     ("Snark", "on"),
+    ("Team Changes", "on"),
 ]
 
 

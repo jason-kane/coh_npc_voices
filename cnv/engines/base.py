@@ -1,4 +1,5 @@
 import logging
+import random
 import tkinter as tk
 from typing import Type
 
@@ -163,9 +164,14 @@ class TTSEngine(ctk.CTkFrame):
             
             # log.info(f"{dir(self)}")
             if hasattr(self, 'config_vars'):
-                # the polly way
-                log.debug(f'PolyConfig[{key}] = {value}')
-                # log.info(f'{self.config_vars=}')
+                if key in self.config_vars:
+                    was = self.config_vars[key].get()
+                    if was != value:
+                        log.debug(f'config_vars[{key}] was {was} now changing it to {value}')
+                else:
+                    log.debug(f'Setting initial config_vars[{key}] to {value}')
+                
+                # "new" config_vars are ignored?
                 if key in self.config_vars:
                     self.config_vars[key].set(value)
             else:
@@ -259,11 +265,14 @@ class TTSEngine(ctk.CTkFrame):
             self.config_vars[m.key].set(m.default)
 
             # create the widget itself
+            # combobox
             if m.varfunc == "StringVar":
                 self._tkStringVar(index + 1, m.key, self)
+            # slider
             elif m.varfunc == "DoubleVar":
                 self._tkDoubleVar(index + 1, m.key, self, m.cfgdict)
                 self.config_vars[m.key].trace_add("write", self.reconfig)
+            # on/off switch
             elif m.varfunc == "BooleanVar":
                 self._tkBooleanVar(index + 1, m.key, self)
                 self.config_vars[m.key].trace_add("write", self.reconfig)
@@ -289,7 +298,6 @@ class TTSEngine(ctk.CTkFrame):
         # doubles get a scale widget.  I haven't been able to get the ttk.Scale
         # widget to behave itself.  I like the visual a bit better, but its hard
         # to get equivilent results.
-
 
         # TODO:
         # display the current value
@@ -369,8 +377,10 @@ class TTSEngine(ctk.CTkFrame):
         self.repopulate_options()
 
     def repopulate_options(self):
+        """
+        Re-populate the options in all config widgets.
+        """
         for m in self.get_config_meta():
-            # for cosmetic, key, varfunc, default, cfg, fn in self.CONFIG_TUPLE:
             # our change may filter the other widgets, possibly
             # rendering the previous value invalid.
             if m.varfunc == "StringVar":
@@ -388,8 +398,12 @@ class TTSEngine(ctk.CTkFrame):
 
                     if all_options:
                         if self.config_vars[m.key].get() not in all_options:
-                            # log.info(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')                    
-                            self.config_vars[m.key].set(all_options[0])
+                            # TODO: "<unconfigured>" is coming through here
+                            log.debug(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')
+                            # replacing with a random but valid option
+                            self.config_vars[m.key].set(random.choice(all_options))
+                else:
+                    log.error(f'No widget for {m.key} in {self.cosmetic} ({self.key})')
             
     def _gender_filter(self, voice):
         if hasattr(self, 'gender') and self.gender:

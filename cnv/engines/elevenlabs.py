@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import tempfile
 import tkinter as tk
 from dataclasses import dataclass, field
@@ -89,6 +90,15 @@ def get_elevenlabs_client():
         log.warning("Elevenlabs Requires valid eleven_labs.key file")
 
 
+class InvalidVoiceException(Exception):
+    """
+    Raised when the voice requested is not available.
+    """
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
 class ElevenLabs(TTSEngine):
     """
     Elevenlabs detects the incoming language; so in theory every voice works with every language.  I have doubts.
@@ -98,6 +108,7 @@ class ElevenLabs(TTSEngine):
     api_key = None
     auth_ui_class = ElevenLabsAuthUI
 
+    # we describe the data, how that translated into widgets is in TTSEngine
     config = (
         ('Voice Name', 'voice_name', "StringVar", "<unconfigured>", {}, "get_voice_names"),
         ('Stability', 'stability', "DoubleVar", 0.5, {'min': 0, 'max': 1, 'resolution': 0.025}, None),
@@ -141,8 +152,11 @@ class ElevenLabs(TTSEngine):
         if out:
             if self.config_vars["voice_name"].get() not in out:
                 # our currently selected voice is invalid.  Pick a new one.
-                log.error('Invalid voice selecton: %s.  Overriding...', self.config_vars["voice_name"].get())
-                self.config_vars["voice_name"].set(out[0])
+                log.error(
+                    'Expected voice %s not in available voices %s',
+                    self.config_vars["voice_name"].get(), out
+                )
+                raise InvalidVoiceException('Invalid voice selection: %s' % self.config_vars["voice_name"].get())
             return out
         else:
             return []
