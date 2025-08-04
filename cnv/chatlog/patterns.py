@@ -10,19 +10,19 @@ DEFAULT_PATTERNS =  [
         "enabled": True,
         'patterns': [
             {
-                "regex": "stopped.*.*",
+                "regex": "stopped.*",
                 "example": "You stopped the Superadine shipment and arrested Chernobog Petrovic, one of the Skulls' founders!",
                 "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
             }, {
-                "regex": "found.*.*",
+                "regex": "found.*",
                 "example": "You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.",
                 "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
             }, {
-                "regex": "have cleared.*.*",
+                "regex": "have cleared.*",
                 "example": "You have cleared the Snakes from the Arachnos base, and learned something interesting.",
                 "toggle": "Speak Clues",
                 "channel": "system",
@@ -234,7 +234,7 @@ DEFAULT_PATTERNS =  [
         "enabled": True,
         'patterns': [
             {
-                "regex": " .* Medical Center.*",
+                "regex": ".* Medical Center.*",
                 "toggle": "Snark",
                 "append": [  # randomly selected
                     "Lets not do that again.",
@@ -244,6 +244,16 @@ DEFAULT_PATTERNS =  [
                 ],
                 "channel": "npc",
                 "enabled": True
+            }, {
+                "regex": ".*Crowne Memorial.*",
+                "example": "Entering Crowne Memorial.",
+                "toggle": "Snark",
+                "channel": "system",
+                "enabled": True,
+                "append": [  # randomly selected
+                    "Whats a little debt between friends.",
+                    "Maybe you should go back to Atlas Park?",
+                ],
             }
         ]
     }, {

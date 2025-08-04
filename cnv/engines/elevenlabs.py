@@ -149,14 +149,21 @@ class ElevenLabs(TTSEngine):
         
         out = sorted(list(out))
 
+        chosen_voice = self.config_vars["voice_name"].get()
+        
         if out:
-            if self.config_vars["voice_name"].get() not in out:
-                # our currently selected voice is invalid.  Pick a new one.
-                log.error(
-                    'Expected voice %s not in available voices %s',
-                    self.config_vars["voice_name"].get(), out
-                )
-                raise InvalidVoiceException('Invalid voice selection: %s' % self.config_vars["voice_name"].get())
+            # if chosen_voice not in out:
+            #     # our currently selected voice is invalid.  Pick a new one.
+            #     log.error(
+            #         'Expected voice %s not in available voices %s',
+            #         chosen_voice, out
+            #     )
+            #     new_voice = random.choice(out)
+            #     log.error(f'Invoking {self.config_vars["voice_name"]}.set({new_voice})')
+            #     self.config_vars["voice_name"].set(new_voice)
+
+            #     log.info('Changed voice to %s', self.config_vars["voice_name"].get())
+                # raise InvalidVoiceException('Invalid voice selection: %s' % self.config_vars["voice_name"].get())
             return out
         else:
             return []

@@ -165,12 +165,12 @@ def create(character, message, session):
 
         if character.engine_secondary:
             # use the secondary engine config defined for this character
-            engine_instance = get_engine(character.engine_secondary)
+            engine_instance = engine_registry.get_engine(character.engine_secondary)
             engine_instance(None, 'secondary', name, category).say(message, effect_list, sink=sink)
         else:
             # use the global default secondary engine
             engine_name = settings.get_config_key(f"{character.category}_engine_secondary")
-            engine_instance = get_engine(engine_name)
+            engine_instance = engine_registry.get_engine(engine_name)
             engine_instance(None, 'secondary', name, category).say(message, effect_list, sink=sink)
      
         # End result: cachefile + ".wav" exists, for at least one of primary/secondary.

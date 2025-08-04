@@ -27,6 +27,8 @@ from cnv.lib.proc import send_log_lock
 
 from cnv.chatlog import patterns
 
+from cnv import engines
+
 
 cnv.logger.init()
 log = logging.getLogger(__name__)
@@ -198,7 +200,6 @@ class TightTTS(threading.Thread):
             for rank in ['primary', 'secondary']:
                 cachefile = settings.get_cachefile(name, message, category, rank)
                 wav_fn = str(cachefile + ".wav")
-
                 # if primary exists, play that.  else secondary.
 
                 # we really want wav_fn to exist, if we can.  Makes this all easier when it exists.
@@ -245,8 +246,17 @@ class TightTTS(threading.Thread):
                         voice_builder.create(character, message, session)
                     
                         for rank in ['primary', 'secondary']:
-                            cachefile = settings.get_cachefile(name, message, category, "primary")
-                            wav_fn = str(cachefile + ".wav")
+                            try:
+                                cachefile = settings.get_cachefile(name, message, category, rank)
+                                wav_fn = str(cachefile + ".wav")
+                            
+                            except (engines.elevenlabs.InvalidVoiceException):
+                                log.error(f"Invalid voice for ElevenLabs: {name}")
+                                continue
+
+                            except Exception as err:
+                                log.error(f"Error occurred generating audio: {err}")
+                                raise
 
                             if os.path.exists(wav_fn):
                                 self.play(channel=channel, wav_fn=wav_fn)
@@ -254,7 +264,7 @@ class TightTTS(threading.Thread):
                                 break
 
                     except Exception as err:
-                        log.exception(err)
+                        raise
 
 
 def plainstring(dialog):
@@ -894,58 +904,7 @@ Ten missions, ends in fight against AV Vandal'''
                             log.debug('Returned from channel_messager()')
                             continue
 
-                        prefix = lstring[0]
-                        remainder = " ".join(lstring[1:])
-                        done = False
-                        if prefix in patterns.get_prefixes():
-                            for pattern in patterns.get_patterns(prefix):
-                                m = re.match(pattern['regex'], remainder)
-                                if m:
-                                    if pattern['enabled']:
-                                        if settings.get_toggle(settings.taggify(pattern['toggle'])):
-                                            if pattern.get('state'):
-                                                # this will update state.json, it's used for things like tracking
-                                                # the character level.
-                                                settings.set_config_key(
-                                                    pattern['state'], m.group(1), cf='state.json'
-                                                )
-
-                                            if pattern.get('strip_number', False):
-                                                # Removing the actual number makes the audio cache _many_ times more efficient.
-                                                # You are healed by your Dehydrate for 23.04 health points over time.
-                                                remainder = re.sub(r"for [0-9]+\.[0-9]+ .*", "", remainder)
-
-                                            talking = True
-                                            if pattern.get('soak', 0) > 0:
-                                                soak_key = f"{prefix}_{pattern['regex']}"
-                                                # if we have a soak, we need to
-                                                # make sure at least than many
-                                                # seconds have passed since we
-                                                # last spoke this pattern
-                            
-                                                h, m, s = timestr.split(':')
-                                                total_seconds = (int(h) * 3600) + (int(m) * 60) + int(s)
-
-                                                if (
-                                                    soak_key in self.previous_stopwatch and
-                                                    total_seconds - self.previous_stopwatch[soak_key] < pattern['soak']
-                                                ):
-                                                    log.debug(f'Soaking {soak_key} for {pattern["soak"]} seconds')
-                                                    talking = False
-                                                else:
-                                                    self.previous_stopwatch[soak_key] = total_seconds
-
-                                            if talking:
-                                                dialog = plainstring(prefix + " " + remainder)
-                                                self.ssay(dialog)
-                                    # we are done with the for pattern loop
-                                    done = True
-                                    break
-                            
-                            if done:
-                                continue
-
-                        elif lstring[0] == "You":
+                        if lstring[0] == "You":
                             if self.hero and lstring[1] == "gain":
                                 # You gain 104 experience and 36 influence.
                                 # You gain 15 experience, work off 15 debt, and gain 14 influence.
@@ -1110,8 +1069,72 @@ Ten missions, ends in fight against AV Vandal'''
                             self.previous_stopwatch[power_name] = timestr
                      
                         else:
-                            log.debug(f'tag "{lstring}" not classified.')
-                            continue
+                            prefix = lstring[0]
+                            remainder = " ".join(lstring[1:])
+                            done = False
+                            log.info('Looking for prefix: %s', prefix)
+                            if prefix in patterns.get_prefixes():
+                                all_patterns = patterns.get_patterns(prefix)
+
+                                log.info('Checking for matches against %s patterns', len(all_patterns))
+                                for pattern in all_patterns:
+                                    m = re.match(pattern['regex'], remainder)
+                                    if m:
+                                        log.info('Match Found: %s', m)
+                                        if pattern['enabled']:
+                                            if settings.get_toggle(settings.taggify(pattern['toggle'])):
+                                                if pattern.get('state'):
+                                                    # this will update state.json, it's used for things like tracking
+                                                    # the character level.
+                                                    settings.set_config_key(
+                                                        pattern['state'], m.group(1), cf='state.json'
+                                                    )
+
+                                                if pattern.get('strip_number', False):
+                                                    # Removing the actual number makes the audio cache _many_ times more efficient.
+                                                    # You are healed by your Dehydrate for 23.04 health points over time.
+                                                    remainder = re.sub(r"for [0-9]+\.?[0-9]+ .*", "", remainder)
+
+                                                talking = True
+                                                if pattern.get('soak', 0) > 0:
+                                                    soak_key = f"{prefix}_{pattern['regex']}"
+                                                    # if we have a soak, we need to
+                                                    # make sure at least than many
+                                                    # seconds have passed since we
+                                                    # last spoke this pattern
+                                
+                                                    h, m, s = timestr.split(':')
+                                                    total_seconds = (int(h) * 3600) + (int(m) * 60) + int(s)
+
+                                                    if (
+                                                        soak_key in self.previous_stopwatch and
+                                                        total_seconds - self.previous_stopwatch[soak_key] < pattern['soak']
+                                                    ):
+                                                        log.debug(f'Soaking {soak_key} for {pattern["soak"]} seconds')
+                                                        talking = False
+                                                    else:
+                                                        self.previous_stopwatch[soak_key] = total_seconds
+
+                                                if talking:
+                                                    if pattern.get('append'):
+                                                        # throw some flavor at the end.
+                                                        dialog = plainstring(prefix + " " + remainder + " " + random.choice(pattern['append']))
+                                                    else:
+                                                        dialog = plainstring(prefix + " " + remainder)
+
+                                                    log.info('Pattern %s/%s matched.  Speaking %s', prefix, pattern['regex'], dialog)
+                                                    self.ssay(dialog)
+                                        # we are done with the for pattern loop
+                                        done = True
+                                        break
+                                    else:
+                                        log.info('Match failed: re.match("%s", "%s")', pattern['regex'], remainder)
+
+                                if done:
+                                    continue
+                                else:
+                                    log.info('No matching patterns found for prefix: %s', prefix)
+
                         #
                         # Team task completed.
                         # A new team task has been chosen.                           

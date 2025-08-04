@@ -208,8 +208,6 @@ class PatternDetail(ctk.CTkScrollableFrame):
         #parent = self.patternlist.pattern_tree.parent(node)
         #if parent:
 
-
-
     def load_pattern(self, prefix_name, pattern_name):
         # Load the pattern details into the detail side
         pattern = patterns.get_pattern(prefix_name, pattern_name)
@@ -246,20 +244,20 @@ class PatternList(ctk.CTkFrame):
         self.rowconfigure(1, weight=1)
         self.rowconfigure(2, weight=0)
 
-        self.list_filter = tk.StringVar(value="")
-        listfilter = ctk.CTkEntry(
-            self,
-            width=40,
-            textvariable=self.list_filter
-        )
-        listfilter.grid(
-            column=0, 
-            row=0, 
-            columnspan=2, 
-            sticky="ew"
-        )
+        # self.list_filter = tk.StringVar(value="")
+        # listfilter = ctk.CTkEntry(
+        #     self,
+        #     width=40,
+        #     textvariable=self.list_filter
+        # )
+        # listfilter.grid(
+        #     column=0, 
+        #     row=0, 
+        #     columnspan=2, 
+        #     sticky="ew"
+        # )
 
-        self.list_filter.trace_add('write', self.apply_list_filter)
+        # self.list_filter.trace_add('write', self.apply_list_filter)
 
         columns = ('pattern', )
         self.pattern_tree = ttk.Treeview(

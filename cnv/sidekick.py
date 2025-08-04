@@ -19,6 +19,7 @@ from tabs import (
     translation,
     patterns,
     voices,
+    # logview,
 )
 
 import cnv.lib.settings as settings
@@ -36,7 +37,7 @@ log = logging.getLogger(__name__)
 EXIT = False
 
 class MainTabView(ctk.CTkTabview):
-    def __init__(self, master, event_queue, speaking_queue, **kwargs):
+    def __init__(self, master, event_queue, speaking_queue, log_queue, **kwargs):
         kwargs["height"] = 1024  # this is really more like maxheight
         #kwargs['border_color'] = "darkgrey"
         #kwargs['border_width'] = 2
@@ -48,6 +49,7 @@ class MainTabView(ctk.CTkTabview):
         self.tabdict = {}
 
         for tablabel, tabobj, args in (
+            # ('Log', logview.LogTab, (event_queue, speaking_queue, log_queue)),
             ('Character', character.CharacterTab, (event_queue, speaking_queue)),
             ('Voices', voices.VoicesTab, (event_queue, speaking_queue)), 
             ('Configuration', configuration.ConfigurationTab, (event_queue, speaking_queue)),
@@ -70,6 +72,9 @@ def main():
 
     event_queue = multiprocessing.SimpleQueue()
     speaking_queue = multiprocessing.SimpleQueue()
+    
+    log_queue = multiprocessing.Queue()
+    log.info('Creating log queue: %s', log_queue)
 
     for msg in random.choices([
         "Returning to Paragon City",
@@ -88,6 +93,7 @@ def main():
         log.info('Exiting...')
         event_queue.close()
         speaking_queue.close()
+        log_queue.close()
         sys.exit()
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
@@ -114,6 +120,7 @@ def main():
         buffer, 
         event_queue=event_queue,
         speaking_queue=speaking_queue,
+        log_queue=log_queue
     )
     mtv.grid(
         column=0, row=0, sticky="new"

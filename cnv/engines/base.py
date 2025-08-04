@@ -61,7 +61,8 @@ class TTSEngine(ctk.CTkFrame):
         self.draw_config_meta()
 
         self.load_character(category=category, name=name)
-        self.repopulate_options()
+        self.reconfig()
+        # repopulate_options()
 
     def get_config_meta(self):
         with models.db() as session:
@@ -131,12 +132,13 @@ class TTSEngine(ctk.CTkFrame):
                         log.error(f'Google Error code {err.grpc_status_code}.  Switching to secondary.')
                         raise USE_SECONDARY
 
-                elif err.status_code == 401:
+                elif hasattr(err, 'status_code') and err.status_code == 401:
                     log.error(err.body)
                     if err.body.get('detail', {}).get('status') == "quota_exceeded":
                         log.error('ElevelLabs quota exceeded.  Switching to secondary.')
                         raise USE_SECONDARY
-                raise
+
+                raise USE_SECONDARY
 
     def get_tts(self):
         return voicebox.tts.tts.TTS()
@@ -166,6 +168,7 @@ class TTSEngine(ctk.CTkFrame):
             if hasattr(self, 'config_vars'):
                 if key in self.config_vars:
                     was = self.config_vars[key].get()
+                                        
                     if was != value:
                         log.debug(f'config_vars[{key}] was {was} now changing it to {value}')
                 else:
@@ -173,6 +176,8 @@ class TTSEngine(ctk.CTkFrame):
                 
                 # "new" config_vars are ignored?
                 if key in self.config_vars:
+                    # so.. how do we know if 'value' is still a valid option
+                    # for this field?
                     self.config_vars[key].set(value)
             else:
                 log.error(f'OBSOLETE config[{key}] = {value}')
@@ -401,7 +406,10 @@ class TTSEngine(ctk.CTkFrame):
                             # TODO: "<unconfigured>" is coming through here
                             log.debug(f'Expected to find {self.config_vars[m.key].get()!r} in list {all_options!r}')
                             # replacing with a random but valid option
-                            self.config_vars[m.key].set(random.choice(all_options))
+                            random_option = random.choice(all_options)
+                            log.info(f'Replacing {self.config_vars[m.key].get()!r} with random option {random_option!r}')
+                            self.config_vars[m.key].set(random_option)
+                            self.reconfig()
                 else:
                     log.error(f'No widget for {m.key} in {self.cosmetic} ({self.key})')
             
