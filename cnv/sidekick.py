@@ -6,6 +6,7 @@ import ctypes
 import logging
 import multiprocessing
 import os
+import time
 import random
 import sys
 from datetime import datetime, timedelta
@@ -182,6 +183,7 @@ def main():
 
         root.update_idletasks()
         root.update()
+        time.sleep(0.1)
 
     log.debug('main() END')
 

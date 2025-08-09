@@ -994,7 +994,7 @@ Ten missions, ends in fight against AV Vandal'''
                                         dialog = plainstring(" ".join(lstring))
                                         log.warning(f'hit failed regex: {dialog}')
 
-                        elif self.hero and lstring[0] == "MISSED":
+                        if self.hero and lstring[0] == "MISSED":
                             # MISSED Mamba Blade!! Your Contaminated Strike power had a 95.00% chance to hit, you rolled a 95.29.
                             m = re.fullmatch(
                                 r"MISSED (?P<target>.*)!! Your (?P<power>.*) power had a (?P<chance_to_hit>[0-9\.]*)% chance to hit, you rolled a (?P<roll>[0-9\.]*).",
@@ -1072,6 +1072,9 @@ Ten missions, ends in fight against AV Vandal'''
                             prefix = lstring[0]
                             remainder = " ".join(lstring[1:])
                             done = False
+                            if prefix in ['Ember', 'Cold', 'Fiery']:
+                                continue
+
                             log.info('Looking for prefix: %s', prefix)
                             if prefix in patterns.get_prefixes():
                                 all_patterns = patterns.get_patterns(prefix)
@@ -1124,6 +1127,12 @@ Ten missions, ends in fight against AV Vandal'''
 
                                                     log.info('Pattern %s/%s matched.  Speaking %s', prefix, pattern['regex'], dialog)
                                                     self.ssay(dialog)
+                                                else:
+                                                    log.info('Talking disabled')
+                                            else:
+                                                log.info('Toggle %s is not turned on', pattern['toggle'])
+                                        else:
+                                            log.info('Pattern disabled')
                                         # we are done with the for pattern loop
                                         done = True
                                         break
@@ -1134,6 +1143,74 @@ Ten missions, ends in fight against AV Vandal'''
                                     continue
                                 else:
                                     log.info('No matching patterns found for prefix: %s', prefix)
+
+                            else:
+                                # Check for global patterns
+                                all_patterns = patterns.get_patterns("")
+
+                                log.info('Checking for matches against %s global patterns', len(all_patterns))
+                                # TODO refactor to remove this redundancy
+                                for pattern in all_patterns:
+                                    m = re.match(pattern['regex'], remainder)
+                                    if m:
+                                        log.info('Match Found: %s', m)
+                                        if pattern['enabled']:
+                                            if settings.get_toggle(settings.taggify(pattern['toggle'])):
+                                                if pattern.get('state'):
+                                                    # this will update state.json, it's used for things like tracking
+                                                    # the character level.
+                                                    settings.set_config_key(
+                                                        pattern['state'], m.group(1), cf='state.json'
+                                                    )
+
+                                                if pattern.get('strip_number', False):
+                                                    # Removing the actual number makes the audio cache _many_ times more efficient.
+                                                    # You are healed by your Dehydrate for 23.04 health points over time.
+                                                    remainder = re.sub(r"for [0-9]+\.?[0-9]+ .*", "", remainder)
+
+                                                talking = True
+                                                if pattern.get('soak', 0) > 0:
+                                                    soak_key = f"{prefix}_{pattern['regex']}"
+                                                    # if we have a soak, we need to
+                                                    # make sure at least than many
+                                                    # seconds have passed since we
+                                                    # last spoke this pattern
+                                
+                                                    h, m, s = timestr.split(':')
+                                                    total_seconds = (int(h) * 3600) + (int(m) * 60) + int(s)
+
+                                                    if (
+                                                        soak_key in self.previous_stopwatch and
+                                                        total_seconds - self.previous_stopwatch[soak_key] < pattern['soak']
+                                                    ):
+                                                        log.debug(f'Soaking {soak_key} for {pattern["soak"]} seconds')
+                                                        talking = False
+                                                    else:
+                                                        self.previous_stopwatch[soak_key] = total_seconds
+
+                                                if talking:
+                                                    if pattern.get('append'):
+                                                        # throw some flavor at the end.
+                                                        dialog = plainstring(prefix + " " + remainder + " " + random.choice(pattern['append']))
+                                                    else:
+                                                        dialog = plainstring(prefix + " " + remainder)
+
+                                                    log.info('Pattern %s/%s matched.  Speaking %s', prefix, pattern['regex'], dialog)
+                                                    self.ssay(dialog)
+                                                else:
+                                                    log.info('Talking disabled')
+                                            else:
+                                                log.info('Toggle %s is not turned on', pattern['toggle'])
+                                        else:
+                                            log.info('Pattern disabled')
+                                        # we are done with the for pattern loop
+                                        done = True
+                                        break
+                                    else:
+                                        log.info('Match failed: re.match("%s", "%s")', pattern['regex'], remainder)
+
+                                if done:
+                                    continue
 
                         #
                         # Team task completed.

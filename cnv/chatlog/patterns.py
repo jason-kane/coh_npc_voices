@@ -10,20 +10,38 @@ DEFAULT_PATTERNS =  [
         "enabled": True,
         'patterns': [
             {
+                "regex": "search.*",
+                "example": "You search through the crate",
+                "toggle": "Speak Clues",
+                "channel": "system",
+                "enabled": True
+            }, {
                 "regex": "stopped.*",
                 "example": "You stopped the Superadine shipment and arrested Chernobog Petrovic, one of the Skulls' founders!",
                 "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
             }, {
+                "regex": "managed.*",
+                "example": "You managed to get a few more Skulls off the streets and made the city that much safer.",
+                "toggle": "Speak Clues",
+                "channel": "system",
+                "enabled": True
+            }, {
                 "regex": "found.*",
-                "example": "You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.",
+                "example": "You found a face mask that is covered in some kind of mold. It appears to be pulsing like it's breathing. You send a short video to Watkins for evidence.\nYou found an odd clue from within the Vault Reserve building:  It would seem some suspicious individuals were storing weapons here, the Vault Reserve employee overheard them mention something called 'Operation: Kidnap Sinclair'.  All you need to do is track down who this 'Sinclair' is.\n\nYou found the Stabilizing Field that Proton was looking for, however the power core is missing!",
                 "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
             }, {
                 "regex": "have cleared.*",
                 "example": "You have cleared the Snakes from the Arachnos base, and learned something interesting.",
+                "toggle": "Speak Clues",
+                "channel": "system",
+                "enabled": True
+            }, {
+                "regex": "have destroyed.*",
+                "example": "You have destroyed one of Proton's String Relay Transmitters.",
                 "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
@@ -41,13 +59,19 @@ DEFAULT_PATTERNS =  [
                 "enabled": True
             }, {
                 "regex": "finished.*",
-                "example": "You finished searching through the records",
+                "example": "You finished searching through the records\n\nYou finished searching the crate...",
                 "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
             }, {
                 "regex": "open.*",
                 "example": "You open the records and find it filled with wooden tubes studded with holes. As you pick one up it emits a verbal record of the individual it is about.",
+                "toggle": "Speak Clues",
+                "channel": "system",
+                "enabled": True
+            }, {
+                "regex": "did not.*",
+                "example": "You did not find any usable equipment in the crate.",
                 "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
@@ -216,13 +240,13 @@ DEFAULT_PATTERNS =  [
                 "channel": "system",
                 "enabled": False
             }, {
-                "regex": "received [0-9]+ reward merits\..*",
+                "regex": "received [0-9]+ reward merits.*",
                 "example": "You received 6 reward merits.",
                 "toggle": "Speak Merits",
                 "channel": "system",
                 "enabled": True
             }, {
-                "regex": "received .* \(Recipe\)\..*",
+                "regex": "received .* \(Recipe\).*",
                 "example": "You received Cacophony: Confuse/Range (Recipe).",
                 "toggle": "Speak Merits",
                 "channel": "system",
@@ -291,8 +315,8 @@ DEFAULT_PATTERNS =  [
         "enabled": True,
         "patterns": [
             {
-                "regex": "combat.*",
-                "example": r"Your combat improves to level (23)! Seek a trainer to further your abilities\.",
+                "regex": "combat improves to level (\\d+).*",
+                "example":"Your combat improves to level (23)! Seek a trainer to further your abilities.",
                 "toggle": "Speak Levelup",
                 "channel": "system",
                 "state": "level",
@@ -417,14 +441,21 @@ DEFAULT_PATTERNS =  [
                 "channel": "system",
                 "enabled": True
             }, {
-                "regex": ".* heals your with their Twilight Grasp.*",
+                "regex": ".*heals you with their Radiant Aura.*",
+                "example": "Ghoblyn heals you with their Radiant Aura for 44.3 health points.",
+                "strip_number": True,
+                "toggle": "Speak Buffs",
+                "channel": "system",
+                "enabled": True
+            }, {
+                "regex": ".*heals your with their Twilight Grasp.*",
                 "example": "Old McFahrty heals you with their Twilight Grasp for 22.02 health points.",
                 "strip_number": True,
                 "toggle": "Speak Buffs",
                 "channel": "system",
                 "enabled": True
             }, {
-                "regex": ".* heals you with their Transfusion.*",
+                "regex": ".*heals you with their Transfusion.*",
                 "example": "Just Chillin' heals you with their Transfusion for 92.22 health points.",
                 "strip_number": True,
                 "toggle": "Speak Buffs",
