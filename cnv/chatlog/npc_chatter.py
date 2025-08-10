@@ -548,9 +548,9 @@ class LogStream:
                 if hero_name:
                     break
                 else:
-                    log.info(lstring)
+                    log.debug(lstring)
 
-        log.info("hero_name: %s", hero_name)
+        log.debug("hero_name: %s", hero_name)
         if hero_name:
             self.hero = Hero(hero_name)
             
@@ -1075,15 +1075,15 @@ Ten missions, ends in fight against AV Vandal'''
                             if prefix in ['Ember', 'Cold', 'Fiery']:
                                 continue
 
-                            log.info('Looking for prefix: %s', prefix)
+                            log.debug('Looking for prefix: %s', prefix)
                             if prefix in patterns.get_prefixes():
                                 all_patterns = patterns.get_patterns(prefix)
 
-                                log.info('Checking for matches against %s patterns', len(all_patterns))
+                                log.debug('Checking for matches against %s patterns', len(all_patterns))
                                 for pattern in all_patterns:
-                                    m = re.match(pattern['regex'], remainder)
+                                    m = pattern['compiled'].match(remainder)
                                     if m:
-                                        log.info('Match Found: %s', m)
+                                        log.debug('Match Found: %s', m)
                                         if pattern['enabled']:
                                             if settings.get_toggle(settings.taggify(pattern['toggle'])):
                                                 if pattern.get('state'):
@@ -1128,32 +1128,32 @@ Ten missions, ends in fight against AV Vandal'''
                                                     log.info('Pattern %s/%s matched.  Speaking %s', prefix, pattern['regex'], dialog)
                                                     self.ssay(dialog)
                                                 else:
-                                                    log.info('Talking disabled')
+                                                    log.debug('Talking disabled')
                                             else:
                                                 log.info('Toggle %s is not turned on', pattern['toggle'])
                                         else:
-                                            log.info('Pattern disabled')
+                                            log.debug('Pattern disabled')
                                         # we are done with the for pattern loop
                                         done = True
                                         break
                                     else:
-                                        log.info('Match failed: re.match("%s", "%s")', pattern['regex'], remainder)
+                                        log.debug('Match failed: re.match("%s", "%s")', pattern['regex'], remainder)
 
                                 if done:
                                     continue
                                 else:
-                                    log.info('No matching patterns found for prefix: %s', prefix)
+                                    log.debug('No matching patterns found for prefix: %s', prefix)
 
                             else:
-                                # Check for global patterns
+                                # Check for global patterns (empty string)
                                 all_patterns = patterns.get_patterns("")
 
-                                log.info('Checking for matches against %s global patterns', len(all_patterns))
+                                log.debug('Checking to match %s against %s global patterns', remainder, len(all_patterns))
                                 # TODO refactor to remove this redundancy
                                 for pattern in all_patterns:
-                                    m = re.match(pattern['regex'], remainder)
+                                    m = pattern['compiled'].match(remainder)
                                     if m:
-                                        log.info('Match Found: %s', m)
+                                        log.debug('Match Found: %s', m)
                                         if pattern['enabled']:
                                             if settings.get_toggle(settings.taggify(pattern['toggle'])):
                                                 if pattern.get('state'):
@@ -1166,7 +1166,7 @@ Ten missions, ends in fight against AV Vandal'''
                                                 if pattern.get('strip_number', False):
                                                     # Removing the actual number makes the audio cache _many_ times more efficient.
                                                     # You are healed by your Dehydrate for 23.04 health points over time.
-                                                    remainder = re.sub(r"for [0-9]+\.?[0-9]+ .*", "", remainder)
+                                                    remainder = re.sub(r"for [0-9]+.*", "", remainder)
 
                                                 talking = True
                                                 if pattern.get('soak', 0) > 0:
@@ -1207,10 +1207,12 @@ Ten missions, ends in fight against AV Vandal'''
                                         done = True
                                         break
                                     else:
-                                        log.info('Match failed: re.match("%s", "%s")', pattern['regex'], remainder)
+                                        log.debug('Global match failed: re.match("%s", "%s")', pattern['regex'], remainder)
 
                                 if done:
                                     continue
+                                else:
+                                    log.debug('No matching global patterns found for: %s', remainder)
 
                         #
                         # Team task completed.

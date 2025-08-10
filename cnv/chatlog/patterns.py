@@ -1,5 +1,6 @@
 import logging
 import json
+import re
 import os
 log = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ DEFAULT_PATTERNS =  [
             }, {
                 "regex": "have been exemplared.*",
                 "example": "You have been exemplared",
-                "toggle": "",
+                "toggle": "Speak Buffs",
                 "channel": "system",
                 "enabled": True
             }, {
@@ -156,7 +157,7 @@ DEFAULT_PATTERNS =  [
             }, {
                 "regex": "have unclaimed.*",  # respecs and tailer sessions
                 "example": "You have unclaimed",
-                "toggle": "",
+                "toggle": "Speak Buffs",
                 "channel": "system",
                 "enabled": True
             }, {
@@ -212,31 +213,31 @@ DEFAULT_PATTERNS =  [
             }, {
                 "regex": "carefully.*",
                 "example": "You carefully",
-                "toggle": "",
+                "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
             }, {
                 "regex": "look.*",
                 "example": "You look",
-                "toggle": "",
+                "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
             }, {
                 "regex": "find.*",
                 "example": "You find",
-                "toggle": "",
+                "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True
             }, {
                 "regex": "activated.*",
                 "example": "You activated",
-                "toggle": "",
+                "toggle": "Speak Buffs",
                 "channel": "system",
                 "enabled": False
             }, {
                 "regex": "Taunt.*",
                 "example": "You Taunt",
-                "toggle": "",
+                "toggle": "Speak Combat",
                 "channel": "system",
                 "enabled": False
             }, {
@@ -448,7 +449,7 @@ DEFAULT_PATTERNS =  [
                 "channel": "system",
                 "enabled": True
             }, {
-                "regex": ".*heals your with their Twilight Grasp.*",
+                "regex": ".*heals you with their Twilight Grasp.*",
                 "example": "Old McFahrty heals you with their Twilight Grasp for 22.02 health points.",
                 "strip_number": True,
                 "toggle": "Speak Buffs",
@@ -470,24 +471,34 @@ DEFAULT_PATTERNS =  [
 _patterns = None
 
 def load_patterns():
-        """
-        Load all patterns from patterns.json
-        """
-        global _patterns
-        
-        if _patterns:
-            return _patterns
-
-        log.debug('Loading patterns...')
-        if os.path.exists('patterns.json'):
-            with open('patterns.json', 'r') as f:
-                patterns = json.load(f)
-                _patterns = patterns
-                return patterns
-
-        _patterns = DEFAULT_PATTERNS
-        log.info('No patterns.json found, using default patterns.')
+    """
+    Load all patterns from patterns.json
+    """
+    global _patterns
+    
+    if _patterns:
         return _patterns
+
+    patterns = None
+    log.debug('Loading patterns...')
+    if os.path.exists('patterns.json'):
+        with open('patterns.json', 'r') as f:
+            patterns = json.load(f)
+
+    if patterns is None:
+        log.warning('patterns.json is empty or invalid, using default patterns.')
+        patterns = DEFAULT_PATTERNS
+
+    log.info('Compiling regular expression patterns...')        
+
+    for prefix in patterns:
+        for pattern in prefix['patterns']:
+            pattern['compiled'] = re.compile(pattern['regex'])
+
+    log.info('Finished compiling regular expression patterns.')
+    _patterns = patterns
+
+    return _patterns
 
 
 def delete_pattern(prefix_name, pattern_name):
@@ -496,6 +507,7 @@ def delete_pattern(prefix_name, pattern_name):
     """
     log.info(f"delete_pattern(self, {prefix_name}, {pattern_name})")
     all_patterns = load_patterns()
+    found = False
     for prefix in all_patterns:
         if prefix['prefix'] == prefix_name:
             for i, p in enumerate(prefix['patterns']):
@@ -503,15 +515,32 @@ def delete_pattern(prefix_name, pattern_name):
                     log.info("deleting: %s", prefix['patterns'][i])
                     del prefix['patterns'][i]
                     log.info('Deleted pattern %s from prefix %s', pattern_name, prefix_name)
+                    found = True
                     break
-            else:
-                log.warning('Pattern %s not found in prefix %s', pattern_name, prefix_name)
+            
+            # we've exhausted the matching prefix, we are done.
+            break
+            
+        if found:
             break
     else:
         log.warning('Prefix %s not found', prefix_name)
 
+    save_patterns(all_patterns)
+    
+
+def save_patterns(all_patterns):
+    for prefix in all_patterns:
+        for pattern in prefix['patterns']:
+            if 'compiled' in pattern:
+                del pattern['compiled']
+
     with open('patterns.json', 'w') as f:
-        json.dump(all_patterns, f, indent=4)
+        try:
+            json.dump(all_patterns, f, indent=4)
+        except Exception as e:
+            log.error('Error saving patterns.json: %s', e)
+            log.error(all_patterns)
 
 
 def save_pattern(prefix_name, pattern_name, pattern, hindex=None):
@@ -558,8 +587,7 @@ def save_pattern(prefix_name, pattern_name, pattern, hindex=None):
             'patterns': [pattern]
         })
 
-    with open('patterns.json', 'w') as f:
-        json.dump(all_patterns, f, indent=4)
+    save_patterns(all_patterns)
 
 
 def get_prefixes():
