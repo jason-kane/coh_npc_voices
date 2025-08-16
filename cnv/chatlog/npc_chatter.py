@@ -204,7 +204,7 @@ class TightTTS(threading.Thread):
 
                 # we really want wav_fn to exist, if we can.  Makes this all easier when it exists.
                 if os.path.exists(wav_fn):
-                    log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {wav_fn}')
+                    # log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {wav_fn}')
                     self.play(channel=channel, wav_fn=wav_fn)
                     played = True
                     break
@@ -1125,7 +1125,7 @@ Ten missions, ends in fight against AV Vandal'''
                                                     else:
                                                         dialog = plainstring(prefix + " " + remainder)
 
-                                                    log.info('Pattern %s/%s matched.  Speaking %s', prefix, pattern['regex'], dialog)
+                                                    # log.info('Pattern %s/%s matched.  Speaking %s', prefix, pattern['regex'], dialog)
                                                     self.ssay(dialog)
                                                 else:
                                                     log.debug('Talking disabled')

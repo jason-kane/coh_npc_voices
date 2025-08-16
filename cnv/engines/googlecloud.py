@@ -285,9 +285,6 @@ class GoogleCloud(TTSEngine):
                     'gender': {1: 'Female', 2: 'Male'}[voice.ssml_gender.value],
                     'language_codes': language_codes
                 }
-                log.info(f'{row=}')
-                # for key in row:
-                #    log.info(f'{key} == {json.dumps(row[key])}')
 
                 all_voices.append(row)
             
