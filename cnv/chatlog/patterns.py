@@ -501,6 +501,24 @@ def load_patterns():
     return _patterns
 
 
+def delete_prefix(prefix_name):
+    """
+    Delete a particular prefix from patterns.json
+    """
+    log.info(f"delete_prefix(self, {prefix_name})")
+    all_patterns = load_patterns()
+    for i, prefix in enumerate(all_patterns):
+        if prefix['prefix'] == prefix_name:
+            log.info("deleting: %s", all_patterns[i])
+            del all_patterns[i]
+            log.info('Deleted prefix %s', prefix_name)
+            break
+    else:
+        log.warning('Prefix %s not found', prefix_name)
+
+    save_patterns(all_patterns)
+
+
 def delete_pattern(prefix_name, pattern_name):
     """
     Delete a particular pattern from patterns.json

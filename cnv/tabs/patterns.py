@@ -7,13 +7,71 @@ import cnv.lib.settings as settings
 import os
 import json
 from cnv.engines.base import registry as engine_registry
-from cnv.chatlog import patterns
+from cnv.chatlog import patterns as chat_patterns
 
 log = logging.getLogger(__name__)
 
 # so this can be a whole good thing.  We need to figure out how the translate
 # apis work on our various engines the we can make this work and not be so
 # ridiculously terrible.
+
+
+class AddPattern(ctk.CTkFrame):
+    def __init__(self, master, patternlist, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        self.patternlist = patternlist
+
+        # prefix field text entry
+        prefix_label = ctk.CTkLabel(
+            self,
+            text="Prefix"
+        )
+        prefix_label.grid(row=0, column=0, sticky="e")
+        self.prefix_var = tk.StringVar(value="new_prefix")
+        self.prefix_entry = ctk.CTkEntry(self, textvariable=self.prefix_var)
+        self.prefix_entry.grid(row=0, column=1, sticky="ew")
+
+        # regex field text entry
+        regex_label = ctk.CTkLabel(
+            self,
+            text="Regular Expression"
+        )
+        regex_label.grid(row=0, column=2, sticky="e")
+        self.regex_var = tk.StringVar(value="new_regex")
+        self.regex_entry = ctk.CTkEntry(
+            self,
+            textvariable=self.regex_var
+        )
+        self.regex_entry.grid(row=0, column=3, sticky="ew")
+
+        # example field text entry
+        example_label = ctk.CTkLabel(
+            self,
+            text="Example"
+        )
+        example_label.grid(row=1, column=0, sticky="e")
+        
+        self.example_var = tk.StringVar(value="example text")
+        self.example_entry = ctk.CTkEntry(
+            self,
+            textvariable=self.example_var
+        )
+        self.example_entry.grid(row=1, column=1, columnspan=3, sticky="ew")
+
+        # add button
+        add_button = ctk.CTkButton(
+            self,
+            text="Add Pattern",
+            command=self.add_pattern
+        )
+        add_button.grid(row=3, column=2, columnspan=2)
+
+    def add_pattern(self):
+        self.patternlist.add_pattern(
+            self.prefix_entry.get(),
+            self.regex_entry.get(),
+            self.example_entry.get()
+        )
 
 
 class PatternsTab(tk.Frame):
@@ -26,13 +84,18 @@ class PatternsTab(tk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=1)
+        
+        self.grid_rowconfigure(1, weight=0)
 
         detailside = PatternDetail(self)
         listside = PatternList(self, detailside)
         detailside.patternlist = listside
 
+        add_pattern = AddPattern(self, listside)
+
         listside.grid(column=0, row=0, sticky="nsew")
         detailside.grid(column=1, row=0, sticky="nsew")
+        add_pattern.grid(column=0, row=1, columnspan=2, sticky="ew")
 
         # auto-open the first item
         listside.pattern_tree.item(
@@ -84,7 +147,7 @@ class PatternDetail(ctk.CTkScrollableFrame):
         
         self.toggles = ctk.CTkComboBox(
             master=self,
-            values=patterns.get_known_toggles(),
+            values=chat_patterns.get_known_toggles(),
             #variable=self.toggles_txvar,
             width=200,
         )
@@ -135,13 +198,55 @@ class PatternDetail(ctk.CTkScrollableFrame):
             anchor="e"
         ).grid(row=5, column=1, sticky="e")
 
+        self.button_strip = ctk.CTkFrame(master=self)
+        self.button_strip.grid(row=6, column=2, sticky="nsew")
+
+        self.delete_button = ctk.CTkButton(
+            master=self.button_strip,
+            text="Delete Pattern",
+            fg_color="red",
+            command=self.delete_pattern
+        ).grid(
+            row=0, column=0, sticky="nsew"
+        )
+        
         self.save_button = ctk.CTkButton(
-            master=self,
+            master=self.button_strip,
             text="Save Pattern",
             command=self.save_pattern
         ).grid(
-            row=6, column=2, sticky="nsew"
+            row=0, column=1, sticky="nsew"
         )
+
+    def delete_pattern(self, event=None):
+        if self.patternlist is None:
+            log.error("Pattern list is not set.")
+            return
+
+        selected = self.patternlist.pattern_tree.selection()        
+        
+        if not selected:
+            log.error("No pattern selected to delete.")
+            return
+       
+        item_options = self.patternlist.pattern_tree.item(
+            selected[0]
+        )
+
+        pattern_name = item_options['values'][0]
+        prefix_name = item_options['values'][1]
+
+        chat_patterns.delete_pattern(prefix_name, pattern_name)
+
+        # not quite done yet.
+        if len(chat_patterns.get_patterns(prefix_name)) == 0:
+            chat_patterns.delete_prefix(prefix_name)
+
+        self.patternlist.refresh_pattern_list()
+
+        
+
+
 
     def save_pattern(self, event=None):
         """
@@ -191,8 +296,8 @@ class PatternDetail(ctk.CTkScrollableFrame):
         log.info('Saving pattern: %s', pattern)
         # Save the pattern to the list
 
-        patterns.delete_pattern(prefix_name, pattern_name)
-        patterns.save_pattern(prefix_name, self.regex_txvar.get(), pattern, hindex)
+        chat_patterns.delete_pattern(prefix_name, pattern_name)
+        chat_patterns.save_pattern(prefix_name, self.regex_txvar.get(), pattern, hindex)
 
         # we should update the currently highlighted listing in self.patternlist if regex has changed.
         #3 self.patternlist.hot_set_selected_pattern(pattern_name)
@@ -210,12 +315,12 @@ class PatternDetail(ctk.CTkScrollableFrame):
 
     def load_pattern(self, prefix_name, pattern_name):
         # Load the pattern details into the detail side
-        pattern = patterns.get_pattern(prefix_name, pattern_name)
+        pattern = chat_patterns.get_pattern(prefix_name, pattern_name)
 
         NOT_SET = '<< Not Set >>'
 
         if pattern:
-            toggle_values = [ NOT_SET, ] + patterns.get_known_toggles()
+            toggle_values = [ NOT_SET, ] + chat_patterns.get_known_toggles()
             self.toggles['values'] = toggle_values
             
             log.debug(f"Loading pattern: {pattern}")
@@ -339,9 +444,13 @@ class PatternList(ctk.CTkFrame):
         """
         One of the items in the list was clicked on
         """
-        item_str = self.pattern_tree.selection()[0]
+        try:
+            item_str = self.pattern_tree.selection()[0]
+        except IndexError:
+            # this is an empty prefix.
+            return
+        
         # selection returns a list of strings, that are somehow really items.
-
         log.debug('item is %s', item_str)
 
         if not item_str:
@@ -379,9 +488,12 @@ class PatternList(ctk.CTkFrame):
         return item
 
     def refresh_pattern_list(self, prefix=None, hindex=0):
+        """
+        prefix and hindex are to highlight a particular entry when we reload/refresh the list.
+        """
         log.debug('Refreshing pattern list...')
 
-        all_patterns = patterns.load_patterns()
+        all_patterns = chat_patterns.load_patterns()
 
         # wipe the pattern tree
         if self.pattern_tree:
@@ -443,7 +555,35 @@ class PatternList(ctk.CTkFrame):
 
         self.pattern_tree.tag_configure('grouprow', background='grey28', foreground='white')
         self.pattern_tree.tag_configure('member', background='grey60', foreground='black')
-  
+
+    def add_pattern(self, prefix_value, regex_value, example_value):
+        # is this a new prefix?
+        patterns = chat_patterns.load_patterns()
+
+        prefix = None
+        for item in patterns:
+            if item['prefix'] == prefix_value:
+                prefix = item
+                break
+
+        if prefix is None:
+            prefix = {
+                'prefix': prefix_value,
+                'patterns': []
+            }
+            patterns.append(prefix)
+
+        log.info('Adding pattern %s', regex_value)
+        prefix.get('patterns', []).append({
+            'regex': regex_value,
+            'example': example_value,
+            'toggle': '',
+            'channel': 'system',
+            'enabled': True,
+        })
+
+        chat_patterns.save_patterns(patterns)
+        self.refresh_pattern_list()
 
     # def delete_selected_character(self):
     #     category, name, item = self.selected_category_and_name()

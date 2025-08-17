@@ -21,6 +21,7 @@ from tabs import (
     patterns,
     voices,
     # logview,
+    upgrade
 )
 
 import cnv.lib.settings as settings
@@ -56,7 +57,8 @@ class MainTabView(ctk.CTkTabview):
             ('Configuration', configuration.ConfigurationTab, (event_queue, speaking_queue)),
             ('Patterns', patterns.PatternsTab, (event_queue, speaking_queue)),
             ('Translation', translation.TranslationTab, (event_queue, speaking_queue)),
-            #('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
+            # ('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
+            # ('Upgrade', upgrade.UpgradeTab, (event_queue, speaking_queue)),
         ):
             ctkframe = self.add(tablabel)
             ctkframe.grid_columnconfigure(0, weight=1)
