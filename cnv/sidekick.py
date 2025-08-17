@@ -6,6 +6,7 @@ import ctypes
 import logging
 import multiprocessing
 import os
+import time
 import random
 import sys
 from datetime import datetime, timedelta
@@ -13,11 +14,14 @@ from datetime import datetime, timedelta
 import colorama
 import customtkinter as ctk
 from tabs import (
-    automation,
+    # automation,
     character,
     configuration,
     translation,
+    patterns,
     voices,
+    # logview,
+    upgrade
 )
 
 import cnv.lib.settings as settings
@@ -35,7 +39,7 @@ log = logging.getLogger(__name__)
 EXIT = False
 
 class MainTabView(ctk.CTkTabview):
-    def __init__(self, master, event_queue, speaking_queue, **kwargs):
+    def __init__(self, master, event_queue, speaking_queue, log_queue, **kwargs):
         kwargs["height"] = 1024  # this is really more like maxheight
         #kwargs['border_color'] = "darkgrey"
         #kwargs['border_width'] = 2
@@ -47,11 +51,14 @@ class MainTabView(ctk.CTkTabview):
         self.tabdict = {}
 
         for tablabel, tabobj, args in (
+            # ('Log', logview.LogTab, (event_queue, speaking_queue, log_queue)),
             ('Character', character.CharacterTab, (event_queue, speaking_queue)),
             ('Voices', voices.VoicesTab, (event_queue, speaking_queue)), 
             ('Configuration', configuration.ConfigurationTab, (event_queue, speaking_queue)),
+            ('Patterns', patterns.PatternsTab, (event_queue, speaking_queue)),
             ('Translation', translation.TranslationTab, (event_queue, speaking_queue)),
-            #('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
+            # ('Automation', automation.AutomationTab, (event_queue, speaking_queue)),
+            # ('Upgrade', upgrade.UpgradeTab, (event_queue, speaking_queue)),
         ):
             ctkframe = self.add(tablabel)
             ctkframe.grid_columnconfigure(0, weight=1)
@@ -68,6 +75,9 @@ def main():
 
     event_queue = multiprocessing.SimpleQueue()
     speaking_queue = multiprocessing.SimpleQueue()
+    
+    log_queue = multiprocessing.Queue()
+    log.info('Creating log queue: %s', log_queue)
 
     for msg in random.choices([
         "Returning to Paragon City",
@@ -86,6 +96,7 @@ def main():
         log.info('Exiting...')
         event_queue.close()
         speaking_queue.close()
+        log_queue.close()
         sys.exit()
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
@@ -112,6 +123,7 @@ def main():
         buffer, 
         event_queue=event_queue,
         speaking_queue=speaking_queue,
+        log_queue=log_queue
     )
     mtv.grid(
         column=0, row=0, sticky="new"
@@ -173,6 +185,7 @@ def main():
 
         root.update_idletasks()
         root.update()
+        time.sleep(0.1)
 
     log.debug('main() END')
 

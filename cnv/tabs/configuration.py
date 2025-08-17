@@ -15,10 +15,14 @@ TOGGLES = [
     ("Persist player chat", "on"),
     ("Speak Buffs", "on"),
     ("Speak Debuffs", "on"),
+    ("Speak Clues", "on"),
+    ("Speak Levelup", "on"),
     ("Speak Recharges", "on"),
     ("Speak Merits", "on"),
     ("Speak Recipes", "on"),
+    ("Speak Badges", "on"),
     ("Snark", "on"),
+    ("Team Changes", "on"),
 ]
 
 

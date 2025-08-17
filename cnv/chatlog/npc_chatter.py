@@ -1,7 +1,6 @@
 import glob
 import hashlib
 import io
-import rich
 import colorsys
 import logging
 import webcolors
@@ -25,6 +24,11 @@ import cnv.database.models as models
 import cnv.logger
 import cnv.voices.voice_builder as voice_builder
 from cnv.lib.proc import send_log_lock
+
+from cnv.chatlog import patterns
+
+from cnv import engines
+
 
 cnv.logger.init()
 log = logging.getLogger(__name__)
@@ -196,12 +200,11 @@ class TightTTS(threading.Thread):
             for rank in ['primary', 'secondary']:
                 cachefile = settings.get_cachefile(name, message, category, rank)
                 wav_fn = str(cachefile + ".wav")
-
                 # if primary exists, play that.  else secondary.
 
                 # we really want wav_fn to exist, if we can.  Makes this all easier when it exists.
                 if os.path.exists(wav_fn):
-                    log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {wav_fn}')
+                    # log.info(f'[TightTTS] [{category}][{channel}] Playing wav file {wav_fn}')
                     self.play(channel=channel, wav_fn=wav_fn)
                     played = True
                     break
@@ -243,8 +246,17 @@ class TightTTS(threading.Thread):
                         voice_builder.create(character, message, session)
                     
                         for rank in ['primary', 'secondary']:
-                            cachefile = settings.get_cachefile(name, message, category, "primary")
-                            wav_fn = str(cachefile + ".wav")
+                            try:
+                                cachefile = settings.get_cachefile(name, message, category, rank)
+                                wav_fn = str(cachefile + ".wav")
+                            
+                            except (engines.elevenlabs.InvalidVoiceException):
+                                log.error(f"Invalid voice for ElevenLabs: {name}")
+                                continue
+
+                            except Exception as err:
+                                log.error(f"Error occurred generating audio: {err}")
+                                raise
 
                             if os.path.exists(wav_fn):
                                 self.play(channel=channel, wav_fn=wav_fn)
@@ -252,7 +264,7 @@ class TightTTS(threading.Thread):
                                 break
 
                     except Exception as err:
-                        log.exception(err)
+                        raise
 
 
 def plainstring(dialog):
@@ -281,19 +293,18 @@ def adjust_brightness(rgb_hexstring, change=0.1):
     log.debug('Adjusting brightness of %s by %s', rgb_hexstring, change)
     # we want 0-1 floats for each color
     red, green, blue = [x / 255.0 for x in webcolors.hex_to_rgb(rgb_hexstring)]
-    h, l, s = colorsys.rgb_to_hls(red, green, blue)
+    hue, luminosity, saturation = colorsys.rgb_to_hls(red, green, blue)
     
-    log.debug('Luminosity before: %s', l)
+    log.debug('Luminosity before: %s', luminosity)
     
-    # ok, so lower case l was a stupid choice
-    l += change
-    l = min(1.0, l)
-    l = max(0.0, l)
+    luminosity += change
+    luminosity = min(1.0, luminosity)
+    luminosity = max(0.0, luminosity)
     
-    log.debug('Luminosity after: %s', l)
+    log.debug('Luminosity after: %s', luminosity)
 
     # and back to 0-255 values 
-    red, green, blue = [int(x * 255) for x in colorsys.hls_to_rgb(h, l, s)]
+    red, green, blue = [int(x * 255) for x in colorsys.hls_to_rgb(hue, luminosity, saturation)]
     log.debug('As 0-255 tuple: (%s, %s, %s)', red, green, blue)
 
     # and back to a hex string
@@ -420,6 +431,799 @@ def colorstring(dialog):
 DARKEST_SOAK = 5  # for how many seconds after the first darkest night do we want to ignore subsequent messages?
 
 class LogStream:
+    """
+    This is a streaming processor for the log file.  Its kind of sorely
+    deficient in more than one way but seems to be at least barely adequate.
+    """
+    
+    # if we don't get any new lines in this many seconds, double check to make
+    # sure we're actually reading the most recent log file.  I think a float
+    # would work here too.
+    READ_TIMEOUT = 60
+    previous_stopwatch = {}
+    previous_darkest = 0
+
+    # what channels are we paying attention to, which self.parser function is
+    # going to be called to properly extract the data from that log entry.
+    channel_guide = {
+        'NPC': {
+            'enabled': True,
+            'name': "npc",
+            'parser': 'channel_chat_parser'
+        },
+        'Team': {
+            'enabled': True,
+            'name': "player",
+            'parser': 'channel_chat_parser'
+        },
+        'Tell': {
+            'enabled': True,
+            'name': "player",
+            'parser': 'tell_chat_parser'
+        },
+        'Caption': {
+            'enabled': True,
+            'name': "npc",
+            'parser': 'caption_parser'
+        }
+    }
+
+    def __init__(
+        self,
+        logdir: str,
+        speaking_queue: queue.Queue,
+        event_queue: queue.Queue,
+        badges: bool,
+        npc: bool,
+        team: bool,
+    ):
+        """
+        find the most recent logfile in logdir note which file it is, open it,
+        do a light scan to find the beginning of the current characters session.
+        There is some character data there we need. Then we skip to the end and
+        start tailing.
+        """
+        self.logdir = logdir
+        self.announce_badges = badges
+        # TODO: these should be exposed on the configuration page
+        self.npc_speak = npc
+        self.team_speak = team
+        self.tell_speak = True
+        self.caption_speak = True
+        self.announce_levels = True
+        self.hero = None
+        # who is (as far as we know) currently speaking as CAPTION ?
+        self.caption_speaker = None
+        self.caption_color_to_speaker = {}
+
+        # carry these along for I/O
+        self.speaking_queue = speaking_queue
+        self.event_queue = event_queue
+
+        self.logfile = None
+        self.first_tail = True
+        log.debug(f'(init) Setting {self.logfile=}')
+
+    def open_latest_log(self):
+        all_files = glob.glob(os.path.join(self.logdir, "*.txt"))
+        filename = max(all_files, key=os.path.getctime)
+        
+        log.info(f'(oll) Setting {self.logfile=} = {filename}')
+        self.logfile = filename
+        return os.path.join(self.logdir, filename)
+
+    def find_character_login(self):
+        """0
+        Skim through and see if can find the beginning of the current characters
+        login.
+        """
+        hero_name = None
+        log.info('find_character_login()')
+        # we want the most recent entries of specific strings. This might be
+        # better done backwards
+        # ,
+        #    "r",
+        #    encoding="utf-8",
+        #)
+        with open(self.open_latest_log(), 'r', encoding="utf-8") as handle:
+            log.info('Searching for welcome message')
+            for line in handle:
+                try:
+                    datestr, timestr, line_string = line.split(None, 2)
+                except ValueError:
+                    continue
+
+                lstring = line_string.split()
+                
+                if lstring[0] == "Welcome":
+                    # Welcome to City of Heroes, <HERO NAME>
+                    self.is_hero = True
+                    hero_name = " ".join(lstring[5:]).strip("!")
+                    # we want to notify upstream UI about this.
+                elif lstring[0:5] == ["Now", "entering", "the", "Rogue", "Isles,"]:
+                    # 2024-04-17 17:10:27 Now entering the Rogue Isles, Kim Chee!
+                    self.is_hero = False
+                    hero_name = " ".join(lstring[5:]).strip("!")
+                
+                if hero_name:
+                    break
+                else:
+                    log.debug(lstring)
+
+        log.debug("hero_name: %s", hero_name)
+        if hero_name:
+            self.hero = Hero(hero_name)
+            
+            if self.event_queue:
+                self.event_queue.put(("SET_CHARACTER", self.hero.name))
+
+            if not settings.REPLAY:
+                send_log_lock()
+                log.info('log_lock attached')
+
+        else:
+            self.ssay("User name not detected")
+            log.warning("Could NOT find hero name.. good luck.")
+
+    def channel_chat_parser(self, lstring):
+        speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+        dialog = plainstring(dialog)
+        return speaker, dialog
+
+    def tell_chat_parser(self, lstring):
+        """
+        Who is talking, what are they saying?
+        """
+        # why is there an extra colon for Tell?  IDK.        
+        if lstring[1][:3] == "-->":
+            # note: target names with spaces are not parsed
+            # ["[Tell]", "-->Toxic", "Timber:", "pls"]
+            # this is a reply to a tell, or an outbound tell.
+
+            # these are self-tells so we have to catch both of them, but we only
+            # need to process one of them.  For no particular reason
+            # we're going to use the --> inbound message.
+
+            # [Tell] :Ghlorius: [SIDEKICK] name="Ghlorius" 
+            # [Tell] -->Ghlorius: [SIDEKICK] name="Ghlorius"
+            dialog = (
+                " ".join(lstring[1:]).split(":", maxsplit=1)[-1].strip()
+            )
+
+            if dialog.split()[0] == "[SIDEKICK]":
+                log.info('Parsing SIDEKICK')
+                # player attribute self-reporting
+                # key=value;key2=value2
+                _, all_keyvals = dialog.split(None, maxsplit=1)
+
+                for keyvalue in all_keyvals.split(';'):
+                    try:
+                        key, value = keyvalue.strip().split('=')
+                    except ValueError:
+                        log.warning(f'Invalid SIDEKICK: {dialog}')
+                        return "__self__", None    
+
+                    settings.set_config_key(
+                        key, 
+                        value.strip('"'),
+                        cf='state.json'
+                    )
+
+                # don't try and speak it.
+                return "__self__", None
+
+            speaker = "__self__"
+        else:
+            # ["[Tell]", ":Dressy Bessie:", "I", "can", "bump", "you"]
+            # ["[Tell]", ":StoneRipper:", "it:s", "underneath"]
+            speaker = None
+            dialog = None
+            try:
+                # ["", "Dressy Bessie", "I can bump you"]
+                # ['', 'StoneRipper', ' it:s underneath']
+                full_string = " ".join(lstring[1:])
+
+                if ':' in full_string:
+                    _, speaker, dialog = full_string.split(
+                        ":", maxsplit=2
+                    )
+                    # ignore SIDEKICK self-tells 
+                    try:
+                        if dialog.split()[0] == "[SIDEKICK]":
+                            return "__self__", None
+                    except IndexError:
+                        pass
+
+            except ValueError:
+                # 2024-07-27 17:17:07 [Tell] You are banned from talking for 2 minutes, 0 seconds.
+                # logging at info so I can maybe catch it in the future.
+                log.info(f'1 ADD DOC: {lstring=}')
+                speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
+        
+        dialog = plainstring(dialog)
+        return speaker, dialog
+
+    def caption_parser(self, lstring):
+        """
+        Caption messages are a liitle.. fun.  Usually the first message from a
+        given speaker identifies the speaker by name but subsequent messages do
+        not.  They do consistently use the same background color for each
+        speaker.  So we notice when a named speaker introduces themselves then
+        we associate that bgcolor with that speaker so we can use the same
+        voice.
+
+        A good test for this is the back and forth dialog between Dana and
+        Matthew.
+
+        The key data here are the strings in CAPTION_SPEAKER_INDICATORS linking
+        introduction messages to speakers.  It will need to be significantly
+        expanded to cover more 'caption' speakers.
+        """
+        # [Caption] <scalxe 2.75><color red><bgcolor White>My Shadow Simulacrum will destroy Task Force White Sands!
+        # [Caption] <scale 1.75><color white><bgcolor DarkGreen>Positron here. I'm monitoring your current progress in the sewers. 
+        log.debug(f'CAPTION: {lstring}')
+        dialog = plainstring(" ".join(lstring[1:]))
+        dialog = dialog.replace('*', '')  # the stupid TTS engine say "asterisk" and it is tediously dumb.
+
+        # make an effort to identify the speaker
+        # Positron here. I'm monitoring your current progress in the sewers.
+        tags = {keyvalue.split()[0]: keyvalue.split()[1] for keyvalue in re.findall(
+            r'<([^<>]*)>',
+            " ".join(lstring)
+        )}
+
+        color = tags.get('bgcolor')
+        if color:
+            speaker_name = self.caption_color_to_speaker.get(color)
+            if speaker_name is None:
+                log.info(f'Color {color} has no associated speaker')
+            else:
+                self.caption_speaker = speaker_name
+
+        for indicator, speaker in CAPTION_SPEAKER_INDICATORS:
+            if indicator in dialog:
+                log.info(f'Caption speaker identified: {speaker}')
+                self.caption_speaker = speaker
+                if color:
+                    #INFO     cnv.chatlog.npc_chatter: Caption speaker identified: Positron                                                                             npc_chatter.py:401
+                    #INFO     cnv.chatlog.npc_chatter: Assigning speaker Positron to color DarkGreen                      
+                    log.info(f'Assigning speaker {speaker} to color {color}')
+                    self.caption_color_to_speaker[color] = speaker
+            #else:
+            #    log.info(f'{indicator} is not in {dialog}')
+        
+        return self.caption_speaker, dialog
+
+    def channel_messager(self, lstring, line_string: str):
+        """
+        All we know is that line_string starts with a [
+        """
+        # channel message
+        dialog = line_string.strip()
+        if ']' in dialog:
+            close_bracket_index = dialog.find(']')
+            channel = dialog[1: close_bracket_index]
+            dialog = dialog[close_bracket_index + 1:].strip()
+        else:
+            log.error('Malformed channel message: %s', line_string)
+            return       
+        
+        guide = self.channel_guide.get(channel, None)
+        if guide and guide['enabled']:
+            # log.info('Applying channel guide %s', guide)
+            # channel messages are _from_ someone, the parsers extract that.
+            parser = getattr(self, guide['parser'])
+            speaker, dialog = parser(lstring)
+            if dialog:
+                console.log(f"\\[{channel}] {speaker}: " + colorstring(dialog))
+            else:
+                log.debug('Invalid lstring has no dialog: %s', lstring)
+
+            # sometimes people don't say anything we can vocalize, like "..." so we drop any
+            # non-dialog messages.
+            if speaker not in ['__self__'] and dialog and dialog.strip():
+                # log.info(f"Speaking: [{channel}] {speaker}: {dialog}")
+                # speaker name, spoken dialog, channel (npc, system, player)
+                self.speaking_queue.put((speaker, dialog, guide['name']))
+            else:
+                log.debug('Not speaking: %s', lstring)
+
+        elif guide is None:
+            # long lines will wrap
+            hints = (
+                (
+                    ('DFB', 'Death From Below'), 
+                    '''DFB: Death From Below
+BLUE lvl 1-20
+Started by LFG menu option.
+Four missions chained together ending in a fight against two Hydra monsters'''
+                ),  (
+                    ('posi 1', 'POSI1', 'Posi Pt 1', ' pos1 ', 'Positron Part 1'), 
+                    '''posi 1: Positron Task Force Part 1
+BLUE lvl 10-15
+Started by Positron in Steel Canyon.
+Five missions, ending in a fight inside city hall'''
+                ), (
+                    ('posi 2', 'POSI2', 'Posi Pt 2', 'Positron Part 2'), 
+                    '''posi 2: Positron Task Force Part 2
+BLUE lvl 11-16
+Started by Positron in Steel Canyon.
+Five missions, ending in a fight near faultline dam'''
+                ), (
+                    ('YIN', 'PYIN'), 
+                    '''yin: Penelope Yin Task Force
+BLUE lvl 20-25
+Started by Penelope Yin in Independence Port.
+Five missions, ending in a fight inside the Terra Volta reactor'''
+                ), (
+                    ('NUMI', ), 
+                    '''NUMI: Numina Task Force
+BLUE lvl 35-40
+Started by Numina in Founder's Falls.
+Includes a set of 14 "Defeat X in Location" tasks
+Five missions, ending in a fight against Jurassik deep inside Eden'''
+                ), (
+                    ('SBB', ), 
+                    '''SBB: Summer Blockbuster Double Feature
+BLUE lvl 15-?
+Started by LFG menu option.
+The trial takes the form of a double feature, where characters play roles inside two segments: "The Casino Heist" and "Time Gladiator". The segments are shown in random order, and are accessed through doors to different theaters.'''
+                ), (
+                    ('AEON', ), 
+                    '''AEON: Dr. Aeon Strike Force
+RED lvl 35-50
+Started by Dr. Aeon in Cap Au Diable
+Seven major missions'''
+                ), (
+                    ('Moonfire', ), 
+                    '''MOONFIRE: The Kheldian War
+BLUE lvl 23-28
+Started by Moonfire on Striga Isle
+Seven major missions, ends in fight with Arakhn -- A Nictus AV'''
+                ), (
+                    ('Market Crash', ), 
+                    '''MARKET CRASH: Market Crash Trial
+BLUE/RED lvl 40-50
+Started by Ada Wellington in Kallisti Wharf
+Three missions and a purple recipe reward
+Ends with an AV fight against Crimson Prototype Waves of Sky Raiders 
+adds at 75%, 50% and 25% health
+Destroy the force field generators first
+'''
+                ), (
+                    ('TinPex', ), 
+                    '''TINPEX: Tin Mage Mark II Task Force
+BLUE/RED lvl 50
+Started by Tin Mage Mark II in Rikti War Zone
+Three missions, ends in fight against two Goliath War Walkers'''
+                ), (
+                    ('Manti', 'Manticore'), 
+                    '''MANTI: Manticore Task Force
+Following Countess Crey
+BLUE lvl 30-35
+Started by Manticore in Brickstown
+Seven missions, ends in fight against AV Hopkins in Creys Folly'''
+                ),  (
+                    ('Citadel', ), 
+                    '''CITADEL: Citadel Task Force
+Citadel's Children
+BLUE lvl 25-30
+Started by Citadel on Talos Island
+Ten missions, ends in fight against AV Vandal'''
+                )
+
+            )
+            found = False
+            #console.log(f"\\[{channel}] {speaker}: " + colorstring(dialog))
+            # there is no guide enabled, so we aren't giong to _speak_ this
+            # but we might as well make the display pretty.
+            
+            console.log(f"\\[{channel}] " + colorstring(dialog))
+            
+            for references, helptext in hints:
+                if found:
+                    break
+
+                for reference in references:
+                    if reference.upper() in dialog.upper():
+                        narrow_console = Console(width=60)
+                        narrow_console.print(Panel(helptext))
+                        found = True
+                        break
+ 
+        else:
+            log.debug(f'{guide=}')
+
+    def ssay(self, msg):
+         # as in system-say
+         log.info('SPEAKING: %s', msg)
+         self.speaking_queue.put((None, msg, "system"))
+
+    def tail(self):
+        """
+        read any new lines that have arrives since we last read the file and
+        process each of them.
+
+        We're in a multiprocessing.Process() while True, so the expectation is
+        that we aren't going anywhere.
+
+        self.open_latest_log needs to return an open, read-able file handle.
+        """
+        log.info('tail() invoked')
+        lstring = ""
+
+        # New character selected
+        self.ssay('Log file found')
+        self.find_character_login()
+        
+        log.info('Clearing damage data')
+        models.clear_damage()
+
+        self.first_tail = True
+
+        activity_count = 0
+        with open(self.open_latest_log(), encoding="utf-8") as handle:
+            while True:
+                if self.first_tail:
+                    log.info('Seeking to EOF')
+                    handle.seek(0, io.SEEK_END)
+                    self.first_tail = False
+
+                if activity_count > 50:
+                    log.debug('primary log evaluation loop')
+                    activity_count = 0
+                else:
+                    activity_count += 1
+
+                for line in handle:
+                    # log.debug("line: '%s'", line)
+
+                    if line.strip():
+                        log.debug('Top of True')               
+                        talking = True
+                        
+                        # peel off the datestr and timestr, these are only rarely useful to us.
+                        try:
+                            datestr, timestr, line_string = line.split(None, 2)
+                            line_string = line_string.strip()
+                        except ValueError:
+                            continue
+
+                        # log.info('line_string: %s', line_string)
+                        try:
+                            # removing "." was a bad idea
+                            lstring = line_string.replace(".", "").strip().split()
+                        except Exception as err:
+                            log.error(err)
+                            raise
+
+                        # if the first word starts with [, it is a channel indicator.  Send this off to channel_messager and move on.
+                        if lstring[0][0] == "[":
+                            log.debug('Invoking channel_messager()')
+                            self.channel_messager(lstring, line_string)
+                            log.debug('Returned from channel_messager()')
+                            continue
+
+                        if lstring[0] == "You":
+                            if self.hero and lstring[1] == "gain":
+                                # You gain 104 experience and 36 influence.
+                                # You gain 15 experience, work off 15 debt, and gain 14 influence.
+                                # You gain 26 experience and work off 2,676 debt.
+                                # You gain 70 experience.
+                                # You gain 2 stacks of Blood Frenzy!
+                                log.debug(lstring)
+                                # You gain 250 influence.
+
+                                inf_gain = None
+                                xp_gain = None
+
+                                for inftype in ["influence", "information"]:
+                                    try:
+                                        influence_index = lstring.index(inftype) - 1
+                                        inf_gain = int(
+                                            lstring[influence_index].replace(",", "")
+                                        )
+                                    except ValueError:
+                                        pass
+
+                                try:
+                                    if 'experience' in lstring:
+                                        xp_gain = lstring[lstring.index('experience') - 1]
+                                    elif 'experience,' in lstring:
+                                        xp_gain = lstring[lstring.index('experience,') - 1]
+
+                                    if xp_gain:
+                                        xp_gain = int(xp_gain.replace(",", ""))
+                                except ValueError:
+                                    pass                            
+
+                                if inf_gain or xp_gain:
+                                    if not settings.REPLAY or settings.XP_IN_REPLAY:
+                                        log.debug(f"Awarding xp: {xp_gain} and inf: {inf_gain}")
+                                        with models.db() as session:
+                                            new_event = models.HeroStatEvent(
+                                                hero_id=self.hero.id,
+                                                event_time=datetime.strptime(
+                                                    f"{datestr} {timestr}", "%Y-%m-%d %H:%M:%S"
+                                                ),
+                                                xp_gain=xp_gain,
+                                                inf_gain=inf_gain,
+                                            )
+                                            session.add(new_event)
+                                            session.commit()
+
+                            if self.hero and lstring[1] == "hit":
+                                # You hit Abomination with your Assassin's Psi Blade for 43.22 points of Psionic damage.
+                                # You hit Zealot with your Bitter Ice Blast for 13088 points of Cold damage (SCOURGE)
+                                # You hit Button Man Buckshot with your Dart Burst for 10.61 points of Lethal damage over time.
+                                # You hit Arva with your Freeze Ray for 7.49 points of Cold damage over time (SCOURGE).
+                                
+                                m = re.fullmatch(
+                                    r"You hit (?P<target>.*) with your (?P<power>.*) for (?P<damage>.*) points of (?P<damage_type>.*) damage( |\.)?(?P<DOT>[^\n\(\.A-Z]*)[^\nA-Z\(]*\(?(?P<special>[A-Z]*).*",
+                                    " ".join(lstring)
+                                )
+                                if m:
+                                    #target, power, damage, damagetype, special = m.groups()
+                                    if m['special'] is None:
+                                        special = ""
+                                    else:
+                                        special = m['special'].strip("() \t\n\r\x0b\x0c").title()
+
+                                    d = models.Damage(
+                                        hero_id=self.hero.id,
+                                        target=m['target'],
+                                        power=m['power'],
+                                        damage=int(m['damage']),
+                                        damage_type=m['damage_type'],
+                                        special=special
+                                    )
+                                    
+                                    with models.db() as session:
+                                        session.add(d)
+                                        session.commit()
+                                else:
+                                    # You hit Gravedigger Slammer with your Twilight Grasp reducing their damage and chance to hit and healing you and your allies!
+                                    m = re.fullmatch(
+                                        r"You hit (?P<target>.*) with your (?P<power>.*) reducing .*",
+                                        " ".join(lstring)
+                                    )
+                                    if m:
+                                        # nothing to record
+                                        pass
+                                    else:
+                                        dialog = plainstring(" ".join(lstring))
+                                        log.warning(f'hit failed regex: {dialog}')
+
+                        if self.hero and lstring[0] == "MISSED":
+                            # MISSED Mamba Blade!! Your Contaminated Strike power had a 95.00% chance to hit, you rolled a 95.29.
+                            m = re.fullmatch(
+                                r"MISSED (?P<target>.*)!! Your (?P<power>.*) power had a (?P<chance_to_hit>[0-9\.]*)% chance to hit, you rolled a (?P<roll>[0-9\.]*).",
+                                " ".join(lstring)
+                            )
+                            if m:
+                                target, power, change_to_hit, roll = m.groups()
+                                
+                                # Okay to tuck a "miss" in here?
+                                d = models.Damage(
+                                    hero_id=self.hero.id,
+                                    target=target,
+                                    power=power,
+                                    damage=0,
+                                    damage_type="",
+                                    special=""
+                                )
+                                
+                                with models.db() as session:
+                                    session.add(d)
+                                    session.commit()
+                            else:
+                                log.warning('String failed regex:\n%s' % " ".join(lstring))
+
+                        elif lstring[0] == "Welcome":
+                            if self.hero:
+                                # we've _changed_ characters.
+                            
+                                # Welcome to City of Heroes, <HERO NAME>
+                                hero_name = " ".join(lstring[5:]).strip("!")
+                                if hero_name != self.hero.name:
+                                    self.hero = Hero(hero_name)
+
+                                    # we want to notify upstream UI about this.
+                                    self.event_queue.put(("SET_CHARACTER", self.hero.name))
+                            else:
+                                # I don't think this is a possible code path
+                                # find_character_login should have already set self.hero()
+                                self.hero = Hero(" ".join(lstring[5:]).strip("!"))
+
+                        elif lstring[-2:] == ["is", "recharged"]:
+
+                            log.debug('Adding RECHARGED event to event_queue...')
+                            self.event_queue.put(
+                                ("RECHARGED", " ".join(lstring[0:lstring.index("is")]))
+                            )
+
+                            # how long ago did this power last recharge?
+                            power_name = " ".join(lstring[0:-2])
+                            if power_name in self.previous_stopwatch:
+                                dur_h, dur_m, dur_s = self.previous_stopwatch[power_name].split(':')
+                                this_h, this_m, this_s = timestr.split(':')
+
+                                h, m, s = (
+                                    int(this_h) - int(dur_h),
+                                    int(this_m) - int(dur_m),
+                                    int(this_s) - int(dur_s)
+                                )
+
+                                total_seconds = (s + (m * 60) + (h * 3600))
+                                # if this is a power we don't use very often, it's more likely we're interested in knowing when
+                                # it recharges.  Two minutes feels about right to me.
+
+                                if total_seconds >= (2 * 60):  # two minutes
+                                    # only speak it if it took more than a minute
+                                    if settings.get_toggle(settings.taggify('Speak Recharges')):
+                                        dialog = plainstring(
+                                            f"{power_name} recharged"
+                                        )
+                                        self.ssay(dialog)
+
+                            self.previous_stopwatch[power_name] = timestr
+                     
+                        else:
+                            prefix = lstring[0]
+                            remainder = " ".join(lstring[1:])
+                            done = False
+                            if prefix in ['Ember', 'Cold', 'Fiery']:
+                                continue
+
+                            log.debug('Looking for prefix: %s', prefix)
+                            if prefix in patterns.get_prefixes():
+                                all_patterns = patterns.get_patterns(prefix)
+
+                                log.debug('Checking for matches against %s patterns', len(all_patterns))
+                                for pattern in all_patterns:
+                                    m = pattern['compiled'].match(remainder)
+                                    if m:
+                                        log.debug('Match Found: %s', m)
+                                        if pattern['enabled']:
+                                            if settings.get_toggle(settings.taggify(pattern['toggle'])):
+                                                if pattern.get('state'):
+                                                    # this will update state.json, it's used for things like tracking
+                                                    # the character level.
+                                                    settings.set_config_key(
+                                                        pattern['state'], m.group(1), cf='state.json'
+                                                    )
+
+                                                if pattern.get('strip_number', False):
+                                                    # Removing the actual number makes the audio cache _many_ times more efficient.
+                                                    # You are healed by your Dehydrate for 23.04 health points over time.
+                                                    remainder = re.sub(r"for [0-9]+\.?[0-9]+ .*", "", remainder)
+
+                                                talking = True
+                                                if pattern.get('soak', 0) > 0:
+                                                    soak_key = f"{prefix}_{pattern['regex']}"
+                                                    # if we have a soak, we need to
+                                                    # make sure at least than many
+                                                    # seconds have passed since we
+                                                    # last spoke this pattern
+                                
+                                                    h, m, s = timestr.split(':')
+                                                    total_seconds = (int(h) * 3600) + (int(m) * 60) + int(s)
+
+                                                    if (
+                                                        soak_key in self.previous_stopwatch and
+                                                        total_seconds - self.previous_stopwatch[soak_key] < pattern['soak']
+                                                    ):
+                                                        log.debug(f'Soaking {soak_key} for {pattern["soak"]} seconds')
+                                                        talking = False
+                                                    else:
+                                                        self.previous_stopwatch[soak_key] = total_seconds
+
+                                                if talking:
+                                                    if pattern.get('append'):
+                                                        # throw some flavor at the end.
+                                                        dialog = plainstring(prefix + " " + remainder + " " + random.choice(pattern['append']))
+                                                    else:
+                                                        dialog = plainstring(prefix + " " + remainder)
+
+                                                    # log.info('Pattern %s/%s matched.  Speaking %s', prefix, pattern['regex'], dialog)
+                                                    self.ssay(dialog)
+                                                else:
+                                                    log.debug('Talking disabled')
+                                            else:
+                                                log.info('Toggle %s is not turned on', pattern['toggle'])
+                                        else:
+                                            log.debug('Pattern disabled')
+                                        # we are done with the for pattern loop
+                                        done = True
+                                        break
+                                    else:
+                                        log.debug('Match failed: re.match("%s", "%s")', pattern['regex'], remainder)
+
+                                if done:
+                                    continue
+                                else:
+                                    log.debug('No matching patterns found for prefix: %s', prefix)
+
+                            else:
+                                # Check for global patterns (empty string)
+                                all_patterns = patterns.get_patterns("")
+
+                                log.debug('Checking to match %s against %s global patterns', remainder, len(all_patterns))
+                                # TODO refactor to remove this redundancy
+                                for pattern in all_patterns:
+                                    m = pattern['compiled'].match(remainder)
+                                    if m:
+                                        log.debug('Match Found: %s', m)
+                                        if pattern['enabled']:
+                                            if settings.get_toggle(settings.taggify(pattern['toggle'])):
+                                                if pattern.get('state'):
+                                                    # this will update state.json, it's used for things like tracking
+                                                    # the character level.
+                                                    settings.set_config_key(
+                                                        pattern['state'], m.group(1), cf='state.json'
+                                                    )
+
+                                                if pattern.get('strip_number', False):
+                                                    # Removing the actual number makes the audio cache _many_ times more efficient.
+                                                    # You are healed by your Dehydrate for 23.04 health points over time.
+                                                    remainder = re.sub(r"for [0-9]+.*", "", remainder)
+
+                                                talking = True
+                                                if pattern.get('soak', 0) > 0:
+                                                    soak_key = f"{prefix}_{pattern['regex']}"
+                                                    # if we have a soak, we need to
+                                                    # make sure at least than many
+                                                    # seconds have passed since we
+                                                    # last spoke this pattern
+                                
+                                                    h, m, s = timestr.split(':')
+                                                    total_seconds = (int(h) * 3600) + (int(m) * 60) + int(s)
+
+                                                    if (
+                                                        soak_key in self.previous_stopwatch and
+                                                        total_seconds - self.previous_stopwatch[soak_key] < pattern['soak']
+                                                    ):
+                                                        log.debug(f'Soaking {soak_key} for {pattern["soak"]} seconds')
+                                                        talking = False
+                                                    else:
+                                                        self.previous_stopwatch[soak_key] = total_seconds
+
+                                                if talking:
+                                                    if pattern.get('append'):
+                                                        # throw some flavor at the end.
+                                                        dialog = plainstring(prefix + " " + remainder + " " + random.choice(pattern['append']))
+                                                    else:
+                                                        dialog = plainstring(prefix + " " + remainder)
+
+                                                    log.info('Pattern %s/%s matched.  Speaking %s', prefix, pattern['regex'], dialog)
+                                                    self.ssay(dialog)
+                                                else:
+                                                    log.info('Talking disabled')
+                                            else:
+                                                log.info('Toggle %s is not turned on', pattern['toggle'])
+                                        else:
+                                            log.info('Pattern disabled')
+                                        # we are done with the for pattern loop
+                                        done = True
+                                        break
+                                    else:
+                                        log.debug('Global match failed: re.match("%s", "%s")', pattern['regex'], remainder)
+
+                                if done:
+                                    continue
+                                else:
+                                    log.debug('No matching global patterns found for: %s', remainder)
+
+                        #
+                        # Team task completed.
+                        # A new team task has been chosen.                           
+            
+                # we've exhausted to EOF
+                time.sleep(0.25)
+
+
+
+class LogStream_old:
     """
     This is a streaming processor for the log file.  Its kind of sorely
     deficient in more than one way but seems to be at least barely adequate.
@@ -1185,7 +1989,8 @@ Ten missions, ends in fight against AV Vandal'''
                         elif lstring[-2:] == ["the", "team"]:
                             name = " ".join(lstring[0:-4])
                             action = lstring[-3]  # joined or quit
-                            self.ssay(f"Player {name} has {action} the team")
+                            if settings.get_toggle(settings.taggify('Team Changes')):
+                                self.ssay(f"Player {name} has {action} the team")
 
                         elif lstring[:2] in ["The", "name", "The", "whiteboard"]:
                             # The name <color red>Toothbreaker Jones</color> keeps popping up, and these Skulls were nice enough to tell you where to find him. Time to pay him a visit.

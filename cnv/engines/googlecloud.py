@@ -213,7 +213,7 @@ class GoogleCloud(TTSEngine):
         return False
 
     def get_voice_names(self, gender=None):
-        log.info(f'get_voices_names({gender=})')
+        log.debug(f'get_voices_names({gender=})')
         all_voices = self.get_voices()
 
         if gender and not hasattr(self, 'gender'):
@@ -285,9 +285,6 @@ class GoogleCloud(TTSEngine):
                     'gender': {1: 'Female', 2: 'Male'}[voice.ssml_gender.value],
                     'language_codes': language_codes
                 }
-                log.info(f'{row=}')
-                # for key in row:
-                #    log.info(f'{key} == {json.dumps(row[key])}')
 
                 all_voices.append(row)
             

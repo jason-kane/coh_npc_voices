@@ -1,5 +1,16 @@
 from rich.logging import RichHandler
+from logging.handlers import QueueHandler
 from logging.config import dictConfig
+
+from logging.handlers import QueueListener
+
+class AutoStartLogQueueListener(QueueListener):
+
+    def __init__(self, queue, *handlers, respect_handler_level=False):
+        super().__init__(queue, *handlers, respect_handler_level=respect_handler_level)
+        # Start the listener immediately.
+        self.start()
+
 
 def init(DEBUG=False):
     LOGGING_CONFIG = { 
@@ -17,19 +28,30 @@ def init(DEBUG=False):
             'default': { 
                 'level': 'DEBUG' if DEBUG else 'INFO',
                 'formatter': 'standard',
+                #'class': QueueHandler
                 'class': RichHandler,
             },
-            'error_file': { 
-                'level': 'DEBUG' if DEBUG else 'INFO',
+            'error_file': {
+                'level': 'ERROR',
                 'formatter': 'logfile',
                 'class': 'logging.FileHandler',
                 'filename': 'error.log',
                 'mode': 'a'
             },
+            'log_viewer': {
+                'level': 'DEBUG',
+                'formatter': 'standard',
+                'class': QueueHandler,
+                'listener': AutoStartLogQueueListener,
+                'queue': {
+                    "()": 'queue.Queue',
+                    'maxsize': 100
+                }
+            },
         },
         'loggers': { 
             '': {  # root logger
-                'handlers': ['default', 'error_file'],
+                'handlers': ['default', 'error_file', 'log_viewer'],
                 'level': 'DEBUG' if DEBUG else 'INFO',
                 'propagate': False
             },

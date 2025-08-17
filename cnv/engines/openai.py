@@ -8,13 +8,13 @@ from typing import Union
 import customtkinter as ctk
 import numpy as np
 import voicebox
-from openai import OpenAI as OAI
+from openai import OpenAI, RateLimitError
 from voicebox.audio import Audio
 from voicebox.types import StrOrSSML
 
 from cnv.lib.settings import diskcache
 
-from .base import MarkdownLabel, TTSEngine, registry
+from .base import MarkdownLabel, TTSEngine, registry, USE_SECONDARY
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class OpenAIAuthUI(ctk.CTkFrame):
 # female = ['alloy, 'nova', 'shimmer']
 # male = ['echo', 'onyx']
 # neutral = ['fable']
-class OpenAI(TTSEngine):
+class MyOpenAI(TTSEngine):
     """
     OpenAI detects the incoming language; so in theory every voice works with every language.  I have doubts.
     """
@@ -176,7 +176,7 @@ class ttsOpenAI(voicebox.tts.TTS):
             with open(OPENAI_KEY_FILE) as h:
                 openai_api_key = h.read().strip()
 
-            client = OAI(api_key=openai_api_key)
+            client = OpenAI(api_key=openai_api_key)
             self.client = client
             return client
         else:
@@ -195,6 +195,10 @@ class ttsOpenAI(voicebox.tts.TTS):
                 response_format="pcm",
                 input=text
             )
+        except RateLimitError as e:
+            log.warning(f"OpenAI API rate limit exceeded: {e}")
+            raise USE_SECONDARY
+
         except Exception as e:
             log.error(f"speech.create(model={self.model}, voice={self.voice}, response_format='pcm', input={text})")
             log.error(f"OpenAI TTS speech.create() error: {e}")
@@ -221,4 +225,4 @@ class ttsOpenAI(voicebox.tts.TTS):
         return v
 
 # add this class to the the registry of engines
-registry.add_engine(OpenAI)
+registry.add_engine(MyOpenAI)
