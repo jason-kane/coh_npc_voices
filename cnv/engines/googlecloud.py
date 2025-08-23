@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import webbrowser
 
 import customtkinter as ctk
@@ -255,8 +256,11 @@ class GoogleCloud(TTSEngine):
             voice_name = self.config_vars["voice_name"].get()
             if voice_name not in out:
                 # our currently selected voice is invalid.  Pick a new one.
-                log.error(f'Voice {voice_name} is no longer valid ({gender}), replacing with {out[0]}.')
-                self.config_vars["voice_name"].set(out[0])
+                log.error(f'Voice {voice_name} expected in {out}')
+                
+                random_voice = random.choice(out)
+                log.error(f', replacing with {random_voice}.')
+                self.config_vars["voice_name"].set(random_voice)
             return out
         else:
             return []

@@ -374,6 +374,18 @@ DEFAULT_PATTERNS =  [
             } 
         ]
     }, {
+        "prefix": "It's",
+        "enabled": True,
+        "patterns": [
+            {
+                "regex": ".*",
+                "example": "It's a trap!",
+                "toggle": "Speak Clues",
+                "channel": "system",
+                "enabled": True
+            } 
+        ]
+    }, {
         "prefix": "Jones",
         "enabled": True,
         "patterns": [

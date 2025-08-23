@@ -447,24 +447,29 @@ class LogStream:
     # going to be called to properly extract the data from that log entry.
     channel_guide = {
         'NPC': {
-            'enabled': True,
+            'enabled': settings.get_config_key('Speak NPC', True),
             'name': "npc",
             'parser': 'channel_chat_parser'
         },
         'Team': {
-            'enabled': True,
+            'enabled': settings.get_config_key('Speak Team', True),
             'name': "player",
             'parser': 'channel_chat_parser'
         },
         'Tell': {
-            'enabled': True,
+            'enabled': settings.get_config_key('Speak Tell', True),
             'name': "player",
             'parser': 'tell_chat_parser'
         },
         'Caption': {
-            'enabled': True,
+            'enabled': settings.get_config_key('Speak Captions', True),
             'name': "npc",
             'parser': 'caption_parser'
+        },
+        'Local': {
+            'enabled': settings.get_config_key('Speak Local', True),
+            'name': "player",
+            'parser': 'channel_chat_parser'
         }
     }
 

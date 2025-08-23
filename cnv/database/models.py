@@ -256,30 +256,39 @@ class Character(Base):
                     all_values = diskcache(f"{engine_key}_{config_meta.key}")
                     log.debug(f'{engine_key=} {config_meta.key=}')
                     
-                    try:
-                        all_values = list(all_values)
-                    except TypeError:
+                    if all_values is None or len(all_values) == 0:
                         log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
-                        value = "<Cache Failure>"
-
-                        # just creating this should be enough to populate the
-                        # engine cache?  I guess not.
                         registry.get_engine(engine_key)(None, None, None, None)
                         # (parent, rank, name, category, *args, **kwargs):
                         all_values = list(
                             diskcache(f"{engine_key}_{config_meta.key}")
-                        )
-                    except AttributeError:
-                        log.warning(f'Cache {engine_key}_{config_meta.key} is invalid')
-                        # Cache openai_voice_name is empty
-                        value = "<Cache Failure>"
-
-                        # just creating this should be enough to populate the
-                        # engine cache.
-                        registry.get_engine(engine_key)(None, None, None, None)
-                        all_values = list(
-                            diskcache(f"{engine_key}_{config_meta.key}")
                         )                        
+
+                    else:
+                        try:
+                            all_values = list(all_values)
+                        except TypeError:
+                            log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
+                            value = "<Cache Failure>"
+
+                            # just creating this should be enough to populate the
+                            # engine cache?  I guess not.
+                            registry.get_engine(engine_key)(None, None, None, None)
+                            # (parent, rank, name, category, *args, **kwargs):
+                            all_values = list(
+                                diskcache(f"{engine_key}_{config_meta.key}")
+                            )
+                        except AttributeError:
+                            log.warning(f'Cache {engine_key}_{config_meta.key} is invalid')
+                            # Cache openai_voice_name is empty
+                            value = "<Cache Failure>"
+
+                            # just creating this should be enough to populate the
+                            # engine cache.
+                            registry.get_engine(engine_key)(None, None, None, None)
+                            all_values = list(
+                                diskcache(f"{engine_key}_{config_meta.key}")
+                            )
 
                     if all_values:
                         # it's a dict, key is a voice_name
