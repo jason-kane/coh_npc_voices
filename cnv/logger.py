@@ -26,7 +26,7 @@ def init(DEBUG=False):
         },
         'handlers': { 
             'default': { 
-                'level': 'DEBUG' if DEBUG else 'INFO',
+                'level': 'DEBUG' if DEBUG else 'DEBUG',
                 'formatter': 'standard',
                 #'class': QueueHandler
                 'class': RichHandler,
@@ -68,6 +68,11 @@ def init(DEBUG=False):
             'tkinterweb_tkhtml': {
                 'handlers': ['default', ],
                 'level': 'INFO',  # debug is super noisy and not very helpful
+                'propagate': False
+            },
+            'cnv.database.models': {
+                'handlers': ['default', ],
+                'level': 'DEBUG' if DEBUG else 'INFO',
                 'propagate': False
             },
             'cnv.voices.voice_editor': {

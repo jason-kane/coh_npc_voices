@@ -44,6 +44,10 @@ class TTSEngine(ctk.CTkFrame):
     auth_ui_class = None
     cosmetic="TTSEngine Base Class (You screwed up buddy)"
     key = "base"
+    loading = False
+
+    category = 3  # default to system
+    rank = "primary"
 
     def __init__(self, parent, rank, name, category, *args, **kwargs):
         log.debug(f'Initializing TTSEngine {parent=} {rank=} {name=} {category=}')
