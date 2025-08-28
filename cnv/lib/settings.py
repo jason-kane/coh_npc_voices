@@ -103,7 +103,7 @@ def save_config(config, cf="config.json"):
         CACHE_CONFIG_MTIME[cf] = os.path.getmtime(cf)
 
 
-def get_config_key(key, default=None, cf="config.json") -> str | None:
+def get_config_key(key, default=None, cf="config.json") -> str | dict | None:
     config = get_config(cf=cf)
     return config.get(key, default)
 
@@ -130,7 +130,7 @@ def get_alias(group):
     return get_config_key(key=group, default=group, cf="aliases.json")
 
 
-def get_preset(group):
+def get_preset(group) -> dict:
     return get_config_key(key=group, default={}, cf="presets.json")
 
 

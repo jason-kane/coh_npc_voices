@@ -23,6 +23,11 @@ TOGGLES = [
     ("Speak Badges", "on"),
     ("Snark", "on"),
     ("Team Changes", "on"),
+    ("Speak Local", "on"),
+    ("Speak Captions", "on"),
+    ("Speak Team", "on"),
+    ("Speak Tell", "on"),
+    ("Speak NPC", "on"),
 ]
 
 

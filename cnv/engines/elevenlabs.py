@@ -149,7 +149,7 @@ class ElevenLabs(TTSEngine):
         
         out = sorted(list(out))
 
-        chosen_voice = self.config_vars["voice_name"].get()
+        # chosen_voice = self.config_vars["voice_name"].get()
         
         if out:
             # if chosen_voice not in out:

@@ -59,12 +59,11 @@ class TightTTS(threading.Thread):
         self.all_npcs = {}
 
         # so we can do this much once.
- 
-        
-        for category in ["npc", "player", "system"]:
+         
+        for category_str in ["npc", "player", "system"]:
             for dir in [
                 settings.clip_library_dir(),         
-                os.path.join(settings.clip_library_dir(), category),
+                os.path.join(settings.clip_library_dir(), category_str),
             ]:
                 try:
                     os.mkdir(dir)
@@ -178,27 +177,27 @@ class TightTTS(threading.Thread):
             log.debug('[TightTTS] TTS Message received: %s', raw_message)
             # we got a message
             try:
-                name, message, category = raw_message
+                name, message, category_str = raw_message
             except ValueError:
                 log.warning("[TightTTS] Unexpected queue message: %s", raw_message)
                 continue
             raw_message = None
 
-            if category not in ["npc", "player", "system"]:
-                log.error("[TightTTS] invalid category: %s", category)
+            if category_str not in ["npc", "player", "system"]:
+                log.error("[TightTTS] invalid category: %s", category_str)
                 self.speaking_queue.task_done()
                 continue
 
-            phrase_id = models.get_or_create_phrase_id(name, category, message)
+            phrase_id = models.get_or_create_phrase_id(name, category_str, message)
             message, is_translated = models.get_translated(phrase_id)
             
-            log.debug('Retrieving get_channel(name=%s, category=%s)', name, category)
-            channel = self.get_channel(name=name, category=category)
+            log.debug('Retrieving get_channel(name=%s, category=%s)', name, category_str)
+            channel = self.get_channel(name=name, category=category_str)
 
-            log.debug(f"[TightTTS] Speaking thread received {category} {name}:{message}")
+            log.debug(f"[TightTTS] Speaking thread received {category_str} {name}:{message}")
 
             for rank in ['primary', 'secondary']:
-                cachefile = settings.get_cachefile(name, message, category, rank)
+                cachefile = settings.get_cachefile(name, message, category_str, rank)
                 wav_fn = str(cachefile + ".wav")
                 # if primary exists, play that.  else secondary.
 
@@ -226,7 +225,7 @@ class TightTTS(threading.Thread):
                                 while input.tell() < input.frames:
                                     output.write(input.read(1024))                       
                         
-                        log.debug(f'[TightTTS] [{category}][{channel}] Playing wav file {wav_fn}')
+                        log.debug(f'[TightTTS] [{category_str}][{channel}] Playing wav file {wav_fn}')
                         self.play(channel=channel, wav_fn=wav_fn)
                         played = True
                         break
@@ -236,7 +235,7 @@ class TightTTS(threading.Thread):
             # pass it into update_character_last_spoke and voice_builder.
             if not played:
                 with models.db() as session:
-                    character = models.Character.get(name, category, session)
+                    character = models.Character.get(name, category_str, session)
 
                     models.update_character_last_spoke(character.id, session)
 
@@ -247,7 +246,7 @@ class TightTTS(threading.Thread):
                     
                         for rank in ['primary', 'secondary']:
                             try:
-                                cachefile = settings.get_cachefile(name, message, category, rank)
+                                cachefile = settings.get_cachefile(name, message, category_str, rank)
                                 wav_fn = str(cachefile + ".wav")
                             
                             except (engines.elevenlabs.InvalidVoiceException):
@@ -447,24 +446,29 @@ class LogStream:
     # going to be called to properly extract the data from that log entry.
     channel_guide = {
         'NPC': {
-            'enabled': True,
+            'enabled': settings.get_config_key('Speak NPC', True),
             'name': "npc",
             'parser': 'channel_chat_parser'
         },
         'Team': {
-            'enabled': True,
+            'enabled': settings.get_config_key('Speak Team', True),
             'name': "player",
             'parser': 'channel_chat_parser'
         },
         'Tell': {
-            'enabled': True,
+            'enabled': settings.get_config_key('Speak Tell', True),
             'name': "player",
             'parser': 'tell_chat_parser'
         },
         'Caption': {
-            'enabled': True,
+            'enabled': settings.get_config_key('Speak Captions', True),
             'name': "npc",
             'parser': 'caption_parser'
+        },
+        'Local': {
+            'enabled': settings.get_config_key('Speak Local', True),
+            'name': "player",
+            'parser': 'channel_chat_parser'
         }
     }
 
@@ -724,6 +728,7 @@ class LogStream:
             if speaker not in ['__self__'] and dialog and dialog.strip():
                 # log.info(f"Speaking: [{channel}] {speaker}: {dialog}")
                 # speaker name, spoken dialog, channel (npc, system, player)
+                log.debug(f"Speaking: {speaker}, {dialog}, {guide['name']}")
                 self.speaking_queue.put((speaker, dialog, guide['name']))
             else:
                 log.debug('Not speaking: %s', lstring)

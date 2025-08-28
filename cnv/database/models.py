@@ -126,6 +126,7 @@ class Character(Base):
         session: Connectable,
         character=None
     ) -> Self:
+        log.debug(f'create_character({name=}, {category=})')
         # go big or go home, right?
         if name is None:
             return
@@ -135,9 +136,9 @@ class Character(Base):
         log.debug("\n" + pyfiglet.figlet_format(f'New {str_category}', font="3d_diagonal", width=120))
         log.debug("\n" + pyfiglet.figlet_format(name, font="3d_diagonal", width=120))
         if character is None:
-            log.info(f'|- Creating new {str_category} character {name} in database...')
+            log.info(f'|- Creating new "{str_category}" character "{name}" in database...')
         else:
-            log.info(f'|- Randomizing {str_category} character {name}...')
+            log.info(f'|- Randomizing {str_category} character "{name}"...')
 
         # first we need to find out if we have a preset for this category of foe.
         gender = None
@@ -256,30 +257,39 @@ class Character(Base):
                     all_values = diskcache(f"{engine_key}_{config_meta.key}")
                     log.debug(f'{engine_key=} {config_meta.key=}')
                     
-                    try:
-                        all_values = list(all_values)
-                    except TypeError:
+                    if all_values is None or len(all_values) == 0:
                         log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
-                        value = "<Cache Failure>"
-
-                        # just creating this should be enough to populate the
-                        # engine cache?  I guess not.
                         registry.get_engine(engine_key)(None, None, None, None)
                         # (parent, rank, name, category, *args, **kwargs):
                         all_values = list(
                             diskcache(f"{engine_key}_{config_meta.key}")
-                        )
-                    except AttributeError:
-                        log.warning(f'Cache {engine_key}_{config_meta.key} is invalid')
-                        # Cache openai_voice_name is empty
-                        value = "<Cache Failure>"
-
-                        # just creating this should be enough to populate the
-                        # engine cache.
-                        registry.get_engine(engine_key)(None, None, None, None)
-                        all_values = list(
-                            diskcache(f"{engine_key}_{config_meta.key}")
                         )                        
+
+                    else:
+                        try:
+                            all_values = list(all_values)
+                        except TypeError:
+                            log.warning(f'Cache {engine_key}_{config_meta.key} is empty')
+                            value = "<Cache Failure>"
+
+                            # just creating this should be enough to populate the
+                            # engine cache?  I guess not.
+                            registry.get_engine(engine_key)(None, None, None, None)
+                            # (parent, rank, name, category, *args, **kwargs):
+                            all_values = list(
+                                diskcache(f"{engine_key}_{config_meta.key}")
+                            )
+                        except AttributeError:
+                            log.warning(f'Cache {engine_key}_{config_meta.key} is invalid')
+                            # Cache openai_voice_name is empty
+                            value = "<Cache Failure>"
+
+                            # just creating this should be enough to populate the
+                            # engine cache.
+                            registry.get_engine(engine_key)(None, None, None, None)
+                            all_values = list(
+                                diskcache(f"{engine_key}_{config_meta.key}")
+                            )
 
                     if all_values:
                         # it's a dict, key is a voice_name
@@ -399,6 +409,9 @@ class Character(Base):
             name = "GREAT_NAMELESS_ONE"
             
         log.debug(f'/-- Character.get({name=}, {category=}, session=...)')
+        if category is None:
+            log.error(f'Character {name}: No category specified')
+            return
         
         try:
             category=int(category)
@@ -556,7 +569,7 @@ def set_engine_config(character_id, rank, new_config):
     with Session(engine) as session:
         for key in new_config:   
             if key in old_config:
-                if old_config[key] != new_config[key]:
+                if str(old_config[key]) != str(new_config[key]):
                     log.debug(f'change in {key}: {old_config[key]} != {new_config[key]}')
                     # this value has changed
                     row = session.scalar(
@@ -570,7 +583,7 @@ def set_engine_config(character_id, rank, new_config):
                         row.value = new_config[key]
                         session.commit()
                     else:
-                        log.debug(f'Charactger {character_id} has no previous engine config for {rank} {key}')
+                        log.debug(f'Character {character_id} has no previous engine config for {rank} {key}')
                         row = BaseTTSConfig(
                             character_id=character_id,
                             rank=rank,
@@ -657,7 +670,10 @@ class Translation(Base):
 def get_or_create_phrase(name, category, message):
     with db() as session:
         character = Character().get(
-            name=name, category=category, session=session)
+            name=name, 
+            category=category, 
+            session=session
+        )
 
         phrase = session.scalar(
             select(Phrases).where(
