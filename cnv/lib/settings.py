@@ -72,6 +72,7 @@ def get_config(cf="config.json"):
         mtime = os.path.getmtime(cf)
         if CACHE_CONFIG_MTIME.get(cf) is None or mtime != CACHE_CONFIG_MTIME[cf]:
             with open(cf) as h:
+                log.info("(re)loading config from %s", cf)
                 try:
                     config = json.loads(h.read())
                 except json.decoder.JSONDecodeError:
@@ -97,9 +98,11 @@ def set_config_key(key, value, cf="config.json"):
 def save_config(config, cf="config.json"):
     global CACHE_CONFIG
     global CACHE_CONFIG_MTIME
+
+    CACHE_CONFIG[cf] = config
+
     with open(cf, "w") as h:
-        h.write(json.dumps(config, indent=4, sort_keys=True))
-        CACHE_CONFIG[cf] = config
+        h.write(json.dumps(config, indent=4, sort_keys=True))   
         CACHE_CONFIG_MTIME[cf] = os.path.getmtime(cf)
 
 

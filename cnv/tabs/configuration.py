@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 TOGGLES = [
     ("Acknowledge each win", "on"),
+    ("Announce Speaker", "off"),
     ("Persist player chat", "on"),
     ("Speak Buffs", "on"),
     ("Speak Debuffs", "on"),
@@ -26,6 +27,8 @@ TOGGLES = [
     ("Speak Local", "on"),
     ("Speak Captions", "on"),
     ("Speak Team", "on"),
+    ("Speak SuperGroup", "on"),
+    ("Speak League", "on"),
     ("Speak Tell", "on"),
     ("Speak NPC", "on"),
 ]
