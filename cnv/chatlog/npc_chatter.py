@@ -445,6 +445,16 @@ class LogStream:
     # what channels are we paying attention to, which self.parser function is
     # going to be called to properly extract the data from that log entry.
     channel_guide = {
+        'SuperGroup': {
+            'enabled': settings.get_config_key('Speak SuperGroup', True),
+            'name': "player",
+            'parser': 'channel_chat_parser'
+        },
+        'League': {
+            'enabled': settings.get_config_key('Speak League', True),
+            'name': "player",
+            'parser': 'channel_chat_parser'
+        },
         'NPC': {
             'enabled': settings.get_config_key('Speak NPC', True),
             'name': "npc",
@@ -477,9 +487,9 @@ class LogStream:
         logdir: str,
         speaking_queue: queue.Queue,
         event_queue: queue.Queue,
-        badges: bool,
-        npc: bool,
-        team: bool,
+        # badges: bool,
+        # npc: bool,
+        # team: bool,
     ):
         """
         find the most recent logfile in logdir note which file it is, open it,
@@ -488,13 +498,6 @@ class LogStream:
         start tailing.
         """
         self.logdir = logdir
-        self.announce_badges = badges
-        # TODO: these should be exposed on the configuration page
-        self.npc_speak = npc
-        self.team_speak = team
-        self.tell_speak = True
-        self.caption_speak = True
-        self.announce_levels = True
         self.hero = None
         # who is (as far as we know) currently speaking as CAPTION ?
         self.caption_speaker = None
@@ -729,6 +732,11 @@ class LogStream:
                 # log.info(f"Speaking: [{channel}] {speaker}: {dialog}")
                 # speaker name, spoken dialog, channel (npc, system, player)
                 log.debug(f"Speaking: {speaker}, {dialog}, {guide['name']}")
+                
+                if settings.get_config_key('Announce Speaker', False):
+                    # self-announce?  lets try it..
+                    dialog = f"{speaker} says, {dialog}"
+
                 self.speaking_queue.put((speaker, dialog, guide['name']))
             else:
                 log.debug('Not speaking: %s', lstring)
@@ -1282,13 +1290,13 @@ class LogStream_old:
         start tailing.
         """
         self.logdir = logdir
-        self.announce_badges = badges
+        # self.announce_badges = badges
         # TODO: these should be exposed on the configuration page
-        self.npc_speak = npc
-        self.team_speak = team
-        self.tell_speak = True
-        self.caption_speak = True
-        self.announce_levels = True
+        # self.npc_speak = npc
+        # self.team_speak = team
+        # self.tell_speak = True
+        # self.caption_speak = True
+        # self.announce_levels = True
         self.hero = None
         # who is (as far as we know) currently speaking as CAPTION ?
         self.caption_speaker = None
@@ -1702,7 +1710,7 @@ Ten missions, ends in fight against AV Vandal'''
                             log.debug('Returned from channel_messager()')
                             continue
 
-                        elif self.announce_badges and lstring[0] == "Congratulations!":
+                        elif settings.get_toggle(settings.taggify("Speak Badges")) and lstring[0] == "Congratulations!":
                             self.ssay(" ".join(lstring[4:]))
 
                         elif lstring[0] == "You":

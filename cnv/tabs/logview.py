@@ -28,12 +28,8 @@ class ChatterService:
 
         logdir = settings.log_dir()
 
-        badges = True
-        team = True
-        npc = True
-
         ls = npc_chatter.LogStream(
-            logdir, speaking_queue, event_queue, badges, npc, team
+            logdir, speaking_queue, event_queue
         )
         
         # while True:
