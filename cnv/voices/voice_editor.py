@@ -291,12 +291,14 @@ class WavfileMajorFrame(ctk.CTkFrame):
         _, clean_name = settings.clean_customer_name(character.name)
         filename = settings.cache_filename(character.name, msg, rank)
         
-        return os.path.join(
-            settings.clip_library_dir(),
-            character.cat_str(),
-            clean_name,
-            filename
-        )
+        clip_dir = settings.clip_library_dir()
+        if clip_dir:
+            return os.path.join(
+                clip_dir,
+                character.cat_str(),
+                clean_name,
+                filename
+            )
  
     def play_cache(self):
         """
@@ -331,11 +333,12 @@ class WavfileMajorFrame(ctk.CTkFrame):
             # wavfilename = audio.mp3file_to_wavfile(
             #     mp3filename=cachefile
             # )
-            wavfilename = cachefile + ".wav"
-            self.show_wave(wavfilename)
+            if cachefile:
+                wavfilename = cachefile + ".wav"
+                self.show_wave(wavfilename)
             
-            log.info(f'Playing {wavfilename}')
-            mixer.Sound(file=wavfilename).play()
+                log.info(f'Playing {wavfilename}')
+                mixer.Sound(file=wavfilename).play()
             
     def say_it(self, use_secondary=False):
         """

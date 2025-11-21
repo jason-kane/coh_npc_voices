@@ -8,6 +8,7 @@ import os
 import re
 import random
 import queue
+from better_profanity import profanity
 import threading
 import time
 from datetime import datetime
@@ -49,6 +50,12 @@ CAPTION_SPEAKER_INDICATORS = (
     ('this is Watkins.', 'Agent Watkins'),
 )
 
+
+if settings.get_toggle(settings.taggify("Filter Profanity"), "on"):
+    log.info('Loading profanity filter word list...')
+    profanity.load_censor_words()
+else:
+    log.info('Profanity filter is DISABLED')
 
 class TightTTS(threading.Thread):
     def __init__(self, speaking_queue, event_queue):
@@ -194,7 +201,8 @@ class TightTTS(threading.Thread):
             log.debug('Retrieving get_channel(name=%s, category=%s)', name, category_str)
             channel = self.get_channel(name=name, category=category_str)
 
-            log.debug(f"[TightTTS] Speaking thread received {category_str} {name}:{message}")
+            if name is None:
+                log.info(f"[TightTTS] Speaking thread received {category_str} {name}:{message}")
 
             for rank in ['primary', 'secondary']:
                 cachefile = settings.get_cachefile(name, message, category_str, rank)
@@ -566,15 +574,106 @@ class LogStream:
 
             if not settings.REPLAY:
                 send_log_lock()
-                log.info('log_lock attached')
+                log.debug('log_lock attached')
 
         else:
             self.ssay("User name not detected")
             log.warning("Could NOT find hero name.. good luck.")
 
+    def profanity_filter(self, dialog):
+        if settings.get_toggle(settings.taggify("Filter Profanity"), "on"):
+            log.debug(f'Applying profanity filter to {dialog}')
+            dialog = profanity.censor(dialog, "*")
+            while "****" in dialog:
+                log.info('** Profanity detected **')
+                # lets make this a little more fun
+                dialog = dialog.replace("****", random.choice([
+                    "barnacles",
+                    "blazes",
+                    "butt",
+                    "cheese and rice",
+                    "crud",
+                    "darn",
+                    "fiddlesticks",
+                    "forking",
+                    "fudge",
+                    "gosh darn it",
+                    "great googly moogly",
+                    "heck",
+                    "holy guacamole",
+                    "jeepers creepers",
+                    "jiminy cricket",
+                    "jumpin' jehosaphat",
+                    "mother trucker",
+                    "schucks",
+                    "shoot",
+                    "shut the front door",
+                    "snickerdoodles",
+                    "son of a biscuit",
+                    "sugar honey iced tea",
+                    "what the fluff",
+                    "witch",
+                ]), 1)
+        return dialog
+
+    def gamerspeak_expansion(self, dialog):
+        """
+        Expand common gamerspeak abbreviations into full words for TTS clarity
+        """
+        if settings.get_toggle(settings.taggify("Gamerspeak Expansion"), "on"):
+            replacements = {
+                # Generic Gamer-slang
+                "afk": "away from keyboard",
+                "bio": "biological",
+                "brb": "be right back",
+                "cg": "Congratulations",
+                "gg": "good game",
+                "gj": "good job",
+                "glhf": "good luck have fun",
+                "idk": "I don't know",
+                "imo": "in my opinion",
+                "irl": "in real life",
+                "jk": "just kidding",
+                "np": "no problem",
+                "omg": "oh my god",
+                "omw": "on my way",
+                "plz": "please",
+                "thx": "thanks",
+                "ty": "thank you",
+                "wtf": "what the heck",
+
+                # More City of Heroes specific            
+                "ae": "Architect Entertainment",
+                "att": "Assemble the team",
+                "av": "Archvillain",
+                "gm": "Giant Monster",
+                "lfg": "looking for group",
+                "lfm": "looking for more",
+                "lft": "looking for team",
+                "ouro": "Ouroboros",
+                "pst": "Please send tell",
+                "tt": "Team Teleport",
+            }
+
+            pattern = re.compile(r'\b(' + '|'.join(replacements.keys()) + r')\b', re.IGNORECASE)
+            match = pattern.search(dialog)
+            while match:
+                log.info(f'Gamerspeak detected: {match.group(0)}')
+                dialog = pattern.sub(
+                    replacements[match.group(0).lower()],
+                    dialog,
+                    count=1
+                )
+                match = pattern.search(dialog)
+
+        return dialog
+
     def channel_chat_parser(self, lstring):
         speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
         dialog = plainstring(dialog)
+        # TODO:  these should only be applied to player speech, it is wasted CPU on NPCs.
+        dialog = self.gamerspeak_expansion(dialog)
+        dialog = self.profanity_filter(dialog)
         return speaker, dialog
 
     def tell_chat_parser(self, lstring):
@@ -648,6 +747,8 @@ class LogStream:
                 speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
         
         dialog = plainstring(dialog)
+        dialog = self.profanity_filter(dialog)
+
         return speaker, dialog
 
     def caption_parser(self, lstring):
@@ -722,6 +823,8 @@ class LogStream:
             parser = getattr(self, guide['parser'])
             speaker, dialog = parser(lstring)
             if dialog:
+                dialog = self.gamerspeak_expansion(dialog)
+                dialog = self.profanity_filter(dialog)
                 console.log(f"\\[{channel}] {speaker}: " + colorstring(dialog))
             else:
                 log.debug('Invalid lstring has no dialog: %s', lstring)
@@ -1235,7 +1338,6 @@ Ten missions, ends in fight against AV Vandal'''
                 time.sleep(0.25)
 
 
-
 class LogStream_old:
     """
     This is a streaming processor for the log file.  Its kind of sorely
@@ -1374,6 +1476,7 @@ class LogStream_old:
     def channel_chat_parser(self, lstring):
         speaker, dialog = " ".join(lstring[1:]).split(":", maxsplit=1)
         dialog = plainstring(dialog)
+        
         return speaker, dialog
 
     def tell_chat_parser(self, lstring):

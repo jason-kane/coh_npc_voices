@@ -247,7 +247,7 @@ DEFAULT_PATTERNS =  [
                 "channel": "system",
                 "enabled": True
             }, {
-                "regex": "received .* \(Recipe\).*",
+                "regex": "received .* \\(Recipe\\).*",
                 "example": "You received Cacophony: Confuse/Range (Recipe).",
                 "toggle": "Speak Merits",
                 "channel": "system",
