@@ -2,6 +2,7 @@ import glob
 import hashlib
 import io
 import colorsys
+import json
 import logging
 import webcolors
 import os
@@ -450,6 +451,8 @@ class LogStream:
     previous_stopwatch = {}
     previous_darkest = 0
 
+    replacements = None
+
     # what channels are we paying attention to, which self.parser function is
     # going to be called to properly extract the data from that log entry.
     channel_guide = {
@@ -621,46 +624,56 @@ class LogStream:
         Expand common gamerspeak abbreviations into full words for TTS clarity
         """
         if settings.get_toggle(settings.taggify("Gamerspeak Expansion"), "on"):
-            replacements = {
-                # Generic Gamer-slang
-                "afk": "away from keyboard",
-                "bio": "biological",
-                "brb": "be right back",
-                "cg": "Congratulations",
-                "gg": "good game",
-                "gj": "good job",
-                "glhf": "good luck have fun",
-                "idk": "I don't know",
-                "imo": "in my opinion",
-                "irl": "in real life",
-                "jk": "just kidding",
-                "np": "no problem",
-                "omg": "oh my god",
-                "omw": "on my way",
-                "plz": "please",
-                "thx": "thanks",
-                "ty": "thank you",
-                "wtf": "what the heck",
+            if self.replacements is None:
+                if os.path.exists("gamerspeak.json"):
+                    log.info('Loading gamerspeak.json replacements')
+                    with open("gamerspeak.json", "r", encoding="utf-8") as f:
+                        self.replacements = json.load(f)
+                else:
+                    self.replacements = {
+                        # Generic Gamer-slang
+                        "afk": "away from keyboard",
+                        "bio": "biological",
+                        "brb": "be right back",
+                        "cg": "Congratulations",
+                        "gg": "good game",
+                        "gj": "good job",
+                        "glhf": "good luck have fun",
+                        "idk": "I don't know",
+                        "imo": "in my opinion",
+                        "irl": "in real life",
+                        "jk": "just kidding",
+                        "np": "no problem",
+                        "omg": "oh my god",
+                        "omw": "on my way",
+                        "plz": "please",
+                        "tc": "take care",
+                        "thx": "thanks",
+                        "ty": "thank you",
+                        "wtf": "what the heck",
 
-                # More City of Heroes specific            
-                "ae": "Architect Entertainment",
-                "att": "Assemble the team",
-                "av": "Archvillain",
-                "gm": "Giant Monster",
-                "lfg": "looking for group",
-                "lfm": "looking for more",
-                "lft": "looking for team",
-                "ouro": "Ouroboros",
-                "pst": "Please send tell",
-                "tt": "Team Teleport",
-            }
+                        # More City of Heroes specific            
+                        "ae": "Architect Entertainment",
+                        "att": "Assemble the team",
+                        "av": "Archvillain",
+                        "gm": "Giant Monster",
+                        "lfg": "looking for group",
+                        "lfm": "looking for more",
+                        "lft": "looking for team",
+                        "ouro": "Ouroboros",
+                        "pst": "Please send tell",
+                        "tt": "Team Teleport",
+                    }
 
-            pattern = re.compile(r'\b(' + '|'.join(replacements.keys()) + r')\b', re.IGNORECASE)
+                    with open("gamerspeak.json", "w", encoding="utf-8") as f:
+                        json.dump(self.replacements, f, indent=4)
+
+            pattern = re.compile(r'\b(' + '|'.join(self.replacements.keys()) + r')\b', re.IGNORECASE)
             match = pattern.search(dialog)
             while match:
                 log.info(f'Gamerspeak detected: {match.group(0)}')
                 dialog = pattern.sub(
-                    replacements[match.group(0).lower()],
+                    self.replacements[match.group(0).lower()],
                     dialog,
                     count=1
                 )
@@ -695,8 +708,8 @@ class LogStream:
             dialog = (
                 " ".join(lstring[1:]).split(":", maxsplit=1)[-1].strip()
             )
-
-            if dialog.split()[0] == "[SIDEKICK]":
+            dialog_list = dialog.split()
+            if dialog_list and dialog_list[0] == "[SIDEKICK]":
                 log.info('Parsing SIDEKICK')
                 # player attribute self-reporting
                 # key=value;key2=value2
