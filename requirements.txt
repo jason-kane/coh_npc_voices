@@ -101,3 +101,4 @@ watchdog==4.0.1
 wcwidth==0.2.13
 websockets==12.0
 webcolors
+better_profanity==0.6.1

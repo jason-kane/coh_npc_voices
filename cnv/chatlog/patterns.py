@@ -17,6 +17,12 @@ DEFAULT_PATTERNS =  [
                 "channel": "system",
                 "enabled": True
             }, {
+                "regex": "encountered .*",
+                "example": "You encountered 'Dubstitch', a Meat Doctor who appears to be...",
+                "toggle": "Speak Clues",
+                "channel": "system",
+                "enabled": True
+            },{
                 "regex": "stopped.*",
                 "example": "You stopped the Superadine shipment and arrested Chernobog Petrovic, one of the Skulls' founders!",
                 "toggle": "Speak Clues",
@@ -247,7 +253,7 @@ DEFAULT_PATTERNS =  [
                 "channel": "system",
                 "enabled": True
             }, {
-                "regex": "received .* \(Recipe\).*",
+                "regex": "received .* \\(Recipe\\).*",
                 "example": "You received Cacophony: Confuse/Range (Recipe).",
                 "toggle": "Speak Merits",
                 "channel": "system",
@@ -368,6 +374,18 @@ DEFAULT_PATTERNS =  [
             {
                 "regex": ".*",
                 "example": "",
+                "toggle": "Speak Clues",
+                "channel": "system",
+                "enabled": True
+            } 
+        ]
+    }, {
+        "prefix": "It",
+        "enabled": True,
+        "patterns": [
+            {
+                "regex": ".*",
+                "example": "It seems that the Freakshow have made a play at trying...",
                 "toggle": "Speak Clues",
                 "channel": "system",
                 "enabled": True

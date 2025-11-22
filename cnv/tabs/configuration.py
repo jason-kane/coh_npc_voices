@@ -23,6 +23,8 @@ TOGGLES = [
     ("Speak Recipes", "on"),
     ("Speak Badges", "on"),
     ("Snark", "on"),
+    ("Filter Profanity", "on"),
+    ("Gamerspeak Expansion", "on"),
     ("Team Changes", "on"),
     ("Speak Local", "on"),
     ("Speak Captions", "on"),
@@ -262,7 +264,6 @@ class SpeakingToggles(ctk.CTkFrame):
     def toggle(self, *args, **kwargs):
         for tag in self.toggles:
             value = self.toggles[tag].get()
-            log.info(f"{tag} {value}")
             settings.set_toggle(tag, value)
         return
 

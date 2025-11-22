@@ -17,6 +17,8 @@ a = Analysis(
     datas=[
         ('cnv\\effects\\*', 'cnv\\effects\\'),
         ('cnv', 'cnv'),
+        ('.venv\\Lib\\site-packages\\better_profanity\\alphabetic_unicode.json', 'better_profanity\\'),
+        ('.venv\\Lib\\site-packages\\better_profanity\\profanity_wordlist.txt', 'better_profanity\\'), 
     ],
     # dependencies of engines, we have to do this out here because I made them runtime modules inside.
     hiddenimports=[

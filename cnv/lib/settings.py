@@ -72,7 +72,7 @@ def get_config(cf="config.json"):
         mtime = os.path.getmtime(cf)
         if CACHE_CONFIG_MTIME.get(cf) is None or mtime != CACHE_CONFIG_MTIME[cf]:
             with open(cf) as h:
-                log.info("(re)loading config from %s", cf)
+                log.debug("(re)loading config from %s", cf)
                 try:
                     config = json.loads(h.read())
                 except json.decoder.JSONDecodeError:
